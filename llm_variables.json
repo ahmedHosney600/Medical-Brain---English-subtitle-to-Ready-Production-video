@@ -1,0 +1,6 @@
+{
+    "model": "gemini-3-flash-preview",
+    "temperature": 0.2,
+    "api_key": "ddafa199-2899-4015-9ff8-6f63400bc93a",
+    "base_url": "http://localhost:8765/v1"
+}

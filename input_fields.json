@@ -1,0 +1,21 @@
+{
+  "target_platform": "youtube",
+  "content_style": "Accessible Science Storytelling (Edutainment). Deconstructs complex, jargon-heavy scientific or technical systems using everyday metaphors, narrative tension, and investigative breakdowns. Balances hard data with conversational logic.",
+  "dialect_register": "Educated Conversational Vernacular (العامية المثقفة). Highly relatable, street-smart phrasing integrated seamlessly with accurate technical terminology. Formal enough to maintain authority, casual enough to feel like a peer-to-peer discussion.",
+  "code_switching_level": "Medium to High (Domain-Specific Terminology). Retains authentic industry/technical terms in English (or transliterated) to maintain scientific credibility, immediately grounded with direct, colloquial Arabic translations and intuitive analogies.",
+  "voice_style": "Empathetic Expert / Witty Thought Partner. Charismatic, candid, and warm. Uses light sarcasm and rhetorical humor to break tension, while remaining strictly grounded, objective, and deeply supportive of the audience.",
+  "audience_level": "Curious General Audience (Beginner to Intermediate). Assumes zero prior domain knowledge, but avoids talking down to the viewer. Concepts are built from first principles (cause-to-effect mechanisms) without overwhelming academic density.",
+  "delivery_format": "Structured with a punchy hook, a thematic show intro, clear multi-phase narrative chapters (historical context $\\to$ biological/technical mechanism $\\to$ practical implications $\\to$ limitations), and a community-driven call to action.",
+  "medical_disclaimer_requirements": "",
+  "cta_goal": "",
+  "broll_availability": "High Visual Interactivity. Heavy integration of motion graphics, animated anatomical/systemic diagrams, on-screen text highlights for statistics, kinetic typography for key terms, and visual cutaways to anchor conceptual metaphors.",
+  "mandatory_mentions": "Brand / Presenter Hook: Dr. Ahmed Hosney (د. أحمد حسني) - Introduce naturally as Dr. Ahmed within the first 60–90 seconds.\nInteractive CTA: Open-ended question prompting audience lived experiences in the comments.",
+  "reference_egyptian_channels": "",
+  "avoid_list": "Reductionist / Magic Solutions: Never present a complex issue as having a simple, one-size-fits-all fix.\nVictim-Blaming / Stigmatizing: Avoid framing systemic or biological challenges purely as individual moral/willpower failures.\nUnregulated Advice: Never advocate for unmonitored, self-prescribed, or risky shortcuts.",
+  "sensitive_handling": "Compassionate Reframing: Address controversial, taboo, or emotional subjects through evidence-based empathy, dismantling societal guilt and stigma.\nRigorous Disclaimers: Clarify limitations, side effects, counter-indications, and the absolute necessity of professional supervision upfront.",
+  "presenter_profile": "د. أحمد حسني (Dr. Ahmed Hosney) - طبيب وصانع محتوى طبي وتوعوي يقدم شروحات علمية وقصصية مبسطة وموثوقة مبنية على الأدلة والتحقيقات الطبية، بأسلوب دافئ وممتع ومقنع (Edutainment / Science Communicator). يتحدث كطبيب واثق ومثقف وقريب من الجمهور والشباب، دون ادعاء تجارب سريرية أو جراحية لم يقم بها بنفسه أو ذكر صفات تقيده (كطبيب امتياز)، بل يحلل الحالات والدراسات كطبيب يشارك المعرفة مع جمهوره.",
+  "creator_profile": "د. أحمد حسني (Dr. Ahmed Hosney) - منصة طبية وتثقيفية تقدم محتوى صحي وطبي بالعامية المصرية الراقية لتبسيط أسرار الجسم البشري والتحذير من المغالطات الصحية الشائعة.",
+  "max_translation_revision_count": 3,
+  "max_quality_revision_count": 4,
+  "max_production_revision_count": 2
+}
