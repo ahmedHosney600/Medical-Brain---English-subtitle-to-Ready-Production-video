@@ -29,7 +29,7 @@
 
 ## 1. 🗺️ Triple-Loop Pipeline Architecture
 
-The workflow is architected as a 15-node StateGraph with three targeted iterative refinement loops:
+The workflow is architected as a 19-node StateGraph with four targeted iterative refinement loops:
 
 ```mermaid
 flowchart TD
@@ -54,7 +54,7 @@ flowchart TD
     end
     
     N10 -- "Grade == PASS\n(or Max Iterations)" --> N11[11. transition_designer]
-    N11 --> N12[12. icon_shape_animator]
+    N11 --> N12[12. text_animation_overlay_designer]
     N12 --> N13[13. broll_prompt_generator]
 
     subgraph LOOP3 ["Loop 3: Production Quality & Visual Integration Gate"]
@@ -63,13 +63,23 @@ flowchart TD
     end
 
     N14 -- "Grade == PASS\n(or Max Iterations)" --> N15[15. final_script_package]
-    N15 --> END([End Node])
+    N15 --> N16[16. shorts_moment_identifier]
+    N16 --> N17[17. shorts_script_extractor]
+
+    subgraph LOOP4 ["Loop 4: Shorts Quality Gate"]
+        N17 --> N18[18. shorts_caption_packager]
+        N18 --> N19[19. shorts_quality_gate]
+        N19 -- "Grade != PASS\n(Impact/Curiosity/Captions)" --> N17
+    end
+
+    N19 -- "Grade == PASS\n(or Max Iterations)" --> END([End Node])
 ```
 
-### Why Three Separate Loops?
+### Why Four Separate Loops?
 - **Loop 1 (Translation Fidelity Loop)**: Catches English sentence calques, dropped narrative beats, and accidental shifts in intent *before* any retention layers or dialect polish are attached.
 - **Loop 2 (Restructure Quality Loop)**: Evaluates the assembled, polished script along three distinct, independent axes: **Dialect Authenticity** ($\ge 8/10$), **Warmth / De-clinicalization** ($\ge 8/10$), and **Medical Accuracy Pass** ($\ge 9/10$, zero unverified claims).
-- **Loop 3 (Production Quality Loop)**: Evaluates the post-production editing layers (transitions, icons/shapes animations, AI B-roll prompts) both individually and as an **integrated visual system**. Hard gates on **Visual Integration** ($\ge 8/10$) and **Density Balance** ($\ge 8/10$) ensure the layers work together and match the video’s nature.
+- **Loop 3 (Production Quality Loop)**: Evaluates the post-production editing layers (transitions, text animations/overlays/drawing animations, AI B-roll prompts) both individually and as an **integrated visual system**. Hard gates on **Visual Integration** ($\ge 8/10$) and **Density Balance** ($\ge 8/10$) ensure the layers work together and match the video's nature.
+- **Loop 4 (Shorts Quality Loop)**: Evaluates extracted Reels/Shorts clips for standalone impact, scroll-stop power, curiosity gap (driving full-video views), caption accuracy, and medical responsibility. Hard gates on **Standalone Impact** ($\ge 8/10$), **Scroll-Stop Power** ($\ge 8/10$), **Curiosity Gap** ($\ge 8/10$), and **Medical Responsibility** (Pass).
 
 ---
 
@@ -127,18 +137,28 @@ class PipelineState(TypedDict):
     warmth_score: int
     fidelity_score: int
     medical_accuracy_pass: bool
+    disclaimer_check: str
 
     # --- Final Deliverable ---
     final_package: str
 
     # --- Post-Production Editing Layers (Loop 3) ---
     transition_design: str
-    icon_shape_animation: str
+    text_animation_overlay: str
     broll_prompts: str
     production_critique_output: str
     production_grade: str
     production_revision_count: int
     max_production_revision_count: int
+
+    # --- Reels/Shorts Extraction Pipeline (Loop 4) ---
+    shorts_moments: str
+    shorts_scripts: str
+    shorts_captions: str
+    shorts_quality_output: str
+    shorts_quality_grade: str
+    shorts_revision_count: int
+    max_shorts_revision_count: int
 ```
 
 ---
@@ -837,43 +857,71 @@ OUTPUT — ONLY valid JSON:
 
 ---
 
-### Node 12: `icon_shape_animator` (Loop 3 Sub-Node 2)
-* **Purpose**: Designs all on-screen graphic overlays (icons, shapes, lower-thirds, callout boxes, arrows, kinetic typography) with precise animation specs — entry/exit animations, easing, hold durations, screen positions — coordinated with the transition map's timing.
-* **Model Configuration**: Temperature `0.5` | Max Tokens `5000`
+### Node 12: `text_animation_overlay_designer` (Loop 3 Sub-Node 2)
+* **Purpose**: Designs all on-screen text-based overlays (kinetic typography, popup callout boxes, lower-thirds, text overlays, animated list reveals, highlight/underline animations, arrows/connectors) and **conditional drawing animations** (whiteboard sketches, progressive diagram builds) with precise animation specs — entry/exit animations, easing, hold durations, screen positions — coordinated with the transition map's timing. Focused on elements that serve educational medical content comprehension.
+* **Model Configuration**: Temperature `0.5` | Max Tokens `7000`
 * **Inputs**: `refined_script`, `transition_design`, `strategy_plan`, `broll_availability`, `target_platform`, `production_revision_count`, `production_critique_output`
-* **Outputs**: `icon_shape_animation`
+* **Outputs**: `text_animation_overlay`
 
 #### Element Types
 | Type | Description |
 |---|---|
-| Icons | Symbolic graphics (🫀💉⚠️✅📊) anchoring key terms |
-| Shapes | Background frames (rounded rects, circles, pills) |
-| Lower-thirds | Name plates, topic labels, section IDs |
-| Callout boxes | Statistics, definitions, key takeaways |
-| Arrows & Connectors | Cause→effect, process flow |
-| Progress indicators | Section/chapter markers |
-| Kinetic typography | Animated key words/phrases |
+| Kinetic typography | Animated key medical terms, Arabic text reveals, emphasized phrases that reinforce the spoken word |
+| Popup callout boxes | Statistics, medical value ranges, definitions, key takeaways — with entry/exit animations |
+| Lower-thirds | Section labels, topic markers, speaker credentials, chapter identifiers |
+| Text overlays | Key takeaway phrases, medical warnings, reinforcement text that appears alongside the presenter |
+| Animated list reveals | Step-by-step medical processes, symptom lists, or treatment options appearing one by one |
+| Highlight/underline animations | Key phrases or terms that get highlighted, underlined, or circled for emphasis |
+| Arrows & Connectors | Cause→effect relationships, medical process flows, directional pointers |
+| Progress indicators | Section/chapter markers, "X of Y" counters |
+| Drawing animations *(conditional)* | Whiteboard-style sketch reveals, progressive diagram builds, sketch overlay annotations — **only when the medical mechanism genuinely needs visual clarification** |
 
 #### Animation Spec per Element
-- **Entry**: type (fade-in/slide-in/scale-up/pop/typewriter), duration (ms), easing, direction
-- **Hold**: duration (seconds) — minimum 2s for short text, 4s for longer
-- **Exit**: type (fade-out/slide-out/scale-down), duration (ms), easing
+- **Entry**: type (fade-in/slide-in/scale-up/pop/typewriter/draw-on), duration (ms), easing, direction
+- **Hold**: duration (seconds) — minimum 2s for short text, 4s for longer callouts
+- **Exit**: type (fade-out/slide-out/scale-down/dissolve), duration (ms), easing
 - **Position**: screen region (e.g., "bottom-left, 8% margin")
 
+#### Drawing Animation Spec (Conditional — Only When Needed)
+Drawing animations are a **conditional tool, not a mandatory element**. Include them ONLY when the medical mechanism being explained is genuinely difficult to follow verbally — when "making the invisible visible" meaningfully aids comprehension. Not every script will have drawing animations.
+
+**When to include drawing animations:**
+- Complex multi-step medical mechanisms (e.g., how insulin resistance develops, how a heart attack progresses)
+- Cause-effect chains with 3+ steps that are hard to follow verbally
+- Anatomical processes that are invisible to the eye and benefit from visual representation
+- Comparisons between healthy vs. unhealthy states that are easier to grasp visually
+
+**When NOT to include drawing animations:**
+- Simple concepts that the presenter can explain clearly with words alone
+- Warm, personal, or emotional moments — let the human connection carry these
+- Sections where B-roll or text overlays already provide adequate visual support
+
+**Spec per drawing animation (must be highly detailed for easy execution):**
+- **Draw style**: whiteboard / sketch overlay / handwriting / progressive diagram
+- **Subject description**: exactly what is being drawn — specific organ, process, or concept, described in enough detail that an animator or AI generator can reproduce it without guessing
+- **Build sequence**: step-by-step what draws first, second, third, etc. — each step tied to a specific narration beat with the exact spoken line quoted
+- **Visual elements list**: enumerate every line, shape, label, arrow, and annotation that appears, with relative positions (e.g., "heart outline center-screen → left ventricle fills with red → arrow from LV to aorta labeled 'blood flow' → plaque buildup drawn on artery wall in yellow")
+- **Duration**: total draw time per step + hold time before next step + total animation duration
+- **Color palette**: specific colors for each element (e.g., "arteries: #E63946, veins: #457B9D, labels: white on dark background") — consistent with the video's visual language, 2-3 colors max
+- **Placement & size**: full-screen whiteboard moment vs. corner overlay on talking head, exact screen region and approximate size ratio
+- **Reference description**: a plain-language description of what the finished drawing should look like, as if describing it to someone who can't see it — "imagine a simple cross-section of a heart with the left ventricle highlighted, an arrow showing blood flow direction, and a small plaque buildup narrowing the artery"
+
 #### Key Design Principles
-1. Every element serves information — no decoration
+1. Every element serves comprehension of the medical content — no decoration, no cosmetic overlays
 2. Respect transition map timing — no entries during scene transitions
-3. Maximum 2 simultaneous on-screen elements
+3. Maximum 2 simultaneous on-screen elements (excluding the base video layer)
 4. Consistent visual language (2-3 color palette, one animation family)
-5. Text always in Egyptian Arabic matching script register
-6. Density follows content complexity (dense mechanism → more anchors, warm story → fewer/none)
+5. Text always in Egyptian Arabic matching script register (English technical terms follow the Terminology Retention Table)
+6. Density follows content complexity (dense mechanism → more anchors + potential drawing animations, warm story → fewer/none)
+7. Drawing animations are conditional — only when the medical mechanism genuinely benefits from visual clarification
+8. Drawing animation specs must be detailed enough that an animator or AI tool can execute them without ambiguity or creative guessing
 
 ---
 
 ### Node 13: `broll_prompt_generator` (Loop 3 Sub-Node 3)
-* **Purpose**: For each B-roll moment in the script, generates detailed AI-generation-ready text prompts (🖼️ image prompts for stills, 🎬 video prompts for motion) designed for Gemini / Google Flow / similar AI tools. Prompts are medically accurate, Egyptian-contextualized, and compositionally coordinated with icon/shape positions and transition framing.
+* **Purpose**: For each B-roll moment in the script, generates detailed AI-generation-ready text prompts (🖼️ image prompts for stills, 🎬 video prompts for motion) designed for Gemini / Google Flow / similar AI tools. Prompts are medically accurate, compositionally coordinated with text animation/overlay positions and transition framing, and preferably oriented toward educational and medical visual contexts.
 * **Model Configuration**: Temperature `0.6` | Max Tokens `6000`
-* **Inputs**: `refined_script`, `transition_design`, `icon_shape_animation`, `strategy_plan`, `source_analysis`, `broll_availability`, `target_platform`, `production_revision_count`, `production_critique_output`
+* **Inputs**: `refined_script`, `transition_design`, `text_animation_overlay`, `strategy_plan`, `source_analysis`, `broll_availability`, `target_platform`, `production_revision_count`, `production_critique_output`
 * **Outputs**: `broll_prompts`
 
 #### Prompt Types
@@ -882,21 +930,40 @@ OUTPUT — ONLY valid JSON:
 | 🖼️ Image Prompt | Establishing shots, close-ups, static diagrams | Scene description optimized for AI image generation |
 | 🎬 Video Prompt | Mechanism animations, dynamic scenes | Scene + motion direction + camera movement |
 
+#### B-Roll Content Scope
+B-roll should **preferably** serve educational and medical comprehension, but is not limited to clinical imagery — everyday life scenes are welcome when they ground an analogy or support the narrative. The test is relevance to the message, not strict medical context.
+
+| Priority | Content Type | Examples |
+|---|---|---|
+| ✅ **Preferred** | Anatomical/physiological diagrams and cross-sections | Heart cross-section, cellular processes, organ systems |
+| ✅ **Preferred** | Medical mechanism animations | Blood flow, insulin pathways, plaque buildup |
+| ✅ **Preferred** | Clinical/hospital/pharmacy/lab settings (Egyptian context) | Doctor's office, pharmacy counter, lab equipment |
+| ✅ **Preferred** | Medical equipment close-ups | Stethoscope, ECG electrodes, blood pressure cuff |
+| ✅ **Preferred** | Simple data visualizations | Charts, graphs showing medical stats from the Fact Ledger |
+| ✅ **Preferred** | Egyptian everyday health scenes | Pharmacy counter, family health discussion, doctor's office |
+| ✅ **Allowed** | Broader contextual scenes | Everyday Egyptian life, food, workplace — when they ground an analogy or support the narrative |
+| ⚠️ **Avoid unless directly relevant** | Generic lifestyle/cinematic stock | Footage that doesn't connect to the medical message |
+| ❌ **Never** | Abstract/artistic visuals | No connection to the content |
+
+#### People in B-Roll Rule
+When B-roll includes people (patients, everyday scenes, demonstrations), **prefer male subjects**. Avoid generating female figures unless the medical topic specifically requires it (e.g., pregnancy, breast cancer, gynecological conditions).
+
 #### Key Design Principles
 1. Specificity over generality — detailed scene/lighting/composition descriptions (40-80 words each)
 2. Medical accuracy — cross-reference the Fact Ledger, no misleading imagery
-3. Egyptian visual context — Arabic signage, local architecture, Egyptian skin tones where relevant
-4. Compositional awareness — leave space for planned icon/shape overlays
-5. Transition-aware framing — match B-roll mood to the transition type bringing it in
-6. Consistent lighting/color temperature across all prompts
-7. Don't over-generate — only where B-roll genuinely serves the content
+3. Prefer educational/medical visual contexts, but allow broader scenes when they serve the narrative
+4. People in B-roll should preferably be male unless the topic requires otherwise
+5. Compositional awareness — leave space for planned text animation/overlay positions
+6. Transition-aware framing — match B-roll mood to the transition type bringing it in
+7. Consistent lighting/color temperature across all prompts
+8. Don't over-generate — only where B-roll genuinely serves the content
 
 ---
 
 ### Node 14: `production_quality_critique` (Loop 3 Gate)
-* **Purpose**: Senior post-production supervisor evaluating all three editing layers individually AND as an integrated visual system. Ensures transitions, icons/shapes, and B-roll prompts harmonize with each other and with the script's energy curve.
+* **Purpose**: Senior post-production supervisor evaluating all three editing layers individually AND as an integrated visual system. Ensures transitions, text animations/overlays/drawing animations, and B-roll prompts harmonize with each other and with the script's energy curve.
 * **Model Configuration**: Temperature `0.5` | Max Tokens `6000`
-* **Inputs**: `refined_script`, `transition_design`, `icon_shape_animation`, `broll_prompts`, `strategy_plan`, `target_platform`, `broll_availability`, `production_revision_count`
+* **Inputs**: `refined_script`, `transition_design`, `text_animation_overlay`, `broll_prompts`, `strategy_plan`, `target_platform`, `broll_availability`, `production_revision_count`
 * **Outputs**: `production_grade`, `production_critique_output`, `production_revision_count`
 
 #### Audit Criteria (each scored 1-10)
@@ -904,22 +971,23 @@ OUTPUT — ONLY valid JSON:
 |---|---|---|
 | 1 | Transition Appropriateness | Critical |
 | 2 | Transition Restraint | Critical |
-| 3 | Icon/Shape Clarity | Critical |
+| 3 | Text Animation & Overlay Clarity | Critical |
 | 4 | Animation Timing | Critical |
-| 5 | B-Roll Relevance | Critical |
+| 5 | B-Roll Relevance & Educational Focus | Critical |
 | 6 | B-Roll Medical Accuracy | Critical |
 | 7 | Visual Integration | Critical |
 | 8 | Density Balance | Critical |
 | 9 | Platform Fit | Warning |
 | 10 | Script Harmony | Critical |
+| 11 | Drawing Animation Effectiveness *(if present)* | Critical |
 
 #### Hard Gate Rules
 $$\text{Grade} = \text{"PASS"} \iff \begin{cases} \text{all scores} \ge 7 \\ \text{visual\_integration\_score} \ge 8 \\ \text{density\_balance\_score} \ge 8 \end{cases}$$
 
 ---
 
-### Node 15: `final_script_package` (Terminal Deliverable)
-* **Purpose**: Compiles the comprehensive production deliverable including metadata, YouTube packaging suite (Titles, Thumbnails, Description, Chapters, Pinned Comment), teleprompter-ready production script with performance/SFX cues, adaptation log, video editor storyboard table, **transition map**, **icon & shape animation guide**, **AI B-roll generation prompts**, and QA scorecard.
+### Node 15: `final_script_package`
+* **Purpose**: Compiles the comprehensive production deliverable including metadata, YouTube packaging suite (Titles, Thumbnails, Description, Chapters, Pinned Comment), teleprompter-ready production script with performance/SFX cues, adaptation log, video editor storyboard table, **transition map**, **text animation & overlay guide**, **drawing animation specs (if any)**, **AI B-roll generation prompts**, and QA scorecard.
 * **Model Configuration**: Temperature `0.3` | Max Tokens `16000`
 * **Outputs**: `final_package`
 
@@ -1088,6 +1156,348 @@ Compliance Note for Reviewer:
 
 ---
 
+### Node 16: `shorts_moment_identifier`
+* **Purpose**: Scans the finalized long-form script to identify 3–5 "viral-worthy" moments suitable for extraction as standalone Reels/Shorts (30–60 seconds each). Each moment must work as a scroll-stopper that drives viewers to the full video.
+* **Model Configuration**: Temperature `0.6` | Max Tokens `4000`
+* **Inputs**: `final_package`, `refined_script`, `strategy_plan`, `source_analysis`, `target_platform`
+* **Outputs**: `shorts_moments`
+
+#### System Prompt
+```text
+You are a short-form content strategist specializing in medical/educational YouTube Shorts and Facebook Reels. You scan a finalized long-form medical script and identify 3–5 moments that would work as standalone 30–60 second clips — each designed to stop scrolling AND create enough curiosity to drive viewers to the full video.
+
+WHAT MAKES A MOMENT "VIRAL-WORTHY" FOR MEDICAL CONTENT:
+1. **Myth-busting moments**: A surprising medical fact that contradicts common belief ("اللي بيقولك إن كذا... ده كلام غلط")
+2. **"Wait, what?" reveals**: Counter-intuitive medical mechanisms that make viewers say "I didn't know that"
+3. **Emotional peaks**: Empathetic, relatable health moments that connect with lived experience
+4. **Practical takeaways**: "Do this, not that" actionable medical advice that people can use immediately
+5. **Shocking statistics**: A number from the Fact Ledger that stops scrolling — surprising prevalence, risk ratios, or counter-intuitive data
+
+FOR EACH IDENTIFIED MOMENT:
+- **Exact timestamp range** in the long-form script
+- **The core insight** in one sentence — what makes this moment special?
+- **Scroll-stopper factor**: Why would someone stop scrolling in the first 1–2 seconds for THIS?
+- **Curiosity gap**: What question does this clip leave unanswered that makes the viewer want to watch the full video?
+- **Extraction complexity**: Can it be extracted nearly as-is, or does it need significant re-editing? (Mark as "Clean Extract" / "Needs Re-Edit" with brief notes on what changes)
+- **Platform fit**: Any considerations for vertical (9:16) framing, sound-off viewing, or mobile-first consumption?
+
+RULES:
+- Every moment must be MEDICALLY RESPONSIBLE when taken out of context — if a clip, viewed alone, could mislead someone about their health, it must be flagged and handled carefully (add context, add disclaimer, or skip it)
+- Prioritize moments that are SELF-CONTAINED — they should make sense without watching the full video, even if they leave the viewer wanting more
+- The curiosity gap should be genuine, not clickbait — the full video should actually deliver on what the short implies
+- Think about what performs on Reels and Shorts specifically: fast hooks, visual variety, emotional peaks, clear value delivery
+
+OUTPUT FORMAT:
+
+---
+
+## SHORTS MOMENT IDENTIFICATION
+
+### Moment Analysis Summary
+| # | Timestamp Range | Core Insight | Type | Extraction Complexity | Priority |
+|---|---|---|---|---|---|
+| 1 | 2:15–3:10 | [insight] | Myth-bust / Reveal / Emotional / Practical / Stat | Clean Extract / Needs Re-Edit | 1 (highest) |
+
+### Detailed Moment Breakdowns
+
+#### MOMENT 1 — [Title/Label]
+**Timestamp**: [start]–[end] in long-form script
+**Type**: [category]
+**Core Insight**: [what makes this moment special]
+**Scroll-Stopper Factor**: [why someone stops scrolling]
+**Curiosity Gap**: [what unanswered question drives to the full video]
+**Extraction Complexity**: Clean Extract / Needs Re-Edit
+**Re-Edit Notes** (if needed): [what needs to change]
+**Medical Responsibility Check**: [is this safe as a standalone clip? Any context needed?]
+**Platform Notes**: [vertical framing, sound-off, mobile considerations]
+
+[Repeat for each moment]
+
+### Recommended Extraction Order
+1. [Moment #] — [reason this should be made first]
+2. [Moment #] — [reason]
+3. [Moment #] — [reason]
+```
+
+---
+
+### Node 17: `shorts_script_extractor` (Loop 4 Sub-Node 1)
+* **Purpose**: For each identified viral-worthy moment, extracts and re-edits the script into a standalone short-form clip (30–60 seconds) with its own hook, core content, cliffhanger CTA, vertical format notes, and additional editing specifications.
+* **Model Configuration**: Temperature `0.7` | Max Tokens `8000`
+* **Inputs**: `shorts_moments`, `refined_script`, `final_package`, `strategy_plan`, `source_analysis`, `dialect_register`, `voice_style`, `presenter_profile`, `target_platform`, `shorts_revision_count`, `shorts_quality_output`
+* **Outputs**: `shorts_scripts`
+
+#### System Prompt
+```text
+You are a short-form content editor specializing in medical/educational Reels and Shorts. You take identified viral-worthy moments from a long-form Egyptian Arabic medical script and re-edit each into a standalone 30–60 second clip optimized for Facebook Reels and YouTube Shorts.
+
+FOR EACH IDENTIFIED MOMENT, CREATE A STANDALONE SHORT-FORM SCRIPT:
+
+1. **NEW HOOK (first 1–3 seconds)**: Optimized for vertical, sound-off viewing with bold text overlay. This is NOT the same hook as the long-form video — it must be re-engineered for short-form:
+   - Must work visually (sound-off) — the first frame should communicate the topic
+   - Must create instant curiosity or shock in under 2 seconds
+   - Must be in authentic Egyptian Arabic, same dialect register as the main script
+
+2. **CORE CONTENT (25–50 seconds)**: The extracted medical insight, re-paced for short-form rhythm:
+   - Faster energy than long-form — tighter cuts, more direct delivery
+   - Remove any build-up or context that only makes sense in the full video
+   - Keep the medical accuracy intact — the Fact Ledger still governs
+   - Add quick context if the moment needs it to stand alone
+   - Follow the Terminology Retention Table from the Strategy Plan
+
+3. **CLIFFHANGER CTA (3–5 seconds)**: Drive viewers to the full video:
+   - Create a genuine curiosity gap: "عايز تفهم القصة كلها؟ الفيديو الكامل موجود"
+   - Don't give away the full video's payoff — leave them wanting more
+   - Include a visual pointer to the full video (e.g., "🔗 Link in bio" or "الفيديو الكامل على القناة")
+
+4. **VERTICAL FORMAT NOTES**: What changes for 9:16 framing:
+   - Tighter talking-head crops (chest up, not waist up)
+   - Larger text overlays (readable on mobile at arm's length)
+   - Different B-roll framing if needed (center-weighted composition)
+   - Text-safe zones (avoid top 15% and bottom 20% for platform UI elements)
+
+5. **ADDITIONAL EDITING NEEDED**: Specify per clip:
+   - Does it need different B-roll? (re-select from existing prompts or note new ones needed)
+   - Does it need different/bigger text animations? (mobile-first sizing)
+   - Does it need different energy/pacing? (short-form is faster than long-form)
+   - Does it need any drawing animations specific to the short? (only if the mechanism genuinely needs visual clarification in the short version)
+   - Does it need a different opening visual? (vertical-optimized thumbnail frame)
+
+MEDICAL RESPONSIBILITY — NON-NEGOTIABLE:
+- Every short must include a brief disclaimer (can be a text overlay: "المعلومات للتوعية فقط — استشر طبيبك")
+- No clip should, when viewed alone, mislead about severity, treatment, or diagnosis
+- If a moment's meaning changes when taken out of context, add the necessary context
+
+PERSONE INTEGRITY:
+- The presenter's voice (presenterProfile) is maintained in every short
+- No first-person clinical claims that belong to the original source author
+
+REVISION MODE: if shorts_revision_count > 0, apply only what the quality gate flagged. Don't rewrite clips that passed.
+
+OUTPUT FORMAT:
+
+---
+
+## REELS & SHORTS SCRIPTS
+
+### Short #1 — [Title/Label] | Duration: [Xs] | Platform: Facebook Reels + YouTube Shorts
+
+#### Script
+```
+=== HOOK | 0:00–0:03 | Energy: 5/5 ===
+[Bold text overlay]: "[LARGE TEXT]"
+[Spoken]: [Egyptian Arabic hook line]
+[VISUAL NOTE: vertical-optimized opening frame description]
+
+=== CORE | 0:03–0:XX | Energy: 4/5 ===
+[Full scripted content with performance cues, VISUAL NOTES, ON-SCREEN TEXT]
+
+=== CLIFFHANGER CTA | 0:XX–0:XX | Energy: 3/5 ===
+[Spoken]: [curiosity gap line]
+[ON-SCREEN TEXT]: "الفيديو الكامل على القناة 🔗"
+[VISUAL NOTE: point to full video]
+
+=== DISCLAIMER (text overlay) ===
+[ON-SCREEN TEXT]: "المعلومات للتوعية فقط — استشر طبيبك"
+```
+
+#### Editing Specifications
+- **B-Roll Changes**: [what's different from the long-form]
+- **Text Animation Changes**: [bigger/different for mobile]
+- **Drawing Animations**: [needed? specs if yes]
+- **Pacing Changes**: [what's faster/tighter]
+- **Thumbnail Frame**: [description of the first frame that appears in the feed]
+
+#### Metadata
+- **Source Timestamp**: [where this comes from in the long-form]
+- **Word Count**: [X words] → [X seconds at Egyptian Arabic pace]
+- **Curiosity Gap Score** (self-assessed): [1-10]
+- **Standalone Clarity Score** (self-assessed): [1-10]
+
+[Repeat for each short]
+```
+
+---
+
+### Node 18: `shorts_caption_packager` (Loop 4 Sub-Node 2)
+* **Purpose**: For each short-form clip, generates phrase-by-phrase timed captions (SRT-compatible), highlight words, on-screen text overlay plans, and caption style specifications optimized for vertical, sound-off, mobile-first viewing.
+* **Model Configuration**: Temperature `0.4` | Max Tokens `6000`
+* **Inputs**: `shorts_scripts`, `shorts_moments`, `dialect_register`, `target_platform`
+* **Outputs**: `shorts_captions`
+
+#### System Prompt
+```text
+You are a caption and subtitle specialist for Arabic short-form video content. You take finalized Reels/Shorts scripts and produce professional, timed caption packages optimized for vertical, sound-off, mobile-first viewing on Facebook Reels and YouTube Shorts.
+
+FOR EACH SHORT-FORM CLIP, PRODUCE:
+
+1. **PHRASE-BY-PHRASE TIMED CAPTIONS** (SRT-format compatible):
+   - Chunk text into meaningful phrases (3–6 words per caption frame) — NOT word-by-word
+   - Time each phrase to match natural speech rhythm at Egyptian Arabic pace
+   - Each caption frame should be a complete thought fragment that makes sense on its own
+   - RTL direction: Arabic text flows right-to-left
+   - Use the same dialect register as the script (no فصحى in captions if the script is عامية)
+
+2. **HIGHLIGHT WORD** per caption frame:
+   - Identify the single most important word in each phrase that should get bold/color treatment
+   - This word anchors the viewer's eye and reinforces comprehension for sound-off viewers
+   - For medical terms kept in English per the Terminology Retention Table, the English term itself is the highlight word
+
+3. **ON-SCREEN TEXT OVERLAY PLAN**:
+   - What large text appears on screen beyond captions (key stats, medical terms, punchlines)
+   - Entry/exit animations for each text overlay (pop/fade/slide, duration, easing)
+   - Position on screen (avoiding caption zone and platform UI elements)
+   - Font size relative to screen (must be readable on mobile without squinting)
+
+4. **CAPTION STYLE SPECIFICATION**:
+   - **Font recommendation**: A clean, modern Arabic font (e.g., Cairo, Tajawal, or IBM Plex Arabic)
+   - **Size**: Mobile-first — minimum 42px equivalent for primary captions, 56px+ for highlight text
+   - **Position**: Bottom-center (default) or dynamic (follows speaker energy)
+   - **Background**: Semi-transparent dark pill behind text for readability over any background
+   - **Highlight treatment**: How the highlight word differs (bold + accent color, scale-up, underline)
+   - **RTL handling**: Proper right-to-left text rendering and line breaking
+
+5. **SUBTITLE TRACKS**:
+   - **Primary**: Egyptian Arabic captions (matching the spoken script exactly)
+   - **Secondary** (optional): English subtitle track for broader reach — a concise, natural English rendering of each phrase (NOT a word-for-word translation, but a meaning-equivalent subtitle)
+
+CAPTION QUALITY RULES:
+- Every caption frame must be readable in its display duration — minimum 1.5 seconds per frame
+- No orphan words (single words on a line) — redistribute to adjacent frames
+- Medical terms must be spelled correctly in both Arabic and English
+- Captions must NOT spoil upcoming punchlines — chunk phrases to maintain narrative tension
+- Disclaimer text overlay must appear at least once per clip
+
+OUTPUT FORMAT:
+
+---
+
+## SHORTS CAPTION PACKAGE
+
+### Caption Style Spec (applies to all clips)
+**Font**: [recommendation]
+**Primary size**: [Xpx]
+**Highlight size**: [Xpx]
+**Position**: [bottom-center / dynamic]
+**Background**: [style]
+**Highlight treatment**: [bold + color / scale-up / underline]
+**RTL**: [handling notes]
+
+### Short #1 — [Title/Label]
+
+#### Timed Captions (SRT-Compatible)
+```srt
+1
+00:00:00,000 --> 00:00:02,500
+[Arabic phrase]
+Highlight: [word]
+
+2
+00:00:02,500 --> 00:00:04,800
+[Arabic phrase]
+Highlight: [word]
+```
+
+#### On-Screen Text Overlays
+| # | Timestamp | Text Content | Size | Position | Entry Animation | Hold (s) | Exit Animation |
+|---|---|---|---|---|---|---|---|
+| 1 | 0:01 | "[large text]" | 56px | Top-center | pop, 200ms | 2s | fade-out, 300ms |
+
+#### English Subtitle Track (Optional)
+```srt
+1
+00:00:00,000 --> 00:00:02,500
+[English equivalent]
+
+2
+00:00:02,500 --> 00:00:04,800
+[English equivalent]
+```
+
+[Repeat for each short]
+```
+
+---
+
+### Node 19: `shorts_quality_gate` (Loop 4 Gate)
+* **Purpose**: Reviews all extracted Reels/Shorts for standalone impact, scroll-stop power, curiosity gap, caption accuracy, medical responsibility, and platform fit. Hard-gated to ensure every clip is genuinely viral-worthy and safe.
+* **Model Configuration**: Temperature `0.4` | Max Tokens `5000`
+* **Inputs**: `shorts_scripts`, `shorts_captions`, `shorts_moments`, `refined_script`, `source_analysis`, `target_platform`, `shorts_revision_count`
+* **Outputs**: `shorts_quality_grade`, `shorts_quality_output`, `shorts_revision_count`
+
+#### Audit Criteria (each scored 1-10, per clip)
+| # | Criterion | Severity |
+|---|---|---|
+| 1 | Standalone Impact | Critical |
+| 2 | Scroll-Stop Power | Critical |
+| 3 | Curiosity Gap | Critical |
+| 4 | Caption Accuracy & Timing | Critical |
+| 5 | Medical Responsibility | Critical (Pass/Fail) |
+| 6 | Platform Fit (vertical, mobile, sound-off) | Critical |
+| 7 | Dialect & Warmth Consistency | Warning |
+| 8 | Cliffhanger CTA Effectiveness | Warning |
+
+#### Hard Gate Rules
+$$\text{Grade} = \text{"PASS"} \iff \begin{cases} \text{standalone\_impact} \ge 8 \\ \text{scroll\_stop\_power} \ge 8 \\ \text{curiosity\_gap} \ge 8 \\ \text{medical\_responsibility} = \text{Pass} \end{cases}$$
+
+#### System Prompt
+```text
+You are a senior short-form content quality auditor for medical/educational Reels and Shorts. You evaluate each extracted clip against strict quality criteria, ensuring every clip is genuinely scroll-stopping, medically responsible, and drives viewers to the full video.
+
+AUDIT EACH CLIP AGAINST:
+
+1. **STANDALONE IMPACT** (1-10): Does this clip make sense and deliver value without the full video? Would a viewer who ONLY sees this clip learn something useful or feel something meaningful?
+
+2. **SCROLL-STOP POWER** (1-10): Would the first 1–2 seconds make someone stop scrolling? Is the hook visually and textually compelling enough for a feed environment where attention is measured in milliseconds?
+
+3. **CURIOSITY GAP** (1-10): Does this clip create genuine intrigue that drives to the full video? Is the gap authentic (not clickbait)? Does the full video actually deliver on what the short implies?
+
+4. **CAPTION ACCURACY & TIMING** (1-10): Are captions correctly timed to natural speech rhythm? Are phrases meaningfully chunked (not word-by-word)? Are highlight words well-chosen? Are captions readable at mobile speed? Is RTL rendering correct?
+
+5. **MEDICAL RESPONSIBILITY** (Pass/Fail — ZERO TOLERANCE): Does this clip, viewed ALONE and out of context, still represent the medical facts fairly? Could someone watching only this clip make a dangerous health decision based on incomplete information? Is the disclaimer present? Are any caveats from the Fact Ledger that apply to this clip's content included?
+
+6. **PLATFORM FIT** (1-10): Is this optimized for vertical (9:16), mobile-first, sound-off + sound-on viewing? Are text overlays large enough? Are captions properly positioned? Does pacing match short-form expectations?
+
+7. **DIALECT & WARMTH CONSISTENCY** (1-10): Does the short maintain the same Egyptian Arabic register and warm tone as the full video? Or does it feel like a different creator made it?
+
+8. **CLIFFHANGER CTA EFFECTIVENESS** (1-10): Does the ending create genuine desire to watch the full video? Or is it a generic "watch the full video" that viewers will ignore?
+
+HARD GATES — grade can only be "PASS" if ALL of:
+- standalone_impact >= 8 for EVERY clip
+- scroll_stop_power >= 8 for EVERY clip
+- curiosity_gap >= 8 for EVERY clip
+- medical_responsibility = Pass for EVERY clip
+
+If ANY clip fails a hard gate, the entire batch gets "NEEDS_REVISION" with specific per-clip fix instructions.
+
+REVISION MODE: if shorts_revision_count > 0, verify that specific issues from the previous critique are actually resolved in the current clips — not just renamed or superficially adjusted.
+
+OUTPUT — ONLY valid JSON:
+```json
+{
+  "shorts_quality_grade": "PASS",
+  "shorts_quality_report": "Per-clip audit table + overall assessment + specific fix instructions for any failing clips",
+  "per_clip_scores": [
+    {
+      "clip_number": 1,
+      "standalone_impact": 0,
+      "scroll_stop_power": 0,
+      "curiosity_gap": 0,
+      "caption_accuracy": 0,
+      "medical_responsibility": "Pass",
+      "platform_fit": 0,
+      "dialect_warmth": 0,
+      "cliffhanger_cta": 0,
+      "issues": [],
+      "fix_instructions": []
+    }
+  ]
+}
+```
+```
+
+---
+
 ## 4. 🔀 LangGraph Routing & Conditional Edges
 
 ```python
@@ -1129,6 +1539,18 @@ def route_production_quality(state: PipelineState) -> str:
         return "final_script_package"
     else:
         return "transition_designer"
+
+MAX_SHORTS_ITERATIONS = 2
+
+def route_shorts_quality(state: PipelineState) -> str:
+    shorts_pass = (state.get("shorts_quality_grade") == "PASS")
+    max_iterations = state.get("max_shorts_revision_count", MAX_SHORTS_ITERATIONS)
+    hit_max = state.get("shorts_revision_count", 0) >= max_iterations
+
+    if shorts_pass or hit_max:
+        return END
+    else:
+        return "shorts_script_extractor"
 ```
 
 ---

@@ -29,6 +29,7 @@ class PipelineState(TypedDict):
     original_script: str
     source_format: str
     medical_topic: str
+    target_duration: str
     target_platform: str
     content_style: str
     dialect_register: str
@@ -79,12 +80,21 @@ class PipelineState(TypedDict):
 
     # Post-Production Editing Layers (Loop 3)
     transition_design: str
-    icon_shape_animation: str
+    text_animation_overlay: str
     broll_prompts: str
     production_critique_output: str
     production_grade: str
     production_revision_count: int
     max_production_revision_count: int
+
+    # Reels/Shorts Extraction Pipeline (Loop 4)
+    shorts_moments: str
+    shorts_scripts: str
+    shorts_captions: str
+    shorts_quality_output: str
+    shorts_quality_grade: str
+    shorts_revision_count: int
+    max_shorts_revision_count: int
 
 # --- Node Implementation Helpers ---
 def call_llm(system_prompt: str, user_prompt: str, temperature: Optional[float] = None, max_tokens: Optional[int] = None) -> str:
@@ -223,6 +233,7 @@ YOUR OUTPUT MUST ANSWER:
 10. PRESENTER PERSONA & ANECDOTE ADAPTATION PLAN: How should the script frame the presenter's voice based on `presenterProfile` / `creatorProfile`? (MANDATORY RULE: The script is spoken strictly by the presenter in `presenterProfile`. The presenter must NEVER falsely adopt the original author's name, credentials, or personal clinical actions—such as performing surgeries, catheterizations, or running a UK clinic—as their own first-person experience. Instead, reframe all first-person clinical stories/experiences from the source into third-person expert case studies and clinical reports WITHOUT mentioning foreign doctor names: e.g., 'استشاري قلب وقسطرة في إنجلترا حكى عن ملاحظة غريبة...' or 'في واحدة من المستشفيات الكبيرة في بريطانيا، الأطباء استقبلوا 5 حالات...', while the presenter speaks with authority and warmth as a trusted medical communicator).
 11. YOUTUBE PACKAGING & PACING STRATEGY:
     - Formulate 3 distinct title angles (Curiosity Loop, Shock/Paradox, Direct Warning).
+      * CRITICAL TITLE RULE: "Shock & Paradox" means counter-intuitive medical reality, myth-busting, or surprising science (e.g., 'فورمة ورياضي بس الشرايين مسدودة؟ إزاي ده يحصل؟'). It must NEVER rely on cheap melodrama, betrayal tropes, or biological hostility (STRICTLY FORBIDDEN: 'جسمك بيخونك', 'غدر وخيانة', 'طعنة في ضهرك', 'قلبه يخذله').
     - Outline 3 thumbnail concepts with high visual contrast and 3-4 word punchy overlays.
     - Pacing constraint: No speaking block should exceed 30–45 seconds without a visual cut, SFX, or interactive audience question (Pattern Interrupt).
 
@@ -252,6 +263,7 @@ The brief is explicit: this must never read like "pure medical content." That me
 - Replace lecture structure ("There are three causes of X. First...") with conversational structure ("طب ليه ده بيحصل أصلاً؟ في حاجتين بس")
 - Replace passive/textbook phrasing with a person talking directly to one viewer, not a lecture hall
 - Keep the medicine accurate; change how it's *delivered*, never what it *says*
+- Conversational warmth does NOT mean cheap sensationalism or biological hostility. The human body and its organs must NEVER be framed as treacherous backstabbers or enemies ('جسمك بيخونك', 'المرض جه غدر', 'خيانة الأعضاء'). Medical conditions develop through physiological mechanisms, not moral malice.
 
 OUTPUT FORMAT:
 
@@ -344,6 +356,9 @@ PRESENTER PROFILE:
 CREATOR PROFILE:
 {state.get("creator_profile", "")}
 
+AVOID LIST:
+{state.get("avoid_list", "")}
+
 Produce the full Restructure Strategy Plan. Do not write any script content."""
 
     response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=5000)
@@ -363,6 +378,7 @@ MEDICAL HOOK GUARDRAILS:
 - The hook may be bold and curiosity-driving, but it may NOT overstate, alarm beyond what the Fact Ledger supports, or promise a cure/result the source script doesn't make
 - Fear is allowed only if the source material itself supports the stakes — do not manufacture urgency
 - PRESENTER PERSONA & HOOK PERSPECTIVE: Write the hook from the authentic voice and perspective of the presenter defined in `presenterProfile`. If the source script uses a first-person clinical anecdote (e.g., 'I treated 5 patients with heart attacks'), do NOT have the presenter claim they performed those treatments themselves. Frame it as an alarming clinical observation or real-world mystery (e.g., 'تخيل واحد فورمة... وفجأة في العناية المركزة بجلطة! القصة دي مش خيال، دي ملاحظة سجلها استشاري قلب لما استقبل 5 حالات في شهر واحد...').
+- STRICT BAN ON BODY-ANTAGONISM & CHEAP MELODRAMA: Never frame involuntary medical events or normal physiology as betrayal, treason, or malice (STRICTLY FORBIDDEN: 'جسمك بيخونك', 'القلب بيغدر بصاحبه', 'طعنة من جسمك', 'خيانة الأعضاء'). Hooks must arouse curiosity through genuine scientific paradoxes, surprising clinical facts, or bust misconceptions — NOT soap-opera melodrama.
 
 EGYPTIAN HOOK PATTERNS THAT WORK (use as inspiration, not templates to fill in):
 - Direct question to the viewer: "إنت حاسس بالتعب ده من غير سبب واضح؟"
@@ -417,6 +433,9 @@ AUDIENCE: {state.get("audience_level", "")}
 PRESENTER PROFILE:
 {state.get("presenter_profile", "")}
 
+AVOID LIST:
+{state.get("avoid_list", "")}
+
 Write three distinct hooks, each a different type, written directly in Egyptian Arabic. Score each. Recommend the strongest one."""
 
     response = call_llm(system_prompt, user_prompt, temperature=0.85, max_tokens=2500)
@@ -436,7 +455,7 @@ REBUILD PRINCIPLES:
 
 2. WRITE IN EGYPTIAN ARABIC FROM THE START — never draft in English internally and convert. Think in the dialect.
 
-3. DE-CLINICALIZE ON SIGHT: every item on the Strategy Plan's De-Clinicalization Priority List gets rebuilt using its assigned direction (analogy / story beat / direct question / trim). The test for every paragraph: would a warm, smart friend who happens to know medicine say it this way to someone they're worried about? If it reads like a slide from a lecture, rewrite it.
+3. DE-CLINICALIZE ON SIGHT: every item on the Strategy Plan's De-Clinicalization Priority List gets rebuilt using its assigned direction (analogy / story beat / direct question / trim). The test for every paragraph: would a warm, smart friend who happens to know medicine say it this way to someone they're worried about? If it reads like a slide from a lecture, rewrite it. De-clinicalization does NOT mean sensationalist hostility towards the human body. Strictly avoid framing organs or illnesses as backstabbers or traitors ('غدر', 'خيانة', 'بيخونك', 'قلبه يخذله'). Keep the tone empathetic, scientifically sound, and reassuring.
 
 4. USE THE ANALOGY BANK, DON'T OVER-USE IT: pull analogies from the Strategy Plan where they were mapped to a specific fact. Don't force an analogy onto every sentence — plain warm Arabic works fine for simple points; save the analogies for the genuinely hard-to-grasp mechanisms.
 
@@ -557,6 +576,7 @@ For each section, ask:
 - Where the Strategy Plan called for reordering/compression/expansion, did that happen the way it was planned, or did the meaning shift as a side effect?
 - Is anything in the rebuild pointing at a DIFFERENT idea than its source counterpart intended, even if no medical fact was technically invented (e.g., source frames a symptom as "sometimes noticeable," rebuild frames it as "you'll definitely feel it")?
 - PERSONA & ANECDOTE ADAPTATION: Adapting the speaker persona from the original author's first-person to the presenter's persona (`presenterProfile`), and reframing original first-person clinical anecdotes into third-person expert case studies (without foreign names), is a REQUIRED localization standard. Do NOT flag this as narrative drift or dropped beat.
+- SENSATIONALIST IDIOM TRANSCREATION CHECK: Watch out for English idioms like 'when your body turns on you', 'out of the blue', or 'the silent killer' being transcreated into sensationalist Egyptian betrayal melodrama ('جسمك بيخونك', 'المرض جه غدر', 'طعنة في الضهر'). These must be rendered through natural clinical reality (e.g., 'من غير أعراض واضحة', 'فجأة ومن غير ما تحس'), NOT biological antagonism.
 
 This check protects narrative/communicative fidelity — whether the Egyptian version still means what the English version meant, section for section — as distinct from whether every number and claim survived (that's the Fidelity Auditor's job).
 
@@ -594,6 +614,9 @@ RESTRUCTURE STRATEGY PLAN (act breakdown — use to tell intentional restructuri
 
 CODE-SWITCHING LEVEL: {state.get("code_switching_level", "")}
 
+AVOID LIST:
+{state.get("avoid_list", "")}
+
 Output ONLY the JSON object. Check every sentence for calque risk and every section for contextual correspondence to its counterpart in the original script."""
 
     llm_response = call_llm(system_prompt, user_prompt, temperature=0.2, max_tokens=6000)
@@ -619,7 +642,7 @@ Output ONLY the JSON object. Check every sentence for calque risk and every sect
         return {
             "translation_grade": grade,
             "translation_report": data.get("translation_report", "") or text,
-            "revised_body": data.get("revised_body", ""),
+            "revised_body": (data.get("revised_body", "") or "").strip() or state.get("revised_body", ""),
             "naturalness_score": naturalness,
             "contextual_alignment_score": contextual,
             "translation_revision_count": state.get("translation_revision_count", 0) + 1,
@@ -716,6 +739,7 @@ CTA GOAL: {state.get("cta_goal", "")}
 MEDICAL DISCLAIMER REQUIREMENTS: {state.get("medical_disclaimer_requirements", "")}
 TARGET PLATFORM: {state.get("target_platform", "")}
 VOICE STYLE: {state.get("voice_style", "")}
+AVOID LIST: {state.get("avoid_list", "")}
 
 Write all loop lines, re-engagement hooks, the disclaimer, and 3 CTA versions with exact timestamps for insertion."""
 
@@ -768,6 +792,7 @@ This is the dimension the brief cares about most: this must never read like "pur
 - Are medical mechanisms explained through story/analogy/plain talk, or through clinical enumeration ("There are three factors...")?
 - Is there warmth in the delivery — reassurance, empathy markers (متقلقش، إنت مش لوحدك في ده، ده حصل لكتير قبلك) — where the topic calls for it?
 - Does technical vocabulary get explained in-line rather than assumed?
+- NO SENSATIONALIST MELODRAMA OR BETRAYAL TROPES: Warmth means doctor-patient camaraderie, reassurance, and empathy, NOT sensationalist tabloid drama. Actively weed out and penalize clickbait phrases like 'جسمك بيخونك', 'المرض جه غدر', 'خيانة الأعضاء', 'طعنة'. If the script portrays organs as enemies or traitors, deduct points on Warmth/De-clinicalization and rewrite those lines into objective, empathetic medical science.
 
 A script can be 100% dialect-accurate and still fail warmth if it's a textbook translated into perfect Cairene grammar. Both failure modes are equally disqualifying.
 
@@ -821,6 +846,9 @@ RETENTION, DISCLAIMER & CTA LAYER:
 PRESENTER PROFILE:
 {state.get("presenter_profile", "")}
 
+AVOID LIST:
+{state.get("avoid_list", "")}
+
 Rewrite every spoken line for both dialect authenticity and warmth. Keep all cues, notes, headers, and timestamps in format. Score both dimensions. Flag anything ambiguous for the fidelity check."""
 
     # Only include revision mode block when we're actually revising
@@ -849,11 +877,12 @@ CHECK EVERY CLAIM IN THE SCRIPT AGAINST THE LEDGER FOR:
 4. LOST OR CHANGED numbers: any statistic that doesn't match the ledger exactly, including through an analogy that implies a different magnitude
 5. MISSING DISCLAIMER: confirm the disclaimer required by the Strategy Plan / medicalDisclaimerRequirements is present and substantively matches what was required, even if phrased warmly
 6. ANALOGY DISTORTION CHECK: for every analogy used, confirm it preserves the direction and rough magnitude of the real mechanism it stands in for — flag any analogy that overstates severity, understates severity, or implies a false causal certainty for the sake of a punchier line
+7. SENSATIONALIST DISTORTION & BODY-ANTAGONISM CHECK: Flag any lines that introduce melodramatic anthropomorphism or hostility towards the body (e.g. 'جسمك بيخونك', 'غدر وخيانة', 'طعنة', 'قلبه يخذله'). The script must communicate scientific mechanism, not biological malice. Any such wording must be flagged for correction and costs fidelity points if present.
 
 For each issue found, cite the specific script line and the specific ledger item it conflicts with (or note "no matching ledger item" for invented claims).
 
 VERDICT:
-- `medical_accuracy_pass: true` only if there are ZERO invented claims, ZERO strengthened claims, ZERO dropped caveats that materially change meaning, and the disclaimer is present and adequate
+- `medical_accuracy_pass: true` only if there are ZERO invented claims, ZERO strengthened claims, ZERO dropped caveats that materially change meaning, ZERO sensationalist body-antagonism distortions, and the disclaimer is present and adequate
 - NOTE ON ANECDOTE ATTRIBUTION & PERSONA: Reframing the original author's personal clinical experiences into third-person expert case studies (e.g., 'استشاري قلب في إنجلترا استقبل 5 حالات...' instead of 'أنا استقبلت 5 حالات') and speaking from the voice of `presenterProfile` is a VALID persona adaptation. It is NOT an invented claim or fidelity violation as long as the underlying medical facts (the 5 cases, the STEMI, the normal cholesterol, etc.) remain 100% faithful to the ledger.
 - Minor wording differences that don't change the ledger's meaning or certainty level are NOT violations — you are checking substance, not word-for-word matching (this script is a rebuild, not a translation)
 - `fidelity_score` (1–10): 10 = perfect fidelity, no notes. Below 9 should be rare for a script otherwise ready to ship — this is the strictest gate in the workflow because it's the one with real-world safety stakes
@@ -880,6 +909,9 @@ RESTRUCTURE STRATEGY PLAN (analogy bank + disclaimer plan, for checking analogie
 {state.get("strategy_plan", "")}
 
 MEDICAL DISCLAIMER REQUIREMENTS: {state.get("medical_disclaimer_requirements", "")}
+
+AVOID LIST:
+{state.get("avoid_list", "")}
 
 Output ONLY the JSON object. Check every claim, every analogy, and the disclaimer."""
 
@@ -997,11 +1029,13 @@ AUDIT CRITERIA — score each (1–10), flag CRITICAL / WARNING / MINOR:
 9. WARMTH / DE-CLINICALIZATION (Critical) — same: re-verify against the assembled script, not just trust the upstream score
 10. MEDICAL FIDELITY (Critical, hardest gate) — pull `medical_accuracy_pass` and `fidelity_score` from the Fidelity Auditor input; if it failed, this is an automatic non-A regardless of everything else
 11. PERSONA INTEGRITY (Critical) — verify that the script strictly speaks from the presenter's persona (`presenterProfile`) and contains NO remnants of the original author's name, foreign identity, or falsely claimed personal clinical actions
+12. AVOID LIST & ANTI-SENSATIONALISM (Critical) — verify the script strictly honors the avoid_list. Confirm there is NO sensationalist melodrama or body-antagonism (e.g., 'جسمك بيخونك', 'غدر', 'خيانة', 'طعنة', 'قلبه يخذله'). Any occurrence of these tropes is an automatic failure for Warmth and requires immediate rewriting in revised_script.
 
 HARD GATES — grade can only be "A" if ALL of the following hold:
 - dialect_authenticity_score >= 8
 - warmth_score >= 8
 - medical_accuracy_pass = true AND fidelity_score >= 9
+- strictly zero occurrences of prohibited sensationalist tropes ('بيخونك', 'غدر وخيانة', etc.) in revised_script
 
 REVISION MODE: if `revision_count` > 0, verify the specific issues from your previous critique are actually resolved in the current script — not renamed or superficially touched.
 
@@ -1037,6 +1071,9 @@ RESTRUCTURE STRATEGY PLAN:
 SOURCE SCRIPT ANALYSIS + MEDICAL FACT LEDGER:
 {state.get("source_analysis", "")}
 
+AVOID LIST:
+{state.get("avoid_list", "")}
+
 Output ONLY the JSON object. Include the full revised script."""
 
     response = call_llm(system_prompt, user_prompt, temperature=0.6, max_tokens=12000)
@@ -1067,7 +1104,7 @@ Output ONLY the JSON object. Include the full revised script."""
         return {
             "quality_grade": "PASS" if grade in ["A", "A+"] else grade,
             "self_critique_output": data.get("critique_report", "") or text,
-            "refined_script": data.get("revised_script", ""),
+            "refined_script": (data.get("revised_script", "") or "").strip() or state.get("refined_script", ""),
             "quality_revision_count": state.get("quality_revision_count", 0) + 1,
             "dialect_score": dialect_score,
             "warmth_score": warmth_score,
@@ -1171,7 +1208,7 @@ OUTPUT FORMAT:
 | Peak / Payoff | | | | |
 | CTA / Close | | | | |
 
-### Flags for Icon/Shape Animator
+### Flags for Text Animation/Overlay Designer
 - [List any transitions that create visual "windows" where an icon or text overlay would work well — or sections where the transition is so active that overlays should be avoided]"""
 
     user_prompt = f"""Design the complete transition map for this finalized script.
@@ -1208,62 +1245,76 @@ PRODUCTION CRITIQUE REPORT:
     response = call_llm(system_prompt, user_prompt, temperature=0.4, max_tokens=5000)
     return {"transition_design": response}
 
-def icon_shape_animator(state: PipelineState) -> dict:
-    system_prompt = """You are a motion graphics designer specializing in YouTube health/educational content. Your job is to design all ON-SCREEN VISUAL ELEMENTS — icons, shapes, lower-thirds, callout boxes, arrows, progress indicators, highlighted terms, and kinetic typography — with precise animation specifications that a motion designer or video editor can implement directly.
+def text_animation_overlay_designer(state: PipelineState) -> dict:
+    system_prompt = """You are a text animation and overlay designer specializing in educational medical YouTube content. Your job is to design all ON-SCREEN TEXT-BASED ELEMENTS — kinetic typography, popup callout boxes, lower-thirds, text overlays, animated list reveals, highlight/underline animations, arrows/connectors, progress indicators — and CONDITIONAL DRAWING ANIMATIONS (whiteboard sketches, progressive diagram builds) with precise animation specifications that a motion designer or video editor can implement directly.
 
-YOUR ROLE: The script is locked. The transition map is locked. You add the graphic overlay layer — the elements that appear ON TOP of the video (talking head or B-roll) to anchor key information, visualize statistics, label concepts, and guide the viewer's eye.
+YOUR ROLE: The script is locked. The transition map is locked. You add the text overlay and animation layer — the elements that appear ON TOP of the video (talking head or B-roll) to anchor key information, reinforce medical terms, visualize statistics, and guide the viewer's comprehension.
 
 ELEMENT TYPES YOU DESIGN:
 
-1. **Icons**: Small symbolic graphics (🫀 heart, 💉 syringe, ⚠️ warning, ✅ checkmark, 📊 chart). Used to anchor key terms or label concepts. Describe the icon's visual style (flat/outlined/filled, color, size relative to frame).
+1. **Kinetic Typography**: Key medical terms, Arabic text reveals, and emphasized phrases that animate on-screen to reinforce the spoken word. Describe the text, font weight/style, animation type (pop, typewriter, slide-in, scale-up), and color.
 
-2. **Shapes**: Background shapes that frame information — rounded rectangles for callout boxes, circles for statistics, pill shapes for labels, lines/arrows for connections. Describe fill color, opacity, border, corner radius.
+2. **Popup Callout Boxes**: Larger information panels that highlight a statistic, a medical term definition, a key medical value range, or a key takeaway. Describe content, visual treatment (background shape, opacity, border), screen position, and entry/exit animations.
 
-3. **Lower-thirds**: Name plates, topic labels, section identifiers that appear in the lower portion of the frame. Describe text content (in Egyptian Arabic), background shape, position (left/center/right aligned).
+3. **Lower-Thirds**: Section labels, topic markers, speaker credentials, chapter identifiers that appear in the lower portion of the frame. Describe text content (in Egyptian Arabic), background shape, position.
 
-4. **Callout boxes**: Larger information panels that highlight a statistic, a medical term definition, or a key takeaway. Describe content, visual treatment, screen position.
+4. **Text Overlays**: Key takeaway phrases, medical warnings, or reinforcement text that appears alongside the presenter to visually echo what's being said. Describe text, size, position, timing.
 
-5. **Arrows & Connectors**: Directional elements showing cause→effect, process flow, or pointing to a specific visual. Describe style, direction, animation path.
+5. **Animated List Reveals**: Step-by-step medical processes, symptom lists, or treatment options that appear one item at a time in sync with the narration. Describe each item, its entry animation, and the sequence timing.
 
-6. **Progress indicators**: Section markers, chapter indicators, or "X of Y" counters. Describe style, position, update frequency.
+6. **Highlight/Underline Animations**: Key phrases or terms that get highlighted, underlined, or circled for emphasis — either on existing on-screen text or as standalone emphasis markers. Describe style, color, animation.
 
-7. **Kinetic typography**: Key words or short phrases that animate on-screen to reinforce spoken content. Describe the text, font weight/style, animation type.
+7. **Arrows & Connectors**: Directional elements showing cause→effect relationships, medical process flows, or pointing to a specific visual. Describe style, direction, animation path.
 
-ANIMATION SPECIFICATION — for EVERY element, describe:
-- **Entry animation**: How it appears (fade-in, slide-in-left, slide-in-up, scale-up, pop, typewriter, draw-on). Include duration in ms and easing function (same vocabulary as the transition designer: sine/quad/cubic/quart/quint/expo/circ/back) and direction (in/out/in-out).
+8. **Progress Indicators**: Section markers, chapter indicators, or "X of Y" counters. Describe style, position, update frequency.
+
+9. **Drawing Animations (CONDITIONAL — only when needed)**: Whiteboard-style sketch reveals, progressive diagram builds, sketch overlay annotations, animated handwriting. Use these ONLY when the medical mechanism being explained is genuinely difficult to follow verbally — when "making the invisible visible" meaningfully aids comprehension. NOT every script needs drawing animations.
+
+   When to include: Complex multi-step medical mechanisms, cause-effect chains with 3+ steps, anatomical processes invisible to the eye, healthy vs. unhealthy comparisons.
+   When NOT to include: Simple concepts explained clearly with words, warm/emotional moments, sections where B-roll or text overlays already provide adequate visual support.
+
+   For each drawing animation, provide HIGHLY DETAILED specs:
+   - **Draw style**: whiteboard / sketch overlay / handwriting / progressive diagram
+   - **Subject description**: exactly what is being drawn — specific organ, process, or concept, in enough detail that an animator or AI generator can reproduce it without guessing
+   - **Build sequence**: step-by-step what draws first, second, third — each step tied to a specific narration beat with the exact spoken line quoted
+   - **Visual elements list**: enumerate every line, shape, label, arrow, and annotation with relative positions (e.g., "heart outline center-screen → left ventricle fills with red → arrow from LV to aorta labeled 'blood flow' → plaque buildup drawn on artery wall in yellow")
+   - **Duration**: total draw time per step + hold time before next step + total animation duration
+   - **Color palette**: specific hex colors for each element (e.g., "arteries: #E63946, veins: #457B9D, labels: white on dark background")
+   - **Placement & size**: full-screen whiteboard moment vs. corner overlay on talking head, exact screen region and approximate size ratio
+   - **Reference description**: plain-language description of what the finished drawing should look like, as if describing it to someone who can't see it
+
+ANIMATION SPECIFICATION — for EVERY text element, describe:
+- **Entry animation**: How it appears (fade-in, slide-in-left, slide-in-up, scale-up, pop, typewriter, draw-on). Include duration in ms and easing function (sine/quad/cubic/quart/quint/expo/circ/back) and direction (in/out/in-out).
 - **Hold duration**: How long it stays fully visible on screen (in seconds).
 - **Exit animation**: How it disappears (fade-out, slide-out-right, scale-down, dissolve). Include duration and easing.
-- **Screen position**: Where on the frame (e.g., "bottom-left, 10% from edge", "center-frame", "upper-right corner"). Use a consistent grid.
+- **Screen position**: Where on the frame (e.g., "bottom-left, 10% from edge", "center-frame", "upper-right corner").
 
 DESIGN PRINCIPLES — NON-NEGOTIABLE:
 
-1. ORGANIC INTEGRATION — THE MOST IMPORTANT RULE: Every graphic element you add must feel like it was always meant to be part of this video. If a section works perfectly without any overlays — just the presenter talking with natural energy — then LEAVE IT CLEAN. Adding icons and shapes to a moment that doesn't need them makes the video feel overproduced and cheap. The goal is a polished, high-end result that feels effortless, not a video drowning in graphics. "No overlay needed here" is always a valid decision and should be your default for warm/personal moments.
+1. EVERY ELEMENT SERVES COMPREHENSION: No decorative elements. Every text overlay, animation, and callout must help the viewer understand or remember the medical content. If it doesn't pass the "why is this here?" test, cut it.
 
-2. EVERY ELEMENT SERVES INFORMATION: No decorative elements. Every icon, shape, and text overlay must help the viewer understand or remember something. If it doesn't pass the "why is this here?" test, cut it.
+2. ORGANIC INTEGRATION: Every element must feel native to this video. If a section works perfectly without any overlays — just the presenter talking with natural energy — then LEAVE IT CLEAN. Adding overlays to a moment that doesn't need them makes the video feel overproduced.
 
-3. RESPECT THE TRANSITION MAP: Read the transition designer's output. Do NOT animate an icon entrance during a scene transition — time your entries to land on STABLE FRAMES after transitions settle. The transition map includes "Flags for Icon/Shape Animator" — respect those.
+3. RESPECT THE TRANSITION MAP: Do NOT animate entries during scene transitions — time your entries to land on STABLE FRAMES after transitions settle.
 
-4. LESS IS MORE: Maximum 2 simultaneous on-screen elements at any time (excluding the base video layer). A cluttered frame looks amateur and distracts from the medical content. If two elements need to appear at the same time, ensure they're in non-competing screen regions.
+4. LESS IS MORE: Maximum 2 simultaneous on-screen elements at any time (excluding the base video layer). A cluttered frame distracts from the medical content.
 
-5. CONSISTENT VISUAL LANGUAGE: All elements should share:
-   - A unified color palette (2-3 colors max for overlays, derived from the video's brand/channel identity)
-   - Consistent corner radius, line weight, and icon style
-   - The same animation "family" — don't mix bouncy pop-ins with elegant fades
+5. CONSISTENT VISUAL LANGUAGE: All elements share a unified color palette (2-3 colors max), consistent corner radius/line weight, and the same animation "family."
 
-6. MATCH THE VIDEO'S PERSONALITY: Read the script's tone and energy. Your graphic style must feel native to THIS specific video — not a generic overlay template. A calm, intimate medical explainer gets minimal, elegant overlays. A high-energy myth-busting video can use bolder graphics. The overlays should feel like they grew out of the content, not like they were pasted on top.
+6. TEXT IS ALWAYS IN EGYPTIAN ARABIC: All on-screen text must match the script's dialect register. English technical terms follow the Terminology Retention Table.
 
-7. TEXT IS ALWAYS IN EGYPTIAN ARABIC: All on-screen text must match the script's dialect register. English technical terms follow the Terminology Retention Table — if a term is kept in English in the spoken script, it stays in English on screen too.
-
-8. DENSITY FOLLOWS CONTENT COMPLEXITY:
-   - Dense medical mechanism explanation → more visual anchors (icons, callouts, diagrams)
+7. DENSITY FOLLOWS CONTENT COMPLEXITY:
+   - Dense medical mechanism explanation → more visual anchors (callouts, kinetic text, potentially drawing animations)
    - Warm personal story/analogy → minimal or NO overlays (let the performance breathe)
    - Statistics/numbers → always get on-screen text reinforcement
    - Disclaimers → always get on-screen text
-   - Emotional/empathetic moments → ZERO overlays, let the human connection carry it
+   - Emotional/empathetic moments → ZERO overlays
 
-9. ANIMATION TIMING MUST BE READABLE: Text elements must hold long enough to be read (minimum 2 seconds for short text, 4 seconds for longer callouts). Don't flash information too quickly.
+8. DRAWING ANIMATIONS ARE CONDITIONAL: Only include them when the medical mechanism genuinely benefits from visual clarification. When included, specs must be detailed enough for an animator or AI tool to execute without ambiguity.
 
-10. COORDINATE WITH B-ROLL: If a B-roll visual is planned for a timestamp, your overlays must leave visual "breathing room" — position elements in areas of the frame that won't compete with the B-roll's focal point.
+9. ANIMATION TIMING MUST BE READABLE: Text elements must hold long enough to be read (minimum 2 seconds for short text, 4 seconds for longer callouts).
+
+10. COORDINATE WITH B-ROLL: If a B-roll visual is planned for a timestamp, position elements in areas of the frame that won't compete with the B-roll's focal point.
 
 REVISION MODE: if production_revision_count > 0, apply only what the production critique flagged. Don't redesign unflagged elements.
 
@@ -1271,32 +1322,34 @@ OUTPUT FORMAT:
 
 ---
 
-## ICON & SHAPE ANIMATION GUIDE
+## TEXT ANIMATION & OVERLAY GUIDE
 
 ### Visual Design System
 **Color palette**: [primary, secondary, accent — hex codes]
-**Icon style**: [flat / outlined / filled / line-art]
 **Font**: [suggested font family for on-screen text]
 **Corner radius**: [Xpx for all rounded shapes]
 **Animation family**: [the "feel" — e.g., "smooth and minimal with ease-out-quad entries and fade exits"]
 
-### Element Table
-| # | Timestamp | Element Type | Visual Description | Content (text/icon) | Screen Position | Entry Animation | Hold (s) | Exit Animation | Linked to Transition # | Purpose |
+### Text Element Table
+| # | Timestamp | Element Type | Visual Description | Content (text) | Screen Position | Entry Animation | Hold (s) | Exit Animation | Linked to Transition # | Purpose |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 1 | 0:15 | Lower-third | Rounded rect, #1A1A2E fill, 80% opacity, white text | "د. أحمد حسني" | Bottom-left, 8% margin | slide-in-left, 400ms, ease-out-cubic, out | 4s | fade-out, 300ms, ease-in-sine, in | After T#3 | Presenter intro |
 
+### Drawing Animations (if applicable)
+[For each drawing animation, provide the full detailed spec as described above. If no drawing animations are needed for this script, state: "No drawing animations needed — the medical concepts in this script are adequately served by text overlays and B-roll."]
+
 ### Density Map
-| Act | Total Elements | Simultaneous Max | Notes |
-|---|---|---|---|
-| Hook & Setup | | | |
-| Build / Explain | | | |
-| Peak / Payoff | | | |
-| CTA / Close | | | |
+| Act | Total Elements | Simultaneous Max | Drawing Animations | Notes |
+|---|---|---|---|---|
+| Hook & Setup | | | | |
+| Build / Explain | | | | |
+| Peak / Payoff | | | | |
+| CTA / Close | | | | |
 
 ### Flags for B-Roll Prompt Generator
-- [List any elements that need visual "space" in the B-roll composition — e.g., "timestamp 2:30 has a callout box in the upper-right, so the B-roll for this section should have its focal point left-of-center"]"""
+- [List any elements that need visual "space" in the B-roll composition]"""
 
-    user_prompt = f"""Design all on-screen icons, shapes, and animations for this finalized script.
+    user_prompt = f"""Design all on-screen text animations, overlays, and conditional drawing animations for this finalized script.
 
 FINALIZED SCRIPT:
 {state.get("refined_script", "")}
@@ -1310,7 +1363,7 @@ RESTRUCTURE STRATEGY PLAN (terminology retention, act breakdown):
 B-ROLL AVAILABILITY: {state.get("broll_availability", "")}
 TARGET PLATFORM: {state.get("target_platform", "")}
 
-Read the script and transition map together. For every key term, statistic, concept label, section header, and visual anchor point — design the graphic element and its animation."""
+Read the script and transition map together. For every key term, statistic, concept label, section header, and visual anchor point — design the text element and its animation. For complex medical mechanisms that are hard to follow verbally, consider whether a drawing animation would genuinely help comprehension."""
 
     # Only include revision mode block when we're actually revising
     if state.get("production_revision_count", 0) > 0:
@@ -1321,22 +1374,23 @@ Read the script and transition map together. For every key term, statistic, conc
 ## MODE: REVISION PASS (Pass #{state.get("production_revision_count", 0)})
 
 CRITICAL INSTRUCTION: Read the Production Critique Report below carefully.
-- If the critique does NOT mention ICON/SHAPE CLARITY or ANIMATION TIMING as failing — output your previous ICON & SHAPE ANIMATION GUIDE exactly as it was, word for word. Do not change a single element.
-- If the critique DID flag specific icons or animations: apply ONLY those exact fixes. Leave all other elements untouched.
+- If the critique does NOT mention TEXT ANIMATION & OVERLAY CLARITY or DRAWING ANIMATION EFFECTIVENESS as failing — output your previous guide exactly as it was, word for word. Do not change a single element.
+- If the critique DID flag specific elements: apply ONLY those exact fixes. Leave all other elements untouched.
 
-PREVIOUS ICON & SHAPE ANIMATION GUIDE:
-{state.get("icon_shape_animation", "")}
+PREVIOUS TEXT ANIMATION & OVERLAY GUIDE:
+{state.get("text_animation_overlay", "")}
 
 PRODUCTION CRITIQUE REPORT:
 {state.get("production_critique_output", "")}"""
 
-    response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=5000)
-    return {"icon_shape_animation": response}
+    response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=7000)
+    return {"text_animation_overlay": response}
+
 
 def broll_prompt_generator(state: PipelineState) -> dict:
     system_prompt = """You are an AI-generation prompt engineer specializing in creating text prompts for AI image and video generation tools (Gemini, Google Flow, and similar). Your job is to produce COPY-PASTE-READY prompts that generate professional B-roll footage for a medical/health YouTube video.
 
-YOUR ROLE: The script is locked. The transition map and icon/shape animations are locked. For every moment in the script that calls for B-roll (marked with [VISUAL NOTE: ...] or implied by the transition map), you produce a detailed text prompt that an AI generation tool can use to create the exact visual needed.
+YOUR ROLE: The script is locked. The transition map and text animation overlays are locked. For every moment in the script that calls for B-roll (marked with [VISUAL NOTE: ...] or implied by the transition map), you produce a detailed text prompt that an AI generation tool can use to create the exact visual needed.
 
 THE #1 GOAL — PHOTOREALISM AND AI-UNDETECTABILITY: The generated B-roll must look like it was filmed by a real camera crew — not generated by AI. The viewer should NEVER suspect the footage is AI-generated. This is the single most important requirement and overrides everything else. If a prompt would produce obviously AI-generated imagery, rewrite it until it wouldn't.
 
@@ -1365,10 +1419,18 @@ PROMPT ENGINEERING PRINCIPLES — NON-NEGOTIABLE:
 
 4. MESSAGE-FIRST VISUAL DESIGN: Every B-roll prompt must serve the MESSAGE being delivered at that moment in the script. The B-roll's job is to visually reinforce, illustrate, or emotionally ground what the presenter is saying. Ask: "what does the viewer need to SEE right now to understand or feel what's being said?" — then describe that scene.
 
-5. CONTEXTUAL REALISM (NOT FORCED LOCALIZATION): The B-roll should look realistic and appropriate for the content. Use universal medical/scientific/human imagery by default. Only include location-specific visual cues (Arabic signage, local architecture, specific cultural settings) when the SCRIPT ITSELF explicitly references a local analogy or scenario (e.g., if the script mentions a pharmacy/صيدلية scene, then yes — describe an Arabic-signage pharmacy). Do NOT force Egyptian visual markers into every B-roll prompt — a close-up of a blood test tube or a heart diagram has no nationality.
+5. B-ROLL CONTENT SCOPE — PREFER EDUCATIONAL/MEDICAL, BUT NOT RESTRICTED TO IT:
+   B-roll should preferably serve educational and medical comprehension, but is not limited to clinical imagery. Everyday life scenes are welcome when they ground an analogy or support the narrative. The test is RELEVANCE to the message, not strict medical context.
+   - PREFERRED: Anatomical diagrams, medical mechanism animations, clinical/hospital/pharmacy settings, medical equipment close-ups, data visualizations, Egyptian everyday health scenes
+   - ALLOWED: Broader contextual scenes (everyday Egyptian life, food, workplace) when they ground an analogy or support the narrative
+   - AVOID unless directly relevant: Generic lifestyle/cinematic stock that doesn't connect to the medical message
+   - NEVER: Abstract/artistic visuals with no connection to the content
 
-6. COMPOSITIONAL AWARENESS — COORDINATE WITH ICONS/SHAPES:
-   Read the Icon & Shape Animation Guide. If a graphic overlay is planned for a specific timestamp:
+6. PEOPLE IN B-ROLL — PREFER MALE SUBJECTS:
+   When B-roll includes people (patients, everyday scenes, demonstrations), prefer male subjects. Avoid generating female figures unless the medical topic specifically requires it (e.g., pregnancy, breast cancer, gynecological conditions).
+
+7. COMPOSITIONAL AWARENESS — COORDINATE WITH TEXT OVERLAYS:
+   Read the Text Animation & Overlay Guide. If a text overlay or callout is planned for a specific timestamp:
    - Position the visual focal point AWAY from where the overlay will appear
    - Leave negative space in the frame region where the overlay sits
    - For example: if a callout box is planned for upper-right, compose the B-roll with the subject left-of-center
@@ -1385,7 +1447,7 @@ PROMPT ENGINEERING PRINCIPLES — NON-NEGOTIABLE:
 
 10. ADAPT TO THE VIDEO'S STYLE: Read the script's personality. If the video is calm and intimate, B-roll should be gentle and atmospheric (soft focus, warm tones, slow motion). If the video is high-energy and investigative, B-roll can be more dynamic (tighter framing, higher contrast, faster motion). The B-roll must feel like it belongs in THIS video, not like stock footage pasted in.
 
-11. PROMPT LENGTH AND STRUCTURE: Each prompt should be 50-100 words. Structure: main subject → composition/framing → lens/camera feel → lighting → mood → motion (for video) → anti-AI-detection keywords → negative prompts (what to avoid).
+12. PROMPT LENGTH AND STRUCTURE: Each prompt should be 50-100 words. Structure: main subject → composition/framing → lens/camera feel → lighting → mood → motion (for video) → anti-AI-detection keywords → negative prompts (what to avoid).
 
 REVISION MODE: if production_revision_count > 0, apply only what the production critique flagged. Don't regenerate unflagged prompts.
 
@@ -1419,9 +1481,11 @@ OUTPUT FORMAT:
 - [ ] All prompts share the same color temperature and lighting direction
 - [ ] Local context included ONLY where the script explicitly references local analogies
 - [ ] No B-roll contradicts the Medical Fact Ledger
-- [ ] Composition accounts for planned icon/shape overlay positions
+- [ ] Composition accounts for planned text animation/overlay positions
 - [ ] Motion B-roll direction matches transition flow
-- [ ] Every prompt serves the MESSAGE being spoken at that moment"""
+- [ ] Every prompt serves the MESSAGE being spoken at that moment
+- [ ] People in B-roll are preferably male unless topic requires otherwise
+- [ ] B-roll preferably serves educational/medical comprehension"""
 
     user_prompt = f"""Generate AI-ready B-roll prompts for every visual moment in this script.
 
@@ -1431,8 +1495,8 @@ FINALIZED SCRIPT:
 TRANSITION DESIGN MAP (match B-roll framing to transition energy and type):
 {state.get("transition_design", "")}
 
-ICON & SHAPE ANIMATION GUIDE (leave compositional space for overlays):
-{state.get("icon_shape_animation", "")}
+TEXT ANIMATION & OVERLAY GUIDE (leave compositional space for overlays):
+{state.get("text_animation_overlay", "")}
 
 RESTRUCTURE STRATEGY PLAN (analogy bank — only use local visual context where the script explicitly references local analogies):
 {state.get("strategy_plan", "")}
@@ -1443,13 +1507,7 @@ SOURCE SCRIPT ANALYSIS + MEDICAL FACT LEDGER (medical accuracy check for B-roll 
 B-ROLL AVAILABILITY: {state.get("broll_availability", "")}
 TARGET PLATFORM: {state.get("target_platform", "")}
 
-For each [VISUAL NOTE] in the script and each B-roll transition in the transition map, produce a detailed AI generation prompt. Mark each as 🖼️ Image or 🎬 Video. Coordinate with the icon/shape positions.
-
----
-
-## MODE: REVISION PASS
-
-**Revision Count**: {state.get("production_revision_count", 0)}
+For each [VISUAL NOTE] in the script and each B-roll transition in the transition map, produce a detailed AI generation prompt. Mark each as 🖼️ Image or 🎬 Video. Coordinate with text overlay positions. Remember: prefer educational/medical contexts for B-roll, and use male subjects when people appear.
 
 PRODUCTION CRITIQUE REPORT:
 {state.get("production_critique_output", "")}"""
@@ -1458,11 +1516,11 @@ PRODUCTION CRITIQUE REPORT:
     return {"broll_prompts": response}
 
 def production_quality_critique(state: PipelineState) -> dict:
-    system_prompt = """You are a senior post-production supervisor and visual systems integrator. You evaluate three editing layers — Transition Map, Icon/Shape Animations, and AI B-Roll Prompts — both individually AND as an integrated visual system that must harmonize with the finalized script.
+    system_prompt = """You are a senior post-production supervisor and visual systems integrator. You evaluate three editing layers — Transition Map, Text Animations/Overlays/Drawing Animations, and AI B-Roll Prompts — both individually AND as an integrated visual system that must harmonize with the finalized script.
 
 Your job is NOT to evaluate the script itself (that was handled by the script quality loops). You evaluate whether the post-production layers will produce a professional, cohesive, INVISIBLE-feeling viewing experience.
 
-THE OVERRIDING PRINCIPLE: The best post-production is post-production the viewer never consciously notices. The video should feel like it was always this polished — not like effects were layered on top. If any transition, icon, or B-roll moment draws attention to ITSELF rather than to the content, it has failed. A viewer who thinks "nice zoom effect" has been pulled out of the medical story. A viewer who simply stays engaged without knowing why — that's success.
+THE OVERRIDING PRINCIPLE: The best post-production is post-production the viewer never consciously notices. The video should feel like it was always this polished — not like effects were layered on top. If any transition, text animation, or B-roll moment draws attention to ITSELF rather than to the content, it has failed. A viewer who thinks "nice zoom effect" has been pulled out of the medical story. A viewer who simply stays engaged without knowing why — that's success.
 
 AUDIT CRITERIA — score each (1-10):
 
@@ -1477,20 +1535,23 @@ AUDIT CRITERIA — score each (1-10):
    - Are there unnecessary transitions between shots that should flow naturally?
    - Are there sections that would work better with NO transition at all?
 
-3. ICON/SHAPE CLARITY (Critical):
-   - Does every element serve information delivery, or are there decorative elements?
+3. TEXT ANIMATION & OVERLAY CLARITY (Critical):
+   - Does every text element serve information delivery, or are there decorative elements?
    - Can every text element be read in its hold duration?
-   - Is the visual design system consistent? (Same colors, same icon style, same animation family)
+   - Is the visual design system consistent? (Same colors, same animation family)
    - Are there sections where overlays were added but the content works better without them?
+   - Are drawing animations (if present) genuinely clarifying complex mechanisms, or decorative?
 
 4. ANIMATION TIMING (Critical):
-   - Are icon/shape animations properly sequenced with transitions? (No entries during scene changes)
+   - Are text animation/overlay elements properly sequenced with transitions? (No entries during scene changes)
    - Are there moments where too many things animate simultaneously?
-   - Do animations respect the "Flags for Icon/Shape Animator" from the transition map?
+   - Do animations respect the "Flags for Text Animation/Overlay Designer" from the transition map?
 
-5. B-ROLL RELEVANCE (Critical):
+5. B-ROLL RELEVANCE & EDUCATIONAL FOCUS (Critical):
    - Does each B-roll prompt produce imagery that genuinely serves the MESSAGE being spoken?
    - Are prompts specific enough to produce usable results from AI generation?
+   - Is B-roll preferably oriented toward educational/medical contexts?
+   - Are people in B-roll preferably male (unless topic requires otherwise)?
    - Is there B-roll where talking head would be more effective? (Over-generation is a common failure)
 
 6. B-ROLL PHOTOREALISM & MEDICAL ACCURACY (Critical):
@@ -1538,7 +1599,7 @@ OUTPUT — ONLY valid JSON:
   "production_critique_report": "Full audit in markdown — per-criterion score table + CRITICAL/WARNING/MINOR issue list + specific fix instructions for each flagged issue",
   "transition_appropriateness_score": 0,
   "transition_restraint_score": 0,
-  "icon_clarity_score": 0,
+  "text_animation_clarity_score": 0,
   "animation_timing_score": 0,
   "broll_relevance_score": 0,
   "broll_medical_accuracy_score": 0,
@@ -1557,8 +1618,8 @@ FINALIZED SCRIPT:
 TRANSITION DESIGN MAP:
 {state.get("transition_design", "")}
 
-ICON & SHAPE ANIMATION GUIDE:
-{state.get("icon_shape_animation", "")}
+TEXT ANIMATION & OVERLAY GUIDE:
+{state.get("text_animation_overlay", "")}
 
 AI B-ROLL GENERATION PROMPTS:
 {state.get("broll_prompts", "")}
@@ -1589,7 +1650,7 @@ Evaluate all three layers individually AND as an integrated system. Score each c
         scores = {
             "transition_appropriateness": int(data.get("transition_appropriateness_score", 0)),
             "transition_restraint": int(data.get("transition_restraint_score", 0)),
-            "icon_clarity": int(data.get("icon_clarity_score", 0)),
+            "text_animation_clarity": int(data.get("text_animation_clarity_score", data.get("icon_clarity_score", 0))),
             "animation_timing": int(data.get("animation_timing_score", 0)),
             "broll_relevance": int(data.get("broll_relevance_score", 0)),
             "broll_medical_accuracy": int(data.get("broll_medical_accuracy_score", 0)),
@@ -1656,6 +1717,16 @@ def _audit_part1(text: str) -> list:
     # Production script must be present
     if "\u0646\u0628\u0631\u0629" not in text and "HOOK" not in text:
         issues.append("MISSING PRODUCTION SCRIPT: The full teleprompter-ready script is absent.")
+
+    # Check for forbidden body-antagonism / melodrama clichés in titles or script
+    forbidden_terms = ["بيخونك", "يخونك", "غدر", "خيانة", "طعنة", "يخذله", "بيطعنك"]
+    found_forbidden = [t for t in forbidden_terms if t in text]
+    if found_forbidden:
+        issues.append(
+            f"SENSATIONALIST BODY-ANTAGONISM DETECTED: Found forbidden melodrama/betrayal term(s): {found_forbidden}. "
+            "Never frame the human body or organs as backstabbers or traitors. "
+            "Replace with grounded scientific paradoxes, surprising clinical facts, or myth-busting."
+        )
 
     return issues
 
@@ -1759,6 +1830,11 @@ Your ONLY job in this call is to produce these sections exactly as formatted bel
 * **Option B (Shock & Paradox)**: [Title]
 * **Option C (Direct Medical Warning)**: [Title]
 
+*TITLE RULES:*
+- The main Video Title (in Script Metadata table) and all 3 title options must be compelling and high-CTR, but STRICTLY FREE of sensationalist melodrama or body-antagonism tropes.
+- STRICTLY FORBIDDEN: 'بيخونك', 'غدر', 'خيانة', 'يخذله', 'طعنة'.
+- Option B (Shock & Paradox) MUST be anchored in counter-intuitive medical reality, myth-busting, or surprising science (e.g., 'رياضي وبياكل صحي... بس الشريان اتقفل؟ السر الطبي الصادم'), NOT betrayal by the body.
+
 #### 2. Thumbnail Visual Blueprints + AI Generation Prompts
 Produce ALL THREE concepts. Each MUST have every field below - no abbreviations.
 
@@ -1852,7 +1928,7 @@ Fields per concept:
 | Contextual alignment | | Pass/Warn/Fail |
 | Transition appropriateness | | Pass/Warn/Fail |
 | Transition restraint | | Pass/Warn/Fail |
-| Icon/shape clarity | | Pass/Warn/Fail |
+| Text animation/overlay clarity | | Pass/Warn/Fail |
 | Animation timing | | Pass/Warn/Fail |
 | B-roll relevance | | Pass/Warn/Fail |
 | B-roll medical accuracy | | Pass/Warn/Fail |
@@ -1890,6 +1966,7 @@ Contextual Alignment Score: {state.get("contextual_alignment_score", "")}
 MEDICAL TOPIC: {state.get("medical_topic", "")}
 PLATFORM: {state.get("target_platform", "")}
 PRESENTER PROFILE: {state.get("presenter_profile", "")}
+AVOID LIST: {state.get("avoid_list", "")}
 
 CRITICAL: For each of the 3 Thumbnail Concepts, write the AI Image Generation Prompt as a complete detailed paragraph. Do NOT abbreviate or say "same as above"."""
 
@@ -1922,7 +1999,7 @@ Your ONLY job is to produce the following sections:
 ### \U0001f3ac INTEGRATED PRODUCTION STORYBOARD
 Frame-accurate guide for the video editor. Every row = ONE atomic event. Simultaneous events get their OWN rows sharing the same timecode and cues.
 
-Layer types: TRANSITION | ZOOM/REFRAME | B-ROLL | ICON/SHAPE | KINETIC TEXT | SFX
+Layer types: TRANSITION | ZOOM/REFRAME | B-ROLL | TEXT OVERLAY | KINETIC TEXT | DRAWING ANIM | SFX
 
 | # | Act | \u23f1\ufe0f Timecode | \u25b6\ufe0f START CUE (exact first Arabic words from script) | \u23f9\ufe0f END CUE (exact last Arabic words) | Layer | Detail |
 |---|---|---|---|---|---|---|
@@ -1931,11 +2008,11 @@ MANDATORY DETAIL FORMAT (no abbreviations):
 - TRANSITION: `[Type] | Dir: [direction or None] | Easing: [e.g. ease-in-expo] | Dur: [Xms]`
 - ZOOM/REFRAME: `Scale [X%->Y%] | Anchor: [center/face/object] | Easing: [e.g. ease-out-back] | Dur: [Xms]`
 - B-ROLL: `[\U0001f3ac Video / \U0001f5bc\ufe0f Image] | [FULL AI GENERATION PROMPT - subject, setting, lighting, lens, composition, color grade, negative prompts. NEVER write shortcut cross-references. Write the complete prompt here - at least 3 sentences.] | Dur: [Xs]`
-- ICON/SHAPE: `[Element name] | Entry: [anim, Xms, easing] | Hold: [Xs] | Exit: [anim, Xms] | Pos: [position]`
+- TEXT OVERLAY: `[Element name] | Entry: [anim, Xms, easing] | Hold: [Xs] | Exit: [anim, Xms] | Pos: [position]`
 - KINETIC TEXT: `"[Arabic text]" | Entry: [anim, Xms, easing] | Hold: [Xs] | Exit: [anim, Xms] | Pos: [position]`
 - SFX: `[Sound name] | Trigger: [on cut/on word/on motion] | Vol: [low/med/punch]`
 
-COVERAGE: Full video 0:00 to outro. 25-40 rows minimum. EVERY event from Transition Map, Icon Guide, and B-Roll Prompts MUST appear.
+COVERAGE: Full video 0:00 to outro. 25-40 rows minimum. EVERY event from Transition Map, Text Animation & Overlay Guide, and B-Roll Prompts MUST appear.
 
 ---
 
@@ -1944,8 +2021,8 @@ Reproduce the full Transition Map. Include: philosophy statement + complete tabl
 
 ---
 
-### \U0001f3a8 ICON & SHAPE ANIMATION GUIDE (Detail Reference)
-Reproduce the full Icon & Shape Animation Guide. Include: visual design system + complete element table + density map per act.
+### \U0001f3a8 TEXT ANIMATION & OVERLAY GUIDE (Detail Reference)
+Reproduce the full Text Animation & Overlay Guide. Include: visual design system + complete element table (kinetic text, callout boxes, text overlays, drawing animations) + density map per act.
 
 ---
 
@@ -1973,7 +2050,7 @@ Filming Requirements:
 
 Post-Production Layers:
 - Transitions: [X total - hard cuts: X%, soft: X%]
-- Icon/shape overlays: [X elements]
+- Text animation/overlay elements: [X elements]
 - AI B-roll prompts: [X - images: X, videos: X]
 - Production quality grade: [PASS/grade]
 
@@ -1994,8 +2071,8 @@ PRODUCTION SCRIPT (use exact Arabic sentences as START CUE / END CUE in storyboa
 TRANSITION DESIGN MAP (reproduce in full, add SB# cross-references):
 {state.get("transition_design", "")}
 
-ICON & SHAPE ANIMATION GUIDE (reproduce in full, add SB# cross-references):
-{state.get("icon_shape_animation", "")}
+TEXT ANIMATION & OVERLAY GUIDE (reproduce in full, add SB# cross-references):
+{state.get("text_animation_overlay", "")}
 
 AI B-ROLL GENERATION PROMPTS (reproduce with FULL prompts in storyboard rows AND detail table):
 {state.get("broll_prompts", "")}
@@ -2016,7 +2093,7 @@ RULES:
     for attempt in range(MAX_FINAL_PACKAGE_RETRIES + 1):
         user_prompt_2 = base_user_prompt_2
         if correction_note_2:
-            user_prompt_2 += f"\n\n\u26a0\ufe0f CORRECTION REQUIRED (attempt {attempt + 1}):\n{correction_note_2}"
+            user_prompt_2 += f"\n\n⚠️ CORRECTION REQUIRED (attempt {attempt + 1}):\n{correction_note_2}"
         part2 = call_llm(system_prompt_2, user_prompt_2, temperature=0.3, max_tokens=12000)
         issues_2 = _audit_part2(part2)
         if not issues_2:
@@ -2030,6 +2107,438 @@ RULES:
 
     final_package = part1 + "\n\n---\n\n" + part2
     return {"final_package": final_package}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Node 16: shorts_moment_identifier
+# ─────────────────────────────────────────────────────────────────────────────
+def shorts_moment_identifier(state: PipelineState) -> dict:
+    system_prompt = """You are a short-form content strategist specializing in medical/educational YouTube Shorts and Facebook Reels. You scan a finalized long-form medical script and identify 3–5 moments that would work as standalone 30–60 second clips — each designed to stop scrolling AND create enough curiosity to drive viewers to the full video.
+
+WHAT MAKES A MOMENT "VIRAL-WORTHY" FOR MEDICAL CONTENT:
+1. **Myth-busting moments**: A surprising medical fact that contradicts common belief ("اللي بيقولك إن كذا... ده كلام غلط")
+2. **"Wait, what?" reveals**: Counter-intuitive medical mechanisms that make viewers say "I didn't know that"
+3. **Emotional peaks**: Empathetic, relatable health moments that connect with lived experience
+4. **Practical takeaways**: "Do this, not that" actionable medical advice that people can use immediately
+5. **Shocking statistics**: A number from the Fact Ledger that stops scrolling — surprising prevalence, risk ratios, or counter-intuitive data
+
+FOR EACH IDENTIFIED MOMENT:
+- **Exact timestamp range** in the long-form script
+- **The core insight** in one sentence — what makes this moment special?
+- **Scroll-stopper factor**: Why would someone stop scrolling in the first 1–2 seconds for THIS?
+- **Curiosity gap**: What question does this clip leave unanswered that makes the viewer want to watch the full video?
+- **Extraction complexity**: Can it be extracted nearly as-is, or does it need significant re-editing? (Mark as "Clean Extract" / "Needs Re-Edit" with brief notes on what changes)
+- **Platform fit**: Any considerations for vertical (9:16) framing, sound-off viewing, or mobile-first consumption?
+
+RULES:
+- Every moment must be MEDICALLY RESPONSIBLE when taken out of context — if a clip, viewed alone, could mislead someone about their health, it must be flagged and handled carefully (add context, add disclaimer, or skip it)
+- Prioritize moments that are SELF-CONTAINED — they should make sense without watching the full video, even if they leave the viewer wanting more
+- The curiosity gap should be genuine, not clickbait — the full video should actually deliver on what the short implies
+- Think about what performs on Reels and Shorts specifically: fast hooks, visual variety, emotional peaks, clear value delivery
+
+OUTPUT FORMAT:
+
+---
+
+## SHORTS MOMENT IDENTIFICATION
+
+### Moment Analysis Summary
+| # | Timestamp Range | Core Insight | Type | Extraction Complexity | Priority |
+|---|---|---|---|---|---|
+| 1 | 2:15–3:10 | [insight] | Myth-bust / Reveal / Emotional / Practical / Stat | Clean Extract / Needs Re-Edit | 1 (highest) |
+
+### Detailed Moment Breakdowns
+
+#### MOMENT 1 — [Title/Label]
+**Timestamp**: [start]–[end] in long-form script
+**Type**: [category]
+**Core Insight**: [what makes this moment special]
+**Scroll-Stopper Factor**: [why someone stops scrolling]
+**Curiosity Gap**: [what unanswered question drives to the full video]
+**Extraction Complexity**: Clean Extract / Needs Re-Edit
+**Re-Edit Notes** (if needed): [what needs to change]
+**Medical Responsibility Check**: [is this safe as a standalone clip? Any context needed?]
+**Platform Notes**: [vertical framing, sound-off, mobile considerations]
+
+[Repeat for each moment (3-5 moments total)]
+
+### Recommended Extraction Order
+1. [Moment #] — [reason this should be made first]
+2. [Moment #] — [reason]
+3. [Moment #] — [reason]"""
+
+    user_prompt = f"""Identify 3-5 viral-worthy moments from this finalized medical YouTube script for extraction as Facebook Reels and YouTube Shorts.
+
+FINAL PRODUCTION SCRIPT:
+{state.get("refined_script", "")}
+
+FINAL DELIVERABLE PACKAGE (for reference on title, thumbnail, structure):
+{state.get("final_package", "")[:3000]}
+
+STRATEGY PLAN & FACT LEDGER:
+{state.get("strategy_plan", "")}
+
+SOURCE ANALYSIS:
+{state.get("source_analysis", "")}
+
+TARGET PLATFORM: {state.get("target_platform", "youtube")}
+PRESENTER PROFILE: {state.get("presenter_profile", "")}
+MEDICAL TOPIC: {state.get("medical_topic", "")}"""
+
+    response = call_llm(system_prompt, user_prompt, temperature=0.6, max_tokens=4000)
+    return {"shorts_moments": response}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Node 17: shorts_script_extractor (Loop 4 Sub-Node 1)
+# ─────────────────────────────────────────────────────────────────────────────
+def shorts_script_extractor(state: PipelineState) -> dict:
+    revision_count = state.get("shorts_revision_count", 0)
+    system_prompt = """You are a short-form content editor specializing in medical/educational Reels and Shorts. You take identified viral-worthy moments from a long-form Egyptian Arabic medical script and re-edit each into a standalone 30–60 second clip optimized for Facebook Reels and YouTube Shorts.
+
+FOR EACH IDENTIFIED MOMENT, CREATE A STANDALONE SHORT-FORM SCRIPT:
+
+1. **NEW HOOK (first 1–3 seconds)**: Optimized for vertical, sound-off viewing with bold text overlay. This is NOT the same hook as the long-form video — it must be re-engineered for short-form:
+   - Must work visually (sound-off) — the first frame should communicate the topic
+   - Must create instant curiosity or shock in under 2 seconds
+   - Must be in authentic Egyptian Arabic, same dialect register as the main script
+
+2. **CORE CONTENT (25–50 seconds)**: The extracted medical insight, re-paced for short-form rhythm:
+   - Faster energy than long-form — tighter cuts, more direct delivery
+   - Remove any build-up or context that only makes sense in the full video
+   - Keep the medical accuracy intact — the Fact Ledger still governs
+   - Add quick context if the moment needs it to stand alone
+   - Follow the Terminology Retention Table from the Strategy Plan
+
+3. **CLIFFHANGER CTA (3–5 seconds)**: Drive viewers to the full video:
+   - Create a genuine curiosity gap: "عايز تفهم القصة كلها؟ الفيديو الكامل موجود"
+   - Don't give away the full video's payoff — leave them wanting more
+   - Include a visual pointer to the full video (e.g., "🔗 Link in bio" or "الفيديو الكامل على القناة")
+
+4. **VERTICAL FORMAT NOTES**: What changes for 9:16 framing:
+   - Tighter talking-head crops (chest up, not waist up)
+   - Larger text overlays (readable on mobile at arm's length)
+   - Different B-roll framing if needed (center-weighted composition)
+   - Text-safe zones (avoid top 15% and bottom 20% for platform UI elements)
+
+5. **ADDITIONAL EDITING NEEDED**: Specify per clip:
+   - Does it need different B-roll? (re-select from existing prompts or note new ones needed)
+   - Does it need different/bigger text animations? (mobile-first sizing)
+   - Does it need different energy/pacing? (short-form is faster than long-form)
+   - Does it need any drawing animations specific to the short? (only if the mechanism genuinely needs visual clarification in the short version)
+   - Does it need a different opening visual? (vertical-optimized thumbnail frame)
+
+MEDICAL RESPONSIBILITY — NON-NEGOTIABLE:
+- Every short must include a brief disclaimer (can be a text overlay: "المعلومات للتوعية فقط — استشر طبيبك")
+- No clip should, when viewed alone, mislead about severity, treatment, or diagnosis
+- If a moment's meaning changes when taken out of context, add the necessary context
+
+PERSONA INTEGRITY:
+- The presenter's voice (presenterProfile) is maintained in every short
+- No first-person clinical claims that belong to the original source author
+
+REVISION MODE: if shorts_revision_count > 0, apply only what the quality gate flagged. Don't rewrite clips that passed.
+
+OUTPUT FORMAT:
+
+---
+
+## REELS & SHORTS SCRIPTS
+
+### Short #1 — [Title/Label] | Duration: [Xs] | Platform: Facebook Reels + YouTube Shorts
+
+#### Script
+```
+=== HOOK | 0:00–0:03 | Energy: 5/5 ===
+[Bold text overlay]: "[LARGE TEXT]"
+[Spoken]: [Egyptian Arabic hook line]
+[VISUAL NOTE: vertical-optimized opening frame description]
+
+=== CORE | 0:03–0:XX | Energy: 4/5 ===
+[Full scripted content with performance cues, VISUAL NOTES, ON-SCREEN TEXT]
+
+=== CLIFFHANGER CTA | 0:XX–0:XX | Energy: 3/5 ===
+[Spoken]: [curiosity gap line]
+[ON-SCREEN TEXT]: "الفيديو الكامل على القناة 🔗"
+[VISUAL NOTE: point to full video]
+
+=== DISCLAIMER (text overlay) ===
+[ON-SCREEN TEXT]: "المعلومات للتوعية فقط — استشر طبيبك"
+```
+
+#### Editing Specifications
+- **B-Roll Changes**: [what's different from the long-form]
+- **Text Animation Changes**: [bigger/different for mobile]
+- **Drawing Animations**: [needed? specs if yes]
+- **Pacing Changes**: [what's faster/tighter]
+- **Thumbnail Frame**: [description of the first frame that appears in the feed]
+
+#### Metadata
+- **Source Timestamp**: [where this comes from in the long-form]
+- **Word Count**: [X words] → [X seconds at Egyptian Arabic pace]
+- **Curiosity Gap Score** (self-assessed): [1-10]
+- **Standalone Clarity Score** (self-assessed): [1-10]
+
+[Repeat for each short]"""
+
+    user_prompt = f"""Extract and re-edit standalone 30-60 second scripts for each identified viral moment.
+
+IDENTIFIED SHORTS MOMENTS:
+{state.get("shorts_moments", "")}
+
+FINAL LONG-FORM PRODUCTION SCRIPT:
+{state.get("refined_script", "")}
+
+STRATEGY PLAN (Terminology Retention Table):
+{state.get("strategy_plan", "")}
+
+SOURCE ANALYSIS:
+{state.get("source_analysis", "")}
+
+PRESENTER PROFILE: {state.get("presenter_profile", "")}
+DIALECT REGISTER: {state.get("dialect_register", "")}
+VOICE STYLE: {state.get("voice_style", "")}
+TARGET PLATFORM: {state.get("target_platform", "youtube")}
+SHORTS REVISION COUNT: {revision_count}"""
+
+    if revision_count > 0 and state.get("shorts_quality_output"):
+        user_prompt += f"""
+
+⚠️ PREVIOUS QUALITY GATE AUDIT & FIX INSTRUCTIONS:
+{state.get("shorts_quality_output", "")}
+
+Apply the fix instructions above. Only modify the clips that had issues; preserve clips that passed."""
+
+    response = call_llm(system_prompt, user_prompt, temperature=0.7, max_tokens=8000)
+    return {"shorts_scripts": response}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Node 18: shorts_caption_packager (Loop 4 Sub-Node 2)
+# ─────────────────────────────────────────────────────────────────────────────
+def shorts_caption_packager(state: PipelineState) -> dict:
+    system_prompt = """You are a caption and subtitle specialist for Arabic short-form video content. You take finalized Reels/Shorts scripts and produce professional, timed caption packages optimized for vertical, sound-off, mobile-first viewing on Facebook Reels and YouTube Shorts.
+
+FOR EACH SHORT-FORM CLIP, PRODUCE:
+
+1. **PHRASE-BY-PHRASE TIMED CAPTIONS** (SRT-format compatible):
+   - Chunk text into meaningful phrases (3–6 words per caption frame) — NOT word-by-word
+   - Time each phrase to match natural speech rhythm at Egyptian Arabic pace
+   - Each caption frame should be a complete thought fragment that makes sense on its own
+   - RTL direction: Arabic text flows right-to-left
+   - Use the same dialect register as the script (no فصحى in captions if the script is عامية)
+
+2. **HIGHLIGHT WORD** per caption frame:
+   - Identify the single most important word in each phrase that should get bold/color treatment
+   - This word anchors the viewer's eye and reinforces comprehension for sound-off viewers
+   - For medical terms kept in English per the Terminology Retention Table, the English term itself is the highlight word
+
+3. **ON-SCREEN TEXT OVERLAY PLAN**:
+   - What large text appears on screen beyond captions (key stats, medical terms, punchlines)
+   - Entry/exit animations for each text overlay (pop/fade/slide, duration, easing)
+   - Position on screen (avoiding caption zone and platform UI elements)
+   - Font size relative to screen (must be readable on mobile without squinting)
+
+4. **CAPTION STYLE SPECIFICATION**:
+   - **Font recommendation**: A clean, modern Arabic font (e.g., Cairo, Tajawal, or IBM Plex Arabic)
+   - **Size**: Mobile-first — minimum 42px equivalent for primary captions, 56px+ for highlight text
+   - **Position**: Bottom-center (default) or dynamic (follows speaker energy)
+   - **Background**: Semi-transparent dark pill behind text for readability over any background
+   - **Highlight treatment**: How the highlight word differs (bold + accent color, scale-up, underline)
+   - **RTL handling**: Proper right-to-left text rendering and line breaking
+
+5. **SUBTITLE TRACKS**:
+   - **Primary**: Egyptian Arabic captions (matching the spoken script exactly)
+   - **Secondary** (optional): English subtitle track for broader reach — a concise, natural English rendering of each phrase (NOT a word-for-word translation, but a meaning-equivalent subtitle)
+
+CAPTION QUALITY RULES:
+- Every caption frame must be readable in its display duration — minimum 1.5 seconds per frame
+- No orphan words (single words on a line) — redistribute to adjacent frames
+- Medical terms must be spelled correctly in both Arabic and English
+- Captions must NOT spoil upcoming punchlines — chunk phrases to maintain narrative tension
+- Disclaimer text overlay must appear at least once per clip
+
+OUTPUT FORMAT:
+
+---
+
+## SHORTS CAPTION PACKAGE
+
+### Caption Style Spec (applies to all clips)
+**Font**: [recommendation]
+**Primary size**: [Xpx]
+**Highlight size**: [Xpx]
+**Position**: [bottom-center / dynamic]
+**Background**: [style]
+**Highlight treatment**: [bold + color / scale-up / underline]
+**RTL**: [handling notes]
+
+### Short #1 — [Title/Label]
+
+#### Timed Captions (SRT-Compatible)
+```srt
+1
+00:00:00,000 --> 00:00:02,500
+[Arabic phrase]
+Highlight: [word]
+
+2
+00:00:02,500 --> 00:00:04,800
+[Arabic phrase]
+Highlight: [word]
+```
+
+#### On-Screen Text Overlays
+| # | Timestamp | Text Content | Size | Position | Entry Animation | Hold (s) | Exit Animation |
+|---|---|---|---|---|---|---|---|
+| 1 | 0:01 | "[large text]" | 56px | Top-center | pop, 200ms | 2s | fade-out, 300ms |
+
+#### English Subtitle Track (Optional)
+```srt
+1
+00:00:00,000 --> 00:00:02,500
+[English equivalent]
+
+2
+00:00:02,500 --> 00:00:04,800
+[English equivalent]
+```
+
+[Repeat for each short]"""
+
+    user_prompt = f"""Generate the timed captions, highlight words, on-screen text overlays, and caption styling package for each of these short-form scripts.
+
+REELS & SHORTS SCRIPTS:
+{state.get("shorts_scripts", "")}
+
+SHORTS MOMENTS & METADATA:
+{state.get("shorts_moments", "")}
+
+DIALECT REGISTER: {state.get("dialect_register", "")}
+TARGET PLATFORM: {state.get("target_platform", "youtube")}"""
+
+    response = call_llm(system_prompt, user_prompt, temperature=0.4, max_tokens=6000)
+    return {"shorts_captions": response}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Node 19: shorts_quality_gate (Loop 4 Gate)
+# ─────────────────────────────────────────────────────────────────────────────
+def shorts_quality_gate(state: PipelineState) -> dict:
+    system_prompt = """You are a senior short-form content quality auditor for medical/educational Reels and Shorts. You evaluate each extracted clip against strict quality criteria, ensuring every clip is genuinely scroll-stopping, medically responsible, and drives viewers to the full video.
+
+AUDIT EACH CLIP AGAINST:
+
+1. **STANDALONE IMPACT** (1-10): Does this clip make sense and deliver value without the full video? Would a viewer who ONLY sees this clip learn something useful or feel something meaningful?
+
+2. **SCROLL-STOP POWER** (1-10): Would the first 1–2 seconds make someone stop scrolling? Is the hook visually and textually compelling enough for a feed environment where attention is measured in milliseconds?
+
+3. **CURIOSITY GAP** (1-10): Does this clip create genuine intrigue that drives to the full video? Is the gap authentic (not clickbait)? Does the full video actually deliver on what the short implies?
+
+4. **CAPTION ACCURACY & TIMING** (1-10): Are captions correctly timed to natural speech rhythm? Are phrases meaningfully chunked (not word-by-word)? Are highlight words well-chosen? Are captions readable at mobile speed? Is RTL rendering correct?
+
+5. **MEDICAL RESPONSIBILITY** (Pass/Fail — ZERO TOLERANCE): Does this clip, viewed ALONE and out of context, still represent the medical facts fairly? Could someone watching only this clip make a dangerous health decision based on incomplete information? Is the disclaimer present? Are any caveats from the Fact Ledger that apply to this clip's content included?
+
+6. **PLATFORM FIT** (1-10): Is this optimized for vertical (9:16), mobile-first, sound-off + sound-on viewing? Are text overlays large enough? Are captions properly positioned? Does pacing match short-form expectations?
+
+7. **DIALECT & WARMTH CONSISTENCY** (1-10): Does the short maintain the same Egyptian Arabic register and warm tone as the full video? Or does it feel like a different creator made it?
+
+8. **CLIFFHANGER CTA EFFECTIVENESS** (1-10): Does the ending create genuine desire to watch the full video? Or is it a generic "watch the full video" that viewers will ignore?
+
+HARD GATES — grade can only be "PASS" if ALL of:
+- standalone_impact >= 8 for EVERY clip
+- scroll_stop_power >= 8 for EVERY clip
+- curiosity_gap >= 8 for EVERY clip
+- medical_responsibility = Pass for EVERY clip
+
+If ANY clip fails a hard gate, the entire batch gets "NEEDS_REVISION" with specific per-clip fix instructions.
+
+REVISION MODE: if shorts_revision_count > 0, verify that specific issues from the previous critique are actually resolved in the current clips — not just renamed or superficially adjusted.
+
+OUTPUT — ONLY valid JSON:
+```json
+{
+  "shorts_quality_grade": "PASS",
+  "shorts_quality_report": "Per-clip audit table + overall assessment + specific fix instructions for any failing clips",
+  "per_clip_scores": [
+    {
+      "clip_number": 1,
+      "standalone_impact": 0,
+      "scroll_stop_power": 0,
+      "curiosity_gap": 0,
+      "caption_accuracy": 0,
+      "medical_responsibility": "Pass",
+      "platform_fit": 0,
+      "dialect_warmth": 0,
+      "cliffhanger_cta": 0,
+      "issues": [],
+      "fix_instructions": []
+    }
+  ]
+}
+```"""
+
+    user_prompt = f"""Audit the extracted Reels & Shorts scripts and caption packages.
+
+SHORTS SCRIPTS:
+{state.get("shorts_scripts", "")}
+
+SHORTS CAPTIONS:
+{state.get("shorts_captions", "")}
+
+ORIGINAL IDENTIFIED MOMENTS:
+{state.get("shorts_moments", "")}
+
+FULL PRODUCTION SCRIPT (for context & medical fact checking):
+{state.get("refined_script", "")}
+
+SOURCE ANALYSIS & MEDICAL FACT LEDGER:
+{state.get("source_analysis", "")}
+
+TARGET PLATFORM: {state.get("target_platform", "youtube")}
+SHORTS REVISION COUNT: {state.get("shorts_revision_count", 0)}"""
+
+    response = call_llm(system_prompt, user_prompt, temperature=0.4, max_tokens=5000)
+    
+    text = response.strip()
+    try:
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        data = json.loads(text.strip())
+
+        grade = str(data.get("shorts_quality_grade", "")).strip().upper()
+        clips = data.get("per_clip_scores", [])
+        
+        all_clips_pass = True
+        if not clips:
+            all_clips_pass = False
+        else:
+            for clip in clips:
+                impact = int(clip.get("standalone_impact", 0))
+                scroll = int(clip.get("scroll_stop_power", 0))
+                gap = int(clip.get("curiosity_gap", 0))
+                med_resp = str(clip.get("medical_responsibility", "")).strip().lower()
+                if impact < 8 or scroll < 8 or gap < 8 or med_resp != "pass":
+                    all_clips_pass = False
+                    break
+        
+        if not all_clips_pass or grade != "PASS":
+            grade = "NEEDS_REVISION"
+
+        return {
+            "shorts_quality_grade": grade,
+            "shorts_quality_output": data.get("shorts_quality_report", "") or text,
+            "shorts_revision_count": state.get("shorts_revision_count", 0) + 1,
+        }
+    except Exception:
+        return {
+            "shorts_quality_grade": "NEEDS_REVISION",
+            "shorts_quality_output": response,
+            "shorts_revision_count": state.get("shorts_revision_count", 0) + 1,
+        }
+
 
 # --- Routing Functions ---
 
@@ -2072,10 +2581,23 @@ def route_production_quality(state: PipelineState) -> str:
     else:
         return "transition_designer"
 
+MAX_SHORTS_ITERATIONS = 2
+
+def route_shorts_quality(state: PipelineState) -> str:
+    shorts_pass = (state.get("shorts_quality_grade") == "PASS")
+    max_iterations = state.get("max_shorts_revision_count", MAX_SHORTS_ITERATIONS)
+    hit_max = state.get("shorts_revision_count", 0) >= max_iterations
+
+    if shorts_pass or hit_max:
+        return END
+    else:
+        return "shorts_script_extractor"
+
+
 # --- Graph Wiring ---
 workflow = StateGraph(PipelineState)
 
-# Add all nodes
+# Add all 19 nodes
 workflow.add_node("source_script_analyzer", source_script_analyzer)
 workflow.add_node("strategy_planner", strategy_planner)
 workflow.add_node("hook_writer", hook_writer)
@@ -2087,10 +2609,14 @@ workflow.add_node("fidelity_auditor", fidelity_auditor)
 workflow.add_node("script_refinement", script_refinement)
 workflow.add_node("self_critique", self_critique)
 workflow.add_node("transition_designer", transition_designer)
-workflow.add_node("icon_shape_animator", icon_shape_animator)
+workflow.add_node("text_animation_overlay_designer", text_animation_overlay_designer)
 workflow.add_node("broll_prompt_generator", broll_prompt_generator)
 workflow.add_node("production_quality_critique", production_quality_critique)
 workflow.add_node("final_script_package", final_script_package)
+workflow.add_node("shorts_moment_identifier", shorts_moment_identifier)
+workflow.add_node("shorts_script_extractor", shorts_script_extractor)
+workflow.add_node("shorts_caption_packager", shorts_caption_packager)
+workflow.add_node("shorts_quality_gate", shorts_quality_gate)
 
 # Linear edges (upstream pipeline)
 workflow.add_edge(START, "source_script_analyzer")
@@ -2126,8 +2652,8 @@ workflow.add_conditional_edges(
 )
 
 # Post-Production Editing Loop (Loop 3)
-workflow.add_edge("transition_designer", "icon_shape_animator")
-workflow.add_edge("icon_shape_animator", "broll_prompt_generator")
+workflow.add_edge("transition_designer", "text_animation_overlay_designer")
+workflow.add_edge("text_animation_overlay_designer", "broll_prompt_generator")
 workflow.add_edge("broll_prompt_generator", "production_quality_critique")
 workflow.add_conditional_edges(
     "production_quality_critique",
@@ -2138,8 +2664,21 @@ workflow.add_conditional_edges(
     }
 )
 
-# Terminal edge
-workflow.add_edge("final_script_package", END)
+# Bridge from final_script_package to Reels/Shorts Pipeline
+workflow.add_edge("final_script_package", "shorts_moment_identifier")
+workflow.add_edge("shorts_moment_identifier", "shorts_script_extractor")
+
+# Reels/Shorts Extraction Loop (Loop 4)
+workflow.add_edge("shorts_script_extractor", "shorts_caption_packager")
+workflow.add_edge("shorts_caption_packager", "shorts_quality_gate")
+workflow.add_conditional_edges(
+    "shorts_quality_gate",
+    route_shorts_quality,
+    {
+        END: END,
+        "shorts_script_extractor": "shorts_script_extractor",
+    }
+)
 
 # Compile
 app = workflow.compile()
@@ -2170,10 +2709,11 @@ if __name__ == "__main__":
     
     # Initialize unprovided required fields to prevent KeyError/None issues in prompts
     default_string_fields = [
-        "source_format", "medical_topic", "target_platform",
+        "source_format", "medical_topic", "target_duration", "target_platform",
         "medical_disclaimer_requirements", "cta_goal", "reference_egyptian_channels",
         "creator_profile", "revised_body", "self_critique_output", "production_critique_output",
-        "transition_design", "icon_shape_animation", "broll_prompts", "disclaimer_check",
+        "transition_design", "text_animation_overlay", "broll_prompts", "disclaimer_check",
+        "shorts_moments", "shorts_scripts", "shorts_captions", "shorts_quality_output", "shorts_quality_grade",
     ]
     for field in default_string_fields:
         if field not in initial_state:
@@ -2184,6 +2724,7 @@ if __name__ == "__main__":
         "translation_revision_count": 0,
         "quality_revision_count": 0,
         "production_revision_count": 0,
+        "shorts_revision_count": 0,
         "naturalness_score": 0,
         "contextual_alignment_score": 0,
         "dialect_score": 0,
@@ -2192,6 +2733,7 @@ if __name__ == "__main__":
         "max_translation_revision_count": 2,
         "max_quality_revision_count": 2,
         "max_production_revision_count": 2,
+        "max_shorts_revision_count": 2,
     }
     for field, default in default_int_fields.items():
         if field not in initial_state:
@@ -2229,7 +2771,7 @@ if __name__ == "__main__":
                 cumulative_state.update(value)
                 
                 elapsed = time.time() - node_start
-                print(f"\u2705 Node '{key}' completed. ({elapsed:.1f}s)")
+                print(f"✅ Node '{key}' completed. ({elapsed:.1f}s)")
                 
                 # Write step details to session log
                 log_entry = {
@@ -2247,17 +2789,54 @@ if __name__ == "__main__":
                         json.dump(cumulative_state, cp, ensure_ascii=False, indent=2)
                 except Exception as e:
                     print(f"  [warning] Could not save checkpoint: {e}")
-                
-                # Capture final package if it's the terminal node
-                if key == "final_script_package" and "final_package" in value:
-                    final_result = value["final_package"]
-    
-    # Save the final result separately
-    if final_result:
+
+    # Save the final deliverables
+    longform_deliverable = cumulative_state.get("final_package", "")
+    shorts_scripts_content = cumulative_state.get("shorts_scripts", "")
+    shorts_captions_content = cumulative_state.get("shorts_captions", "")
+    shorts_moments_content = cumulative_state.get("shorts_moments", "")
+
+    shorts_section = ""
+    if shorts_scripts_content:
+        shorts_section += "\n\n---\n\n# 📱 REELS & SHORTS PACKAGE\n\n"
+        if shorts_moments_content:
+            shorts_section += "## IDENTIFIED MOMENTS\n\n" + shorts_moments_content + "\n\n---\n\n"
+        shorts_section += "## REELS & SHORTS SCRIPTS\n\n" + shorts_scripts_content + "\n\n---\n\n"
+        if shorts_captions_content:
+            shorts_section += "## TIMED CAPTIONS & ON-SCREEN OVERLAYS\n\n" + shorts_captions_content
+
+    if longform_deliverable:
+        complete_output = longform_deliverable + shorts_section
         with open(final_script_path, "w", encoding="utf-8") as f:
-            f.write(final_result)
-        print(f"\nWorkflow finished. Final script saved to: {final_script_path}")
+            f.write(complete_output)
+        print(f"\nWorkflow finished. Final complete package saved to: {final_script_path}")
+        
+        # Also write standalone shorts package file for easy access
+        if shorts_section:
+            shorts_path = os.path.join(output_dir, "shorts_package.md")
+            with open(shorts_path, "w", encoding="utf-8") as sf:
+                sf.write(shorts_section.strip())
+            print(f"Dedicated Reels & Shorts package saved to: {shorts_path}")
+
+        # Automatically generate responsive HTML, PDF, and DOCX exports
+        try:
+            from convert_script import convert_markdown_file
+            print("\n🚀 Exporting final script to Responsive HTML, PDF, and DOCX...")
+            res = convert_markdown_file(final_script_path)
+            html_out = res[0]
+            pdf_out = res[1]
+            docx_out = res[2] if len(res) > 2 else None
+            print(f"  📄 HTML export saved to: {html_out}")
+            if pdf_out:
+                print(f"  📑 PDF export saved to:  {pdf_out}")
+            if docx_out:
+                print(f"  📝 DOCX export saved to: {docx_out}")
+            
+            # Also export shorts package if generated
+            if shorts_section and os.path.exists(shorts_path):
+                convert_markdown_file(shorts_path)
+        except Exception as conv_err:
+            print(f"  ⚠️ Automatic HTML/PDF/DOCX conversion warning: {conv_err}")
     else:
         print("\nWorkflow finished, but no final package was generated.")
         print(f"Checkpoint with all intermediate outputs saved to: {checkpoint_path}")
-
