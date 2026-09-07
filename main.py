@@ -1,4 +1,5 @@
 import os
+import re
 from typing import TypedDict, Optional
 from langgraph.graph import StateGraph, START, END
 from langchain_openai import ChatOpenAI
@@ -252,17 +253,28 @@ WORD COUNT FORMULA (Egyptian Arabic talking head):
   2. What performs well on Egyptian medical YouTube (7–10 min for mechanism explainers, 4–6 min for myth-busting, 10–15 min for complex condition breakdowns).
   3. Avoiding both under-serving the topic (too short to build trust) and viewer fatigue (too long without payoff).
 - State your chosen duration explicitly in the Word Count Target section and explain your reasoning in 1 sentence.
+- ACT-BY-ACT WORD COUNT BUDGET (MANDATORY):
+  You must calculate and mandate an explicit word count target for EACH ACT so downstream nodes do not compress a 9-minute video into a 5-minute summary.
+  Example for 9 minutes (~1,250–1,350 words total at 140 wpm):
+  * Hook: 80–100 words (0:00–0:45)
+  * Act 1 (The Relatable Hook & Human Stakes): 200–250 words (0:45–2:00)
+  * Act 2 (The Underlying Biological Machinery): 350–450 words (2:00–4:30)
+  * Act 3 (The Scientific Mystery & Competing Hypotheses): 400–450 words (4:30–7:30)
+  * Act 4 (The Clinical Evidence, Verdict & Solution): 250–300 words (7:30–8:45)
+  * Outro & Interactive CTA: 70–90 words (8:45–9:00)
 
 ANALOGY BANK RULES:
-- Every analogy must preserve the direction and rough magnitude of the real mechanism — an analogy that makes a mild risk sound severe (or vice versa) is a fidelity failure, not a style win
-- Prefer references any Egyptian viewer would immediately get: traffic/microbus queues, baladi bread, tea/ahwa culture, family gatherings, going to the pharmacist (الصيدلي) as a first stop for health questions, Ramadan/fasting-related routines when relevant
-- Do not force an analogy where a plain, warm explanation already works — analogies are a tool, not a mandate for every sentence
+- Every analogy must preserve the direction and rough magnitude of the real mechanism — an analogy that makes a mild risk sound severe (or vice versa) is a fidelity failure, not a style win.
+- REGISTER & TONE (العامية المصرية المثقفة البيضاء): Use clear, elegant, and universally understood Egyptian analogies that any viewer across Egypt can relate to without confusion.
+- STRICTLY FORBIDDEN: Vulgar street slang (ألفاظ سوقية) and mechanic-shop / car electrical jargon (لغة ورش وميكانيكا). Never use analogies like: 'فيوزات تضرب', 'فيوز', 'تجنزر', 'تصدي', 'الماكينة والكونتاكت', 'ماس كهربائي في الضفيرة', 'تفرك'.
+- PREFERRED ANALOGIES: Universal, clean everyday concepts: زرار النور، جرس الإنذار، فرامل العضلة، إشارة المرور، كارت الشحن، طابور العيش، الصيدلي.
+- Do not force an analogy where a plain, warm explanation already works — analogies are a tool, not a mandate for every sentence.
 
-DE-CLINICALIZATION PRINCIPLE:
-The brief is explicit: this must never read like "pure medical content." That means:
-- Replace lecture structure ("There are three causes of X. First...") with conversational structure ("طب ليه ده بيحصل أصلاً؟ في حاجتين بس")
-- Replace passive/textbook phrasing with a person talking directly to one viewer, not a lecture hall
-- Keep the medicine accurate; change how it's *delivered*, never what it *says*
+SCIENTIFIC MASTERY & CONVERSATIONAL WARMTH (THE BALANCED COMMUNICATOR):
+The brief requires an engaging, conversational Egyptian delivery, BUT it must NEVER dumb down the medicine or skip vital biological steps.
+- Dr. Ahmed Hosney is a respected physician and master science communicator. He explains the full cascade of physiology (receptors, cellular energy, nerve reflexes, neurotransmitters, clinical trials) with absolute mastery and depth.
+- Conversational delivery means changing *how* it's delivered (using relatable, dignified Egyptian analogies and conversational pacing in fluent العامية المثقفة البيضاء), NEVER stripping out the science or replacing it with vague hand-waving.
+- Do NOT just say 'السلك هنج وخلاص' — explain the physiological mechanism (e.g. what sensory organ stopped inhibiting the reflex, why fatigue triggers it, what the studies prove).
 - Conversational warmth does NOT mean cheap sensationalism or biological hostility. The human body and its organs must NEVER be framed as treacherous backstabbers or enemies ('جسمك بيخونك', 'المرض جه غدر', 'خيانة الأعضاء'). Medical conditions develop through physiological mechanisms, not moral malice.
 
 OUTPUT FORMAT:
@@ -278,6 +290,13 @@ OUTPUT FORMAT:
 ### Word Count Target
 **Target duration**: [X minutes]
 **Target word count**: [X words] (range [X–X])
+**Act-by-Act Word Count Budget**:
+- Hook: [X words]
+- Act 1: [X words]
+- Act 2: [X words]
+- Act 3: [X words]
+- Act 4: [X words]
+- Outro & CTA: [X words]
 
 ### Hook Angle (topic-specific, not generic)
 **What will make an Egyptian viewer stop for THIS topic**: [specific angle — a fear, a myth, a relatable moment, a surprising local-relevant fact from the ledger]
@@ -455,15 +474,17 @@ REBUILD PRINCIPLES:
 
 2. WRITE IN EGYPTIAN ARABIC FROM THE START — never draft in English internally and convert. Think in the dialect.
 
-3. DE-CLINICALIZE ON SIGHT: every item on the Strategy Plan's De-Clinicalization Priority List gets rebuilt using its assigned direction (analogy / story beat / direct question / trim). The test for every paragraph: would a warm, smart friend who happens to know medicine say it this way to someone they're worried about? If it reads like a slide from a lecture, rewrite it. De-clinicalization does NOT mean sensationalist hostility towards the human body. Strictly avoid framing organs or illnesses as backstabbers or traitors ('غدر', 'خيانة', 'بيخونك', 'قلبه يخذله'). Keep the tone empathetic, scientifically sound, and reassuring.
+3. SCIENTIFIC DEPTH WITH WARM CONVERSATIONAL DELIVERY: Every item on the Strategy Plan's De-Clinicalization Priority List gets rebuilt with clarity. But NEVER dumb down the science or skip physiological steps. The presenter (Dr. Ahmed Hosney) explains the real biological mechanisms (reflexes, receptors, cell energy, clinical data) with deep medical authority, using warm, clever Egyptian analogies (السهل الممتنع). De-clinicalization does NOT mean sensationalist hostility towards the human body ('غدر / خيانة / بيخونك') and does NOT mean vague colloquial hand-waving ('السلك هنج وخلاص'). Explain the 'how' and 'why' thoroughly so the audience learns real, empowering science.
 
 4. USE THE ANALOGY BANK, DON'T OVER-USE IT: pull analogies from the Strategy Plan where they were mapped to a specific fact. Don't force an analogy onto every sentence — plain warm Arabic works fine for simple points; save the analogies for the genuinely hard-to-grasp mechanisms.
 
 5. FOLLOW THE TERMINOLOGY RETENTION TABLE: for every technical/medical term, use the exact decision the Strategy Plan made — keep it in English, Arabize it, or say it first-mention-both. Do not re-decide this term by term as you write; the table already did that work. A term marked "Keep in English" should sit in English inside an otherwise fully Egyptian sentence, exactly the way an Egyptian doctor or health creator would actually say it (e.g., "الـ insulin resistance بتخلي الجسم..." is correct Egyptian Arabic with an English term inside it — it is NOT translation risk).
 
-6. SPOKEN EGYPTIAN ARABIC GRAMMAR, NOT فصحى — this is a separate axis from Rule 5 above:
-   - No فصحى conjugation or vocabulary, ever, for the surrounding Arabic (بيعمل not يفعل، هروح not سأذهب، عايز/محتاج not أريد، دلوقتي not الآن، بس not لكن، إزاي not كيف، ده/دي not هذا/هذه، أيوه not نعم)
-   - Use discourse markers naturally: يعني / طب / خلاص / بصراحة / أصل / على فكرة
+6. SPOKEN EGYPTIAN ARABIC GRAMMAR & REGISTER (العامية المصرية المثقفة البيضاء) — this is a separate axis from Rule 5 above:
+   - Clear, dignified, effortless to understand and pronounce for any native speaker (واضحة، مفهومة للجميع، وسهلة النطق).
+   - No فصحى conjugation or vocabulary, ever, for the surrounding Arabic (بيعمل not يفعل، هروح not سأذهب، عايز/محتاج not أريد، دلوقتي not الآن، بس not لكن، إزاي not كيف، ده/دي not هذا/هذه، أيوه not نعم).
+   - Use discourse markers naturally: يعني / طب / خلاص / بصراحة / أصل / على فكرة.
+   - STRICTLY FORBIDDEN: Vulgar street slang (ألفاظ سوقية) and mechanic-shop / car electrical jargon (لغة ورش وميكانيكا). Never use: "فيوزات تضرب", "فيوز", "تجنزر", "تصدي", "ماس كهربائي في الضفيرة", "تفرك", "قفشات سوقية". Use universally clear and elegant analogies (e.g. زرار النور، جرس الإنذار، فرامل العضلة).
    - Short clauses. Conversational stitching, not essay structure.
    - IMPORTANT: keeping an English technical term per Rule 5 does NOT violate this rule. The failure mode this rule guards against is English *sentence structure* and *word order* leaking into the Arabic — not English *nouns* appearing where the Terminology Table calls for them.
 
@@ -488,7 +509,11 @@ REBUILD PRINCIPLES:
    === [SECTION NAME] | Timestamp: [range] | Energy: [1–5] ===
    ```
 
-10. WORD COUNT DISCIPLINE: stay within ±10% of the Strategy Plan's target.
+10. ACT-BY-ACT WORD COUNT DISCIPLINE & SUBSTANTIVE DEPTH:
+   - You MUST fulfill the word count budget specified for each Act in the Strategy Plan.
+   - Do NOT write brief, high-level summaries or rush through the explanation.
+   - Dive deep into the medical nuances, physiological steps, and case studies so each act achieves its target word count (e.g., Act 1: 200–250 words, Act 2: 350–450 words, Act 3: 400–450 words, Act 4: 250–300 words).
+   - Total spoken dialogue across all acts must realistically match the target duration at ~135–145 words/minute (e.g., ~1,200–1,350 words for 9 minutes).
 
 11. DO NOT write the hook (already written) or the CTA (written next). Write the body only.
 
@@ -782,19 +807,28 @@ NO فصحى, ever:
 | يجب عليكم أن تفعلوا | لازم تعملوا |
 | على سبيل المثال | مثلاً |
 
-Apply the register specified: Cairene media-standard / Educated professional / Warm & familial / Street & youth slang, per `dialectRegister`.
+REGISTER REQUIREMENTS (العامية المصرية المثقفة البيضاء):
+- Apply Educated Conversational Egyptian per `dialectRegister`. The language must be dignified, articulate, universally understood, and effortless to pronounce for any native speaker (سهلة الفهم وسلسة النطق).
+- STRICTLY FORBIDDEN: Vulgar street slang (ألفاظ سوقية) and mechanic-shop / car electrical jargon (ورش وميكانيكا).
+  * DO NOT use: "فيوزات تضرب", "فيوز", "تجنزر", "تصدي", "ماس كهربائي في الضفيرة", "تفرك", "قفشة سوقية".
+  * Replace with universal everyday Egyptian analogies: "زرار النور علّق", "جرس الإنذار شغال ومش راضي يسكت", "فرامل العضلة وقفت", "إشارة المرور".
 
 Respect the Strategy Plan's Terminology Retention Table — do not "correct" a term the table marked "Keep in English" back into an Arabic neologism, and do not flag it as a dialect problem. IMPORTANT DISTINCTION: the dialect score evaluates grammar, conjugation, word order, and sentence rhythm — not whether specific technical nouns are in English. A sentence with a kept-English term inside fully Egyptian grammar (e.g., "الـ insulin resistance بتخلي الجسم يتعب أكتر") is exactly what a 10/10 dialect score should look like for Light/Moderate code-switching — it is not a deduction. What DOES cost dialect points is English sentence structure or word order leaking into the Arabic (a calque), regardless of which language any individual noun is in.
 
-DIMENSION 2 — WARMTH / DE-CLINICALIZATION
-This is the dimension the brief cares about most: this must never read like "pure medical content." Score every section against:
-- Does it sound like a person talking to one worried friend, or a lecture to a room?
-- Are medical mechanisms explained through story/analogy/plain talk, or through clinical enumeration ("There are three factors...")?
-- Is there warmth in the delivery — reassurance, empathy markers (متقلقش، إنت مش لوحدك في ده، ده حصل لكتير قبلك) — where the topic calls for it?
-- Does technical vocabulary get explained in-line rather than assumed?
-- NO SENSATIONALIST MELODRAMA OR BETRAYAL TROPES: Warmth means doctor-patient camaraderie, reassurance, and empathy, NOT sensationalist tabloid drama. Actively weed out and penalize clickbait phrases like 'جسمك بيخونك', 'المرض جه غدر', 'خيانة الأعضاء', 'طعنة'. If the script portrays organs as enemies or traitors, deduct points on Warmth/De-clinicalization and rewrite those lines into objective, empathetic medical science.
+DIMENSION 2 — THE BALANCE OF SCIENTIFIC MASTERY & CONVERSATIONAL WARMTH
+This is the core identity of Dr. Ahmed Hosney: an authoritative medical professional and elite science communicator who speaks like a warm, smart friend chatting with you over coffee.
 
-A script can be 100% dialect-accurate and still fail warmth if it's a textbook translated into perfect Cairene grammar. Both failure modes are equally disqualifying.
+AVOID TWO OPPOSING FAILURE MODES:
+1. The Cold Academic (التقرير الأكاديمي الجاف): Lecture-hall enumerations ("هناك 3 أسباب... أولاً"), stiff textbook phrasing, passive voice, or clinical detachment.
+2. The Superficial Dumb-Down (التسطيح المخل): Dumbing down the medicine, omitting key biological mechanisms, or replacing science with vague colloquial hand-waving (e.g., just saying "السلك مهنج وخلاص" without explaining the actual physiological reflex, feedback loop, or fatigue mechanism).
+
+THE GOLDEN STANDARD (السهل الممتنع):
+- Keep the full, sophisticated scientific mechanism intact (explain the receptors, the calcium release, the inhibitory reflexes, the clinical studies) so the viewer feels enlightened and respects the presenter's deep medical mastery.
+- Deliver that sophisticated science through warm, effortless Egyptian spoken storytelling, sharp cultural analogies, and genuine doctor-patient camaraderie.
+- Reassurance and empathy markers (متقلقش، إنت مش لوحدك في ده، تعالوا نفهم الحكاية) where appropriate.
+- NO SENSATIONALIST MELODRAMA OR BETRAYAL TROPES: Warmth means camaraderie and reassurance, NOT sensationalist tabloid drama. Actively weed out and penalize clickbait phrases like 'جسمك بيخونك', 'المرض جه غدر', 'خيانة الأعضاء', 'طعنة'. If the script portrays organs as enemies or traitors, deduct points on Warmth/De-clinicalization and rewrite those lines into objective, empathetic medical science.
+
+A script can be 100% dialect-accurate and still fail warmth if it's a textbook translated into perfect Cairene grammar, and it fails authority if it strips away the science. Both failure modes are equally disqualifying.
 
 Maintain the presenter's authentic persona as defined in `presenterProfile`. Ensure all clinical stories remain framed as third-person expert cases rather than slipping back into first-person claims of foreign clinic work.
 
@@ -945,10 +979,10 @@ def script_refinement(state: PipelineState) -> dict:
 1. FLOW: natural section-to-section transitions
 2. SPOKEN LANGUAGE: flag anything that still sounds written/translated rather than spoken
 3. PACING: variety in sentence length; no run of 5+ long or 5+ short sentences in a row
-4. WORD COUNT: total vs. target from the Strategy Plan
-5. CONSISTENCY: one voice throughout, no sudden formality shifts
+4. WORD COUNT & DEPTH: total spoken dialogue must realistically achieve the word count budget from the Strategy Plan (~135–145 words/minute). Do NOT compress or truncate scientific mechanisms into brief summaries.
+5. CONSISTENCY & REGISTER: one voice throughout (Dr. Ahmed Hosney — authoritative physician with warm Egyptian conversational delivery in Educated Egyptian Arabic / العامية المثقفة البيضاء). Cleanse any vulgar street slang or mechanic-shop metaphors (like فيوزات، تجنزر، تصدي).
 6. MANDATORY MENTIONS present
-7. RETENTION MECHANIC CHECK: loops planted/referenced/resolved; disclaimer present; CTA placed correctly
+7. RETENTION MECHANIC CHECK: verify that the open loop planted in the hook is explicitly mentioned/referenced in Act 3 before resolution in Act 4; disclaimer present; CTA placed correctly. All retention cues MUST exist as spoken dialogue in the text.
 8. VISUAL NOTE CHECK: notes describe what's SHOWN, not what's said
 
 Do NOT re-litigate dialect, warmth, or medical fidelity — those were handled by dedicated nodes. Only fix flow, pacing, and structural assembly.
@@ -958,7 +992,7 @@ OUTPUT:
 ```
 SCRIPT: [Video Title in Egyptian Arabic]
 Duration Target: [X min]
-Word Count: [actual] / [target] ([X%])
+Word Count: [actual spoken words] / [target words] ([X%])
 Platform: [platform]
 Language: Egyptian Arabic
 Dialect Authenticity Score: [X]/10
@@ -1021,21 +1055,24 @@ AUDIT CRITERIA — score each (1–10), flag CRITICAL / WARNING / MINOR:
 1. HOOK QUALITY (Critical) — grabs attention fast, open loop, specific, works sound-off
 2. NARRATIVE ARC (Critical) — clear structure, no filler, matches the planned energy curve
 3. SPOKEN LANGUAGE (Critical) — natural aloud, no written/translated patterns
-4. WORD COUNT (Warning) — within ±10%
-5. OPEN LOOP COMPLETION (Critical) — planted, referenced, resolved
+4. REAL WORD COUNT & PACING (Critical) — Check the actual length of the spoken script. Do NOT trust the header label blindly. For an 8–10 minute video, the script must contain ~1,150–1,350 words of actual spoken dialogue across all acts. A ~700–800 word script is only ~5 minutes and is a severe failure of pacing and duration! If under-length, expand the physiological explanations, clinical nuances, and case study details in revised_script.
+5. OPEN LOOP COMPLETION (Critical) — Confirm that the open loop planted in the hook (e.g. the 3cm hematoma case) is explicitly sustained/referenced in Act 3 before being resolved in Act 4. Both the plant, the mid-video reference, and the resolution must actually be present as spoken dialogue in the script text.
 6. DISCLAIMER (Critical) — present, adequate, appropriately placed and warmly phrased
 7. CTA QUALITY (Warning) — natural, after loop resolution, matches ctaGoal
-8. DIALECT AUTHENTICITY (Critical) — pull the score from the Dialect & Warmth Layer input; re-verify it holds in the final assembly, don't just copy the number blindly
-9. WARMTH / DE-CLINICALIZATION (Critical) — same: re-verify against the assembled script, not just trust the upstream score
+8. DIALECT AUTHENTICITY & REGISTER (Critical) — pull the score from the Dialect & Warmth Layer input; re-verify it holds in the final assembly. Ensure the dialect is Educated Egyptian (العامية المثقفة البيضاء) that is smooth, easy to understand, and effortless to pronounce for any native listener. Deduct heavily if there is any vulgar slang (سوقية) or mechanic-shop jargon (e.g. 'فيوزات', 'تجنزر', 'تصدي', 'ماس كهربائي في الضفيرة').
+9. WARMTH & HUMAN CAMARADERIE (Critical) — verify doctor-patient warmth, reassurance, and empathy
 10. MEDICAL FIDELITY (Critical, hardest gate) — pull `medical_accuracy_pass` and `fidelity_score` from the Fidelity Auditor input; if it failed, this is an automatic non-A regardless of everything else
 11. PERSONA INTEGRITY (Critical) — verify that the script strictly speaks from the presenter's persona (`presenterProfile`) and contains NO remnants of the original author's name, foreign identity, or falsely claimed personal clinical actions
-12. AVOID LIST & ANTI-SENSATIONALISM (Critical) — verify the script strictly honors the avoid_list. Confirm there is NO sensationalist melodrama or body-antagonism (e.g., 'جسمك بيخونك', 'غدر', 'خيانة', 'طعنة', 'قلبه يخذله'). Any occurrence of these tropes is an automatic failure for Warmth and requires immediate rewriting in revised_script.
+12. AVOID LIST & ANTI-SENSATIONALISM (Critical) — verify the script strictly honors the avoid_list. Confirm there is NO sensationalist melodrama or body-antagonism (e.g., 'جسمك بيخونك', 'غدر', 'خيانة', 'طعنة', 'قلبه يخذله') AND NO mechanic-shop / car electrical jargon (e.g., 'فيوزات', 'تجنزر', 'تصدي'). Any occurrence of these tropes is an automatic failure for Warmth and requires immediate rewriting in revised_script.
+13. SCIENTIFIC MASTERY & DEPTH BALANCE (Critical) — verify the script strikes Dr. Ahmed Hosney's balance: authoritative, precise medical science (receptors, reflexes, biochemical cascades) delivered through warm Egyptian storytelling and clever analogies (السهل الممتنع). Deduct points if the medicine is stripped away or over-simplified into vague colloquial hand-waving.
 
 HARD GATES — grade can only be "A" if ALL of the following hold:
 - dialect_authenticity_score >= 8
 - warmth_score >= 8
 - medical_accuracy_pass = true AND fidelity_score >= 9
-- strictly zero occurrences of prohibited sensationalist tropes ('بيخونك', 'غدر وخيانة', etc.) in revised_script
+- strictly zero occurrences of prohibited sensationalist tropes ('بيخونك', 'غدر وخيانة', etc.) or mechanic-shop slang ('فيوزات', 'تجنزر', 'تصدي', etc.) in revised_script
+- actual spoken script length >= 85% of target (minimum 1,150 words for an 8–10 minute target video)
+- open loop planted in hook is explicitly referenced in Act 3 and resolved in Act 4 in the script text
 
 REVISION MODE: if `revision_count` > 0, verify the specific issues from your previous critique are actually resolved in the current script — not renamed or superficially touched.
 
@@ -1728,6 +1765,64 @@ def _audit_part1(text: str) -> list:
             "Replace with grounded scientific paradoxes, surprising clinical facts, or myth-busting."
         )
 
+    # Check for forbidden mechanic-shop jargon or vulgar street slang
+    slang_forbidden = ["فيوزات", "فيوز", "تجنزر", "يجنزر", "يصدي", "تصدي", "تفرك"]
+    found_slang = [s for s in slang_forbidden if s in text]
+    if found_slang:
+        issues.append(
+            f"VULGAR / MECHANIC SLANG DETECTED: Found inappropriate slang/mechanic-shop term(s): {found_slang}. "
+            "The presenter is Dr. Ahmed Hosney — use Educated, Clear Egyptian Arabic (العامية المصرية المثقفة البيضاء). "
+            "Do NOT use mechanic-shop jargon or obscure slang like 'فيوزات' or 'تجنزر'. "
+            "Replace with clear, natural, everyday Egyptian analogies (e.g., 'زرار النور علّق', 'جرس الإنذار شغال', 'فرامل العضلة وقفت')."
+        )
+
+    # Check retention architecture table desync
+    try:
+        script_match = re.search(r"###\s*🎬?\s*PRODUCTION SCRIPT.*?\n(.*?)(\n###\s*WHAT CHANGED|\Z)", text, re.DOTALL)
+        if script_match and "### RETENTION ARCHITECTURE" in text:
+            script_body = script_match.group(1)
+            ret_block = text.split("### RETENTION ARCHITECTURE")[1].split("###")[0]
+            missing_cues = []
+            for line in ret_block.split("\n"):
+                if line.startswith("|") and not line.startswith("|---|") and "Timestamp" not in line and "Element" not in line:
+                    parts = [p.strip() for p in line.split("|")]
+                    if len(parts) >= 4:
+                        elem, cue = parts[1], parts[3]
+                        cue_clean = re.sub(r"[\.…\"'“”«»\(\)\[\]]", "", cue).strip()
+                        words = cue_clean.split()[:3]
+                        if len(words) >= 2:
+                            snippet = " ".join(words)
+                            if snippet not in script_body:
+                                missing_cues.append(f"{elem}: '{cue}'")
+            if missing_cues:
+                issues.append(
+                    f"RETENTION ARCHITECTURE DESYNC: The following lines in the Retention table do not appear in the Production Script text: {missing_cues}. "
+                    "Every hook, open loop reference, disclaimer, and loop resolution in the Retention table MUST be present as actual spoken dialogue in the script."
+                )
+    except Exception:
+        pass
+
+    # Check spoken script length against target duration
+    try:
+        script_match = re.search(r"###\s*🎬?\s*PRODUCTION SCRIPT.*?\n(.*?)(\n###\s*WHAT CHANGED|\Z)", text, re.DOTALL)
+        if script_match:
+            script_body = script_match.group(1)
+            cleaned = re.sub(r"\[.*?\]", "", script_body)
+            cleaned = re.sub(r"\*\*\(.*?\)\*\*", "", cleaned)
+            cleaned = re.sub(r"===.*?===", "", cleaned)
+            cleaned = re.sub(r"\*\*\[.*?\]\*\*", "", cleaned)
+            spoken_words = len(cleaned.split())
+            
+            duration_match = re.search(r"Target Duration\s*\|\s*(\d+)", text, re.IGNORECASE)
+            target_min = int(duration_match.group(1)) if duration_match else 0
+            if target_min >= 8 and spoken_words < 1000:
+                issues.append(
+                    f"PRODUCTION SCRIPT TOO SHORT: Spoken dialogue has only {spoken_words} words (~{spoken_words // 140} minutes), but the target duration is {target_min} minutes (needs ~1,150–1,350 words). "
+                    "You must expand the biological explanations, physiological mechanisms, and clinical case study details."
+                )
+    except Exception:
+        pass
+
     return issues
 
 
@@ -1874,8 +1969,11 @@ Fields per concept:
 
 ---
 
-### \U0001f3ac PRODUCTION SCRIPT (Teleprompter & Filming Ready)
-[Complete final script with all cues: [\u0646\u0628\u0631\u0629 \u062f\u0627\u0641\u0626\u0629], [\u0645\u064a\u0644 \u0644\u0644\u0623\u0645\u0627\u0645], [\u0646\u0638\u0631\u0629 \u0645\u0628\u0627\u0634\u0631\u0629], [VISUAL NOTE], [SFX], [ON-SCREEN TEXT]]
+### 🎬 PRODUCTION SCRIPT (Teleprompter & Filming Ready)
+- Deep, complete spoken dialogue matching the target duration (~1,200–1,350 words for 9 minutes). Do NOT compress into high-level summaries.
+- Every open loop planted in the hook MUST be explicitly sustained/referenced in Act 3 and resolved in Act 4 as spoken dialogue.
+- Dialect Register: Strictly use Educated, Clear Egyptian Arabic (العامية المصرية المثقفة البيضاء). Smooth, clear, dignified, and effortless to understand and pronounce for all viewers. Strictly ZERO vulgar slang (ألفاظ سوقية) and ZERO mechanic-shop jargon (ممنوع مصطلحات مثل: فيوزات، تجنزر، تصدي، ماس كهربائي في الضفيرة). Use clean, everyday Egyptian analogies (زرار النور، جرس الإنذار، فرامل العضلة).
+[Complete final script with all cues: [نبرة دافئة], [ميل للأمام], [نظرة مباشرة], [VISUAL NOTE], [SFX], [ON-SCREEN TEXT]]
 
 ---
 
@@ -1901,6 +1999,7 @@ Fields per concept:
 | Loop Resolution | | |
 | CTA | | |
 | Outro | | |
+*MANDATORY SYNCHRONIZATION RULE*: Every single line listed in the 'Line (first Arabic words)' column MUST match the exact starting Arabic words of an actual spoken dialogue line in the PRODUCTION SCRIPT above.
 
 ---
 
