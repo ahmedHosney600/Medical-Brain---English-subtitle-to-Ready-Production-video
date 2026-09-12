@@ -1,0 +1,2743 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>نص الفيديو - Video Script Package</title>
+  
+  <!-- Modern Arabic Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Cairo:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    /* ==========================================================================
+       CSS VARIABLES & RESPONSIVE FONT SCALING
+       ========================================================================== */
+    :root {
+      /* Font sizes for each responsive breakpoint (User-Controllable) */
+      --fs-mobile: 16px;        /* Mobile: < 640px */
+      --fs-tablet: 18px;        /* Tablet: 640px - 1023px */
+      --fs-laptop: 20px;        /* Small PC / Laptop: 1024px - 1439px */
+      --fs-desktop: 22px;       /* Large Screen PC: >= 1440px */
+      
+      --font-family: 'Cairo', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --line-height: 1.8;
+      
+      /* Dark Theme Colors (Default) */
+      --bg-primary: #0b0f19;
+      --bg-secondary: #131b2e;
+      --bg-card: #182238;
+      --bg-card-hover: #1e2b46;
+      --border-color: #243452;
+      --border-subtle: #1a2842;
+      
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      
+      --accent-primary: #38bdf8;
+      --accent-hover: #0ea5e9;
+      --accent-glow: rgba(56, 189, 248, 0.25);
+      
+      --badge-gold: #f59e0b;
+      --badge-emerald: #10b981;
+      --badge-rose: #f43f5e;
+      --badge-purple: #a855f7;
+      
+      --container-width: 1080px;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --shadow-card: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+      --transition-smooth: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Light Theme Overrides */
+    [data-theme="light"] {
+      --bg-primary: #f8fafc;
+      --bg-secondary: #f1f5f9;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f8fafc;
+      --border-color: #cbd5e1;
+      --border-subtle: #e2e8f0;
+      
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #94a3b8;
+      
+      --accent-primary: #0284c7;
+      --accent-hover: #0369a1;
+      --accent-glow: rgba(2, 132, 199, 0.2);
+      
+      --shadow-card: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+    }
+
+    /* Teleprompter / High-Contrast Filming Mode */
+    [data-theme="teleprompter"] {
+      --bg-primary: #000000;
+      --bg-secondary: #0a0a0a;
+      --bg-card: #111111;
+      --bg-card-hover: #161616;
+      --border-color: #333333;
+      --border-subtle: #222222;
+      
+      --text-main: #fef08a; /* High-vis soft yellow */
+      --text-muted: #e2e8f0;
+      --text-dim: #94a3b8;
+      
+      --accent-primary: #facc15;
+      --accent-hover: #eab308;
+      --accent-glow: rgba(250, 204, 21, 0.3);
+      
+      --line-height: 2.2;
+    }
+
+    /* ==========================================================================
+       BASE RESET & TYPOGRAPHY
+       ========================================================================== */
+    html, body {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      max-width: 100vw;
+      overflow-x: hidden;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-family);
+      line-height: var(--line-height);
+      color: var(--text-main);
+      background-color: var(--bg-primary);
+      transition: background-color 0.3s ease, color 0.3s ease;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow-x: hidden;
+      direction: rtl;
+      text-align: right;
+    }
+
+    /* Selection */
+    ::selection {
+      background: var(--accent-primary);
+      color: #0b0f19;
+    }
+
+    /* ==========================================================================
+       CONTAINER & HEADER
+       ========================================================================== */
+    .site-wrapper {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+    }
+
+    .site-header {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      padding: 20px 24px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .header-content {
+      max-width: var(--container-width);
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .header-title-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-logo {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, #0284c7, #38bdf8);
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+
+    .header-title {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--text-main);
+      line-height: 1.3;
+    }
+
+    .header-subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: var(--transition-smooth);
+      background: var(--bg-card);
+      color: var(--text-main);
+      border-color: var(--border-color);
+    }
+
+    .btn:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--accent-primary);
+      transform: translateY(-1px);
+    }
+
+    .btn-primary {
+      background: var(--accent-primary);
+      color: #0b0f19;
+      border-color: var(--accent-primary);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .main-container {
+      max-width: var(--container-width);
+      width: 100%;
+      min-width: 0;
+      margin: 0 auto;
+      flex: 1;
+    }
+
+    .script-hero-banner {
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(168, 85, 247, 0.08));
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 24px 28px;
+      margin-bottom: 30px;
+      box-shadow: var(--shadow-card);
+      min-width: 0;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--accent-primary);
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-bottom: 12px;
+    }
+
+    .hero-title {
+      margin: 0;
+      font-size: 1.6rem;
+      border-bottom: none;
+      padding-bottom: 0;
+      color: var(--text-main);
+    }
+
+    /* ==========================================================================
+       TYPOGRAPHY & CONTENT STYLING
+       ========================================================================== */
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-main);
+      font-weight: 800;
+      line-height: 1.35;
+      margin-top: 1.8em;
+      margin-bottom: 0.8em;
+      letter-spacing: -0.01em;
+      word-break: break-word;
+    }
+
+    h1 {
+      font-size: 1.85rem;
+      color: var(--accent-primary);
+      border-bottom: 2px solid var(--border-color);
+      padding-bottom: 0.4em;
+    }
+
+    h2 {
+      font-size: 1.55rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-right: 4px solid var(--accent-primary);
+      padding-right: 12px;
+      background: linear-gradient(90deg, rgba(56, 189, 248, 0.08), transparent);
+      padding-top: 8px;
+      padding-bottom: 8px;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    }
+
+    h3 {
+      font-size: 1.3rem;
+      color: #38bdf8;
+    }
+
+    h4 {
+      font-size: 1.15rem;
+      color: #e2e8f0;
+    }
+
+    p {
+      margin-bottom: 1.2em;
+      color: var(--text-main);
+      word-break: break-word;
+    }
+
+    hr {
+      border: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-color), transparent);
+      margin: 2.5em 0;
+    }
+
+    ul, ol {
+      margin-bottom: 1.4em;
+      padding-right: 1.6em;
+    }
+
+    li {
+      margin-bottom: 0.5em;
+    }
+
+    strong {
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    [data-theme="light"] strong {
+      color: #0f172a;
+    }
+
+    /* ==========================================================================
+       TABLES (RESPONSIVE & BEAUTIFIED)
+       ========================================================================== */
+    .table-responsive {
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin: 1.6em 0;
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-card);
+      border: 1px solid var(--border-color);
+      background: var(--bg-card);
+    }
+
+    table {
+      width: 100%;
+      min-width: 480px;
+      border-collapse: collapse;
+      text-align: right;
+      font-size: 0.95rem;
+    }
+
+    th, td {
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    th {
+      background: var(--bg-secondary);
+      color: var(--accent-primary);
+      font-weight: 700;
+      white-space: nowrap;
+      position: sticky;
+      top: 0;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tbody tr:hover {
+      background: var(--bg-card-hover);
+    }
+
+    /* ==========================================================================
+       SCRIPT PRODUCTION ELEMENTS
+       ========================================================================== */
+    /* Speaker tags */
+    .speaker-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 800;
+      color: var(--accent-primary);
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 2px 10px;
+      border-radius: 6px;
+      margin-left: 6px;
+    }
+
+    .speaker-avatar {
+      font-size: 1.1em;
+    }
+
+    /* Director & Camera Cues */
+    .director-cue {
+      background: rgba(245, 158, 11, 0.08);
+      border-right: 4px solid var(--badge-gold);
+      padding: 12px 16px;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      margin: 14px 0;
+      font-size: 0.92rem;
+      color: #fde047;
+      font-style: italic;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    [data-theme="light"] .director-cue {
+      background: #fef9c3;
+      color: #854d0e;
+      border-right-color: #ca8a04;
+    }
+
+    .cue-icon {
+      font-style: normal;
+      font-size: 1.2rem;
+    }
+
+    /* Scene markers */
+    .scene-header {
+      margin: 28px 0 16px 0;
+    }
+
+    .scene-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, #a855f7, #ec4899);
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+      padding: 6px 14px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      box-shadow: 0 4px 12px rgba(168, 85, 247, 0.3);
+    }
+
+    /* Code cards with copy button */
+    .code-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      margin: 18px 0;
+      overflow: hidden;
+      box-shadow: var(--shadow-card);
+    }
+
+    .code-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 16px;
+      background: rgba(0, 0, 0, 0.2);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .code-tag {
+      font-size: 0.8rem;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+      direction: ltr;
+    }
+
+    .copy-button {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 4px 12px;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: var(--transition-smooth);
+    }
+
+    .copy-button:hover {
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+    }
+
+    .copy-button.copied {
+      background: var(--badge-emerald);
+      color: #ffffff;
+      border-color: var(--badge-emerald);
+    }
+
+    pre {
+      padding: 16px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      line-height: 1.6;
+      color: #e2e8f0;
+      direction: ltr;
+      text-align: left;
+    }
+
+    [data-theme="light"] pre {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+
+    code {
+      font-family: var(--font-mono);
+    }
+
+    /* ==========================================================================
+       FLOATING TOOLBAR & CONTROLS
+       ========================================================================== */
+    .floating-pill {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 999;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      padding: 8px 12px;
+      border-radius: 40px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+
+    .pill-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-main);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-family: inherit;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: var(--transition-smooth);
+    }
+
+    .pill-btn:hover {
+      background: var(--bg-card);
+      border-color: var(--border-color);
+    }
+
+    .pill-btn-primary {
+      background: var(--accent-primary);
+      color: #0b0f19;
+    }
+
+    .pill-btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    /* ==========================================================================
+       SETTINGS MODAL / DRAWER
+       ========================================================================== */
+    .settings-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.65);
+      z-index: 1000;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .settings-overlay.active {
+      display: flex;
+    }
+
+    .settings-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 650px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .settings-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .settings-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .close-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.5rem;
+      cursor: pointer;
+      line-height: 1;
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+    }
+
+    .close-btn:hover {
+      color: var(--text-main);
+      background: var(--bg-card);
+    }
+
+    .settings-body {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .setting-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .setting-label {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .setting-desc {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .screen-slider-row {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .screen-slider-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .screen-name {
+      font-weight: 700;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .screen-badge-size {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--accent-primary);
+    }
+
+    .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    input[type="range"] {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border-color);
+      outline: none;
+      -webkit-appearance: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--accent-primary);
+      cursor: pointer;
+      box-shadow: 0 0 10px var(--accent-glow);
+    }
+
+    .preset-pills {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .preset-pill {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+
+    .preset-pill:hover {
+      border-color: var(--accent-primary);
+      color: var(--text-main);
+    }
+
+    .select-input {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+
+    .theme-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .theme-btn {
+      padding: 10px;
+      border-radius: var(--radius-md);
+      border: 2px solid var(--border-color);
+      background: var(--bg-card);
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+      transition: var(--transition-smooth);
+    }
+
+    .theme-btn.active {
+      border-color: var(--accent-primary);
+      background: rgba(56, 189, 248, 0.1);
+    }
+
+    .settings-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    /* ==========================================================================
+       TELEPROMPTER AUTO-SCROLL CONTROLS (MINIMAL TOP-FIXED)
+       ========================================================================== */
+    [data-theme="teleprompter"] .site-header {
+      display: none !important;
+    }
+
+    /* No buttons in the bottom of screen in teleprompter mode */
+    [data-theme="teleprompter"] .floating-pill {
+      display: none !important;
+    }
+
+    [data-theme="teleprompter"] .main-container {
+      padding-top: 65px;
+    }
+
+    .teleprompter-controls {
+      display: none;
+      position: fixed;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+      background: rgba(15, 15, 15, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      padding: 4px 10px;
+      border-radius: 999px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4);
+      align-items: center;
+      gap: 6px;
+      opacity: 0.92;
+      transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+      user-select: none;
+      -webkit-user-select: none;
+      direction: ltr;
+    }
+
+    .teleprompter-controls:hover {
+      opacity: 1;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.8), 0 0 18px rgba(250, 204, 21, 0.25);
+    }
+
+    [data-theme="teleprompter"] .teleprompter-controls {
+      display: inline-flex;
+    }
+
+    .prompter-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.08);
+      color: #f1f5f9;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+      transition: all 0.15s ease;
+      outline: none;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .prompter-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      color: #ffffff;
+      transform: scale(1.08);
+    }
+
+    .prompter-btn:active {
+      transform: scale(0.94);
+    }
+
+    .prompter-play-btn {
+      background: #facc15;
+      color: #0b0f19;
+      border-color: #facc15;
+    }
+
+    .prompter-play-btn:hover {
+      background: #fde047;
+      color: #000;
+      border-color: #fde047;
+    }
+
+    .prompter-play-btn.is-playing {
+      background: #ef4444;
+      color: #ffffff;
+      border-color: #ef4444;
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+    }
+
+    .prompter-play-btn.is-playing:hover {
+      background: #dc2626;
+      border-color: #dc2626;
+    }
+
+    .prompter-speed-badge {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #facc15;
+      min-width: 42px;
+      text-align: center;
+      line-height: 1.4;
+      padding: 3px 6px;
+      border-radius: 6px;
+      background: rgba(250, 204, 21, 0.12);
+      letter-spacing: -0.2px;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      transition: all 0.15s ease;
+    }
+
+    .prompter-speed-badge:hover {
+      background: rgba(250, 204, 21, 0.25);
+      color: #fde047;
+      transform: scale(1.04);
+    }
+
+    .prompter-font-btn {
+      font-size: 0.74rem;
+      font-weight: 800;
+      font-family: var(--font-mono);
+      letter-spacing: -0.5px;
+    }
+
+    .prompter-divider {
+      width: 1px;
+      height: 16px;
+      background: rgba(255, 255, 255, 0.18);
+      margin: 0 2px;
+    }
+
+    .prompter-exit-btn:hover {
+      background: rgba(239, 68, 68, 0.25);
+      color: #fca5a5;
+      border-color: rgba(239, 68, 68, 0.4);
+    }
+
+    /* ==========================================================================
+       MEDIA QUERIES FOR RESPONSIVE SCREENS & FONT SIZES
+       ========================================================================== */
+    /* 1. Mobile Screen (< 640px) */
+    @media (max-width: 639px) {
+      html {
+        font-size: var(--fs-mobile);
+      }
+      .site-header {
+        padding: 10px 12px;
+      }
+      .header-content {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+      .header-title-group {
+        gap: 8px;
+      }
+      .header-logo {
+        width: 36px;
+        height: 36px;
+        font-size: 18px;
+      }
+      .header-title {
+        font-size: 0.95rem;
+      }
+      .header-subtitle {
+        font-size: 0.75rem;
+      }
+      .header-actions {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+        width: 100%;
+      }
+      .header-actions .btn {
+        justify-content: center;
+        padding: 6px 8px;
+        font-size: 0.8rem;
+      }
+      .main-container {
+        padding: 14px 10px;
+      }
+      .script-hero-banner {
+        padding: 14px 12px;
+        margin-bottom: 16px;
+      }
+      .hero-title {
+        font-size: 1.15rem;
+        word-break: break-word;
+      }
+      .floating-pill {
+        bottom: 12px;
+        right: 12px;
+        padding: 4px 8px;
+      }
+      .pill-btn {
+        padding: 4px 6px;
+        font-size: 0.78rem;
+      }
+      .teleprompter-controls {
+        top: 8px;
+        padding: 3px 6px;
+        gap: 4px;
+        max-width: 98vw;
+      }
+      .prompter-btn {
+        width: 28px;
+        height: 28px;
+      }
+      .prompter-speed-badge {
+        min-width: 36px;
+        font-size: 0.72rem;
+        padding: 2px 4px;
+      }
+    }
+
+    /* 2. Tablet Screen (640px - 1023px) */
+    @media (min-width: 640px) and (max-width: 1023px) {
+      html {
+        font-size: var(--fs-tablet);
+      }
+      .main-container {
+        padding: 24px 20px;
+      }
+    }
+
+    /* 3. Small Screen PC / Laptop (1024px - 1439px) */
+    @media (min-width: 1024px) and (max-width: 1439px) {
+      html {
+        font-size: var(--fs-laptop);
+      }
+      .main-container {
+        padding: 32px 28px;
+      }
+    }
+
+    /* 4. Large Screen PC (>= 1440px) */
+    @media (min-width: 1440px) {
+      html {
+        font-size: var(--fs-desktop);
+      }
+      .main-container {
+        padding: 40px 36px;
+      }
+    }
+
+    /* Simulator overrides when testing viewport sizes */
+    body.sim-mobile {
+      font-size: var(--fs-mobile) !important;
+    }
+    body.sim-mobile .main-container {
+      max-width: 400px !important;
+      margin: 0 auto;
+      box-shadow: 0 0 50px rgba(0,0,0,0.5);
+    }
+    body.sim-tablet {
+      font-size: var(--fs-tablet) !important;
+    }
+    body.sim-tablet .main-container {
+      max-width: 768px !important;
+      margin: 0 auto;
+      box-shadow: 0 0 50px rgba(0,0,0,0.5);
+    }
+    body.sim-laptop {
+      font-size: var(--fs-laptop) !important;
+    }
+    body.sim-laptop .main-container {
+      max-width: 1100px !important;
+      margin: 0 auto;
+    }
+    body.sim-desktop {
+      font-size: var(--fs-desktop) !important;
+    }
+    body.sim-desktop .main-container {
+      max-width: 1400px !important;
+      margin: 0 auto;
+    }
+
+    /* ==========================================================================
+       PRINT & PDF STYLES
+       ========================================================================== */
+    @media print {
+      @page {
+        size: A4;
+        margin: 14mm 12mm 14mm 12mm;
+      }
+
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      body {
+        background: #ffffff !important;
+        color: #0f172a !important;
+        font-size: 13.5px !important;
+        line-height: 1.6 !important;
+      }
+
+      .site-wrapper {
+        min-height: auto !important;
+        display: block !important;
+      }
+
+      .no-print,
+      .site-header,
+      .floating-pill,
+      .settings-overlay,
+      .teleprompter-bar,
+      .teleprompter-controls,
+      .copy-button {
+        display: none !important;
+      }
+
+      .main-container {
+        max-width: 100% !important;
+        width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+
+      .script-hero-banner {
+        background: #f0f9ff !important;
+        border: 1px solid #bae6fd !important;
+        box-shadow: none !important;
+        margin-bottom: 20px !important;
+        padding: 16px 20px !important;
+      }
+
+      .hero-badge {
+        background: #e0f2fe !important;
+        color: #0369a1 !important;
+      }
+
+      .hero-title {
+        color: #0369a1 !important;
+      }
+
+      .table-responsive {
+        background: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: none !important;
+        margin: 1em 0 !important;
+      }
+
+      table {
+        color: #0f172a !important;
+      }
+
+      table th {
+        background: #f1f5f9 !important;
+        color: #0369a1 !important;
+        border-bottom: 2px solid #cbd5e1 !important;
+      }
+
+      table td {
+        color: #1e293b !important;
+        border-bottom: 1px solid #e2e8f0 !important;
+      }
+
+      tbody tr:hover {
+        background: transparent !important;
+      }
+
+      .code-card {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: none !important;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .code-card-header {
+        background: #f1f5f9 !important;
+        border-bottom: 1px solid #cbd5e1 !important;
+      }
+
+      .code-tag {
+        color: #475569 !important;
+      }
+
+      pre {
+        background: #f8fafc !important;
+        color: #0f172a !important;
+        border: none !important;
+      }
+
+      code {
+        color: #0f172a !important;
+      }
+
+      .speaker-tag {
+        background: #e0f2fe !important;
+        color: #0369a1 !important;
+        border: 1px solid #7dd3fc !important;
+      }
+
+      .director-cue {
+        background: #fefce8 !important;
+        color: #854d0e !important;
+        border-right: 4px solid #eab308 !important;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      h1, h2, h3 {
+        break-after: avoid;
+        page-break-after: avoid;
+      }
+
+      h1 {
+        color: #0284c7 !important;
+        border-bottom: 2px solid #0284c7 !important;
+      }
+
+      h2 {
+        color: #0f172a !important;
+        border-right-color: #0284c7 !important;
+        background: #f0f9ff !important;
+        margin-top: 22px !important;
+      }
+
+      h3 {
+        color: #0369a1 !important;
+      }
+
+      h4 {
+        color: #334155 !important;
+      }
+
+      strong {
+        color: #0f172a !important;
+      }
+
+      p {
+        color: #1e293b !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="site-wrapper">
+    <!-- Top Header -->
+    <header class="site-header no-print">
+      <div class="header-content">
+        <div class="header-title-group">
+          <div class="header-logo">🎬</div>
+          <div>
+            <div class="header-title">نص الفيديو - Video Script Package</div>
+            <div class="header-subtitle">حزمة السكريبت المعتمدة • جاهزة للإنتاج والتصوير</div>
+          </div>
+        </div>
+        
+        <div class="header-actions">
+          <button class="btn" onclick="toggleTheme()" title="تغيير المظهر">
+            <span id="theme-icon">☀️</span> <span id="theme-text">نهاري</span>
+          </button>
+          <button class="btn" onclick="setTeleprompterMode()" title="وضع ملقن التصوير">
+            <span>🎥</span> <span>وضع الملقن</span>
+          </button>
+          <button class="btn" onclick="openSettings()" title="التحكم بأحجام الخطوط والشاشات">
+            <span>🔤</span> <span>الخط والشاشات</span>
+          </button>
+          <button class="btn btn-primary" onclick="window.print()" title="طباعة أو تصدير PDF">
+            <span>🖨️</span> <span>طباعة / PDF</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-container">
+      
+      <!-- Teleprompter Minimal Fixed Control Bar (Active only in teleprompter mode) -->
+      <div class="teleprompter-controls no-print" id="teleprompterControls" role="toolbar" aria-label="أدوات التحكم بالملقن">
+        <!-- Play / Pause -->
+        <button type="button" class="prompter-btn prompter-play-btn" id="teleprompterPlayPauseBtn" onclick="toggleAutoScroll(event)" title="تشغيل / إيقاف التمرير التلقائي (Space)" aria-label="تشغيل أو إيقاف التمرير">
+          <svg class="icon-play" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <svg class="icon-pause" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+        </button>
+
+        <!-- Speed Down (Micro-step 0.1x) -->
+        <button type="button" class="prompter-btn" id="teleprompterSpeedDownBtn"
+                onmousedown="startSpeedRepeat(-0.1, event)" onmouseup="stopSpeedRepeat()" onmouseleave="stopSpeedRepeat()"
+                ontouchstart="startSpeedRepeat(-0.1, event)" ontouchend="stopSpeedRepeat()"
+                onclick="handleSpeedClick(-0.1, event)"
+                title="إبطاء السرعة (ArrowDown) [خطوة 0.1x / Shift: 0.5x]" aria-label="إبطاء السرعة">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+
+        <!-- Speed Value Badge -->
+        <span class="prompter-speed-badge" id="teleprompterSpeedVal" onclick="cycleSpeedPreset(event)" title="سرعة التمرير الحالية (انقر للتبديل السريع بين السرعات)">0.5x</span>
+
+        <!-- Speed Up (Micro-step 0.1x) -->
+        <button type="button" class="prompter-btn" id="teleprompterSpeedUpBtn"
+                onmousedown="startSpeedRepeat(0.1, event)" onmouseup="stopSpeedRepeat()" onmouseleave="stopSpeedRepeat()"
+                ontouchstart="startSpeedRepeat(0.1, event)" ontouchend="stopSpeedRepeat()"
+                onclick="handleSpeedClick(0.1, event)"
+                title="تسريع السرعة (ArrowUp) [خطوة 0.1x / Shift: 0.5x]" aria-label="تسريع السرعة">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+
+        <span class="prompter-divider"></span>
+
+        <!-- Rewind / Scroll to Top -->
+        <button type="button" class="prompter-btn" id="teleprompterRestartBtn" onclick="restartPrompter(event)" title="العودة لأول السكريبت (Home)" aria-label="العودة للبداية">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>
+        </button>
+
+        <span class="prompter-divider"></span>
+
+        <!-- Font Size Controls (At top of screen) -->
+        <button type="button" class="prompter-btn prompter-font-btn" id="teleprompterFontDownBtn" onclick="adjustCurrentScreenFont(-1, event)" title="تصغير حجم الخط" aria-label="تصغير الخط">
+          <span>A-</span>
+        </button>
+        <button type="button" class="prompter-btn prompter-font-btn" id="teleprompterFontUpBtn" onclick="adjustCurrentScreenFont(1, event)" title="تكبير حجم الخط" aria-label="تكبير الخط">
+          <span>A+</span>
+        </button>
+
+        <!-- Screen / Font Settings Modal Button -->
+        <button type="button" class="prompter-btn" id="teleprompterSettingsBtn" onclick="openSettings(event)" title="إعدادات الشاشات والخطوط" aria-label="إعدادات الشاشات والخطوط">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </button>
+
+        <span class="prompter-divider"></span>
+
+        <!-- Exit Teleprompter Mode -->
+        <button type="button" class="prompter-btn prompter-exit-btn" id="teleprompterExitBtn" onclick="exitTeleprompterMode(event)" title="خروج من وضع الملقن (Esc)" aria-label="خروج من وضع الملقن">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Markdown Rendered Body -->
+      <article class="script-body" id="scriptContent">
+        <div class="script-hero-banner">
+          <div class="hero-badge">🎬 حزمة السكريبت المعتمدة • جاهزة للإنتاج والتصوير</div>
+          <h1 class="hero-title">نص الفيديو - Video Script Package</h1>
+        </div>
+        <h1 id="reels-shorts-package">📱 REELS &amp; SHORTS PACKAGE</h1>
+<h2 id="identified-moments">IDENTIFIED MOMENTS</h2>
+<hr />
+<h2 id="shorts-moment-identification">SHORTS MOMENT IDENTIFICATION</h2>
+<h3 id="moment-analysis-summary">Moment Analysis Summary</h3>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Timestamp Range</th>
+<th>Core Insight</th>
+<th>Type</th>
+<th>Extraction Complexity</th>
+<th>Priority</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0:00–0:55</td>
+<td>The Paradox of the Elite Athlete’s Heart</td>
+<td>Emotional / Reveal</td>
+<td>Clean Extract</td>
+<td>1</td>
+</tr>
+<tr>
+<td>2</td>
+<td>3:30–4:30</td>
+<td>The Car Inspection Analogy (Fahs el-Morour)</td>
+<td>Practical / Analogy</td>
+<td>Clean Extract</td>
+<td>2</td>
+</tr>
+<tr>
+<td>3</td>
+<td>5:30–6:30</td>
+<td>The "Scarecrow" (False Positives) Trap</td>
+<td>Myth-bust / Reveal</td>
+<td>Needs Re-Edit</td>
+<td>3</td>
+</tr>
+<tr>
+<td>4</td>
+<td>9:15–10:15</td>
+<td>The "Free" Heart Test: Family History</td>
+<td>Practical Takeaway</td>
+<td>Clean Extract</td>
+<td>4</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3 id="detailed-moment-breakdowns">Detailed Moment Breakdowns</h3>
+<h4 id="moment-1-the-million-dollar-paradox">MOMENT 1 — "The Million-Dollar Paradox"</h4>
+<p><strong>Timestamp</strong>: 0:00–0:55<br />
+<strong>Type</strong>: Emotional / Wait, what? Reveal<br />
+<strong>Core Insight</strong>: Even the most expensive medical equipment can't always predict a sudden cardiac arrest in elite athletes.<br />
+<strong>Scroll-Stopper Factor</strong>: Dr. Ahmed’s calm but heavy opening: "إزاي أقوى قلب في الدنيا ممكن يقف فجأة كدة؟" combined with the mention of local tragedies like Ahmed Refaat.<br />
+<strong>Curiosity Gap</strong>: Why does a "strong" heart actually <em>hide</em> defects? What is the one thing expensive tests fail to see?<br />
+<strong>Extraction Complexity</strong>: Clean Extract.<br />
+<strong>Medical Responsibility Check</strong>: Safe. It frames the issue as a medical mystery/complexity rather than a failure of medicine itself.<br />
+<strong>Platform Notes</strong>: High emotional resonance for Facebook Reels (Egyptian audience). Use captions for the names of the players mentioned.</p>
+<h4 id="moment-2-the-car-inspection-fahs-el-morour">MOMENT 2 — "The Car Inspection (Fahs el-Morour)"</h4>
+<p><strong>Timestamp</strong>: 3:30–4:30<br />
+<strong>Type</strong>: Practical / Counter-intuitive<br />
+<strong>Core Insight</strong>: A medical "pass" is a snapshot of the present, not a guarantee of the future—just like a car passing its annual inspection.<br />
+<strong>Scroll-Stopper Factor</strong>: The visual of a car inspection vs. a heart monitor. "الفحص الطبي هو لقطة للواقع.. مش ضمان للمستقبل."<br />
+<strong>Curiosity Gap</strong>: If the standard "pass" isn't a guarantee, what should we actually be looking for?<br />
+<strong>Extraction Complexity</strong>: Clean Extract (requires the car animation from the script to be overlaid).<br />
+<strong>Medical Responsibility Check</strong>: Excellent. It manages expectations about what medical tests can and cannot do.<br />
+<strong>Platform Notes</strong>: Perfect for YouTube Shorts. The analogy is "sticky" and easy to share.</p>
+<h4 id="moment-3-the-scarecrow-khayal-maata">MOMENT 3 — "The Scarecrow (Khayal Ma'ata)"</h4>
+<p><strong>Timestamp</strong>: 5:30–6:30 (and parts of 7:45)<br />
+<strong>Type</strong>: Myth-busting / Shocking Stat<br />
+<strong>Core Insight</strong>: Full-body scans often find "shadows" (false positives) that lead to unnecessary anxiety and surgeries.<br />
+<strong>Scroll-Stopper Factor</strong>: "الشركات دي بتلعب على أغلى حاجة عندك: خوفك على نفسك."<br />
+<strong>Curiosity Gap</strong>: Why does the American College of Radiology warn against these scans? What happens when a scan says you're "fine" but you're not?<br />
+<strong>Extraction Complexity</strong>: Needs Re-Edit. Combine the "Khayal Ma'ata" analogy with the mention of the ACR (American College of Radiology) statement for authority.<br />
+<strong>Medical Responsibility Check</strong>: Crucial context needed—must keep the part where Dr. Ahmed says "I'm not saying don't check, I'm saying check right."<br />
+<strong>Platform Notes</strong>: Very "viral" potential on Reels due to the critique of a popular "wellness trend."</p>
+<h4 id="moment-4-the-most-important-free-test">MOMENT 4 — "The Most Important Free Test"</h4>
+<p><strong>Timestamp</strong>: 9:15–10:15<br />
+<strong>Type</strong>: Practical Takeaway<br />
+<strong>Core Insight</strong>: Your family history is a more powerful diagnostic tool than a $3,000 MRI.<br />
+<strong>Scroll-Stopper Factor</strong>: "أهم فحص ممكن تعملوه ببلاش.. الإجابة على السؤال ده أهم عند دكتور القلب من 100 إشعة."<br />
+<strong>Curiosity Gap</strong>: What are the other "boring" but life-saving habits that actually protect the heart better than high-tech scans?<br />
+<strong>Extraction Complexity</strong>: Clean Extract.<br />
+<strong>Medical Responsibility Check</strong>: Very safe and highly responsible. Encourages proactive, evidence-based health.<br />
+<strong>Platform Notes</strong>: High "Save" rate potential. People love actionable, free health tips.</p>
+<hr />
+<h3 id="recommended-extraction-order">Recommended Extraction Order</h3>
+<ol>
+<li><strong>Moment 1 (The Paradox)</strong> — Use this as the primary "Ad" for the long-form video. It taps into current events and emotional relevance in Egypt.</li>
+<li><strong>Moment 4 (Family History)</strong> — This builds the most trust. It shows Dr. Ahmed isn't just "debunking" things, but providing real value.</li>
+<li><strong>Moment 2 (The Car Analogy)</strong> — Great for mid-week engagement; it's a "lightbulb moment" that people will want to share with friends who "over-test."</li>
+<li><strong>Moment 3 (The Scarecrow)</strong> — High controversy/high reward. Use this to drive traffic from people interested in "Biohacking" or "Full-body checkups."</li>
+</ol>
+<hr />
+<h2 id="reels-shorts-scripts">REELS &amp; SHORTS SCRIPTS</h2>
+<h2 id="reels-shorts-scripts_1">REELS &amp; SHORTS SCRIPTS</h2>
+<hr />
+<h3 id="short-1-duration-55s-platform-facebook-reels-youtube-shorts">Short #1 — لغز قلب الرياضي | Duration: 55s | Platform: Facebook Reels + YouTube Shorts</h3>
+<h4 id="script">Script</h4>
+<pre class="highlight"><code>=== HOOK | 0:00–0:03 | Energy: 5/5 ===
+[Bold text overlay]: "ليه أقوى قلب بيقف فجأة؟ 💔"
+[Spoken]: إزاي لعيب كورة محترف، قلبه حديد، ممكن يقع فجأة والقلب يقف؟
+[VISUAL NOTE: Close-up on Dr. Ahmed, serious expression, background shows a blurred stadium light]
+
+=== CORE | 0:03–0:50 | Energy: 4/5 ===
+[Spoken]: اللي حصل مع "أحمد رفعت" الله يرحمه وقبله "عبد الوهاب" وجعنا كلنا. بس العلم بيقول حاجة غريبة.. إن "قلب الرياضي" من كتر قوته، بيقدر يداري عيوب خَلقية خطيرة ورا عضلاته! 
+[ON-SCREEN TEXT: تضخم عضلة القلب الوراثي (HCM)]
+المشكلة إن فيه أمراض في "كهرباء القلب" مابتظهرش غير تحت ضغط بدني رهيب وأدرينالين الماتش. 
+[VISUAL NOTE: Quick cut to a heart animation with a lightning bolt symbol]
+الفحوصات العادية هي "لقطة" للواقع، بس مابتضمنش المستقبل. فيه سر واحد حتى أغلى الأجهزة بتفشل تشوفه.. وهو اللي بيبين ليه ده بيحصل للأبطال بالذات.
+
+=== CLIFFHANGER CTA | 0:50–0:55 | Energy: 3/5 ===
+[Spoken]: عايز تفهم السر اللي بيخبي الـ "قفلة الكهربائية" دي؟ الفيديو الكامل موجود.
+[ON-SCREEN TEXT: الفيديو الكامل على القناة 🔗]
+[VISUAL NOTE: Pointing down/to the side where the link appears]
+
+=== DISCLAIMER (text overlay) ===
+[ON-SCREEN TEXT: المعلومات للتوعية فقط — استشر طبيبك]</code></pre>
+<h4 id="editing-specifications">Editing Specifications</h4>
+<ul>
+<li><strong>B-Roll Changes</strong>: Use fast-paced, high-quality clips of athletes training vs. a medical ECG monitor.</li>
+<li><strong>Text Animation Changes</strong>: "HCM" should pop up in bold red when mentioned.</li>
+<li><strong>Drawing Animations</strong>: A simple line drawing showing a "thick heart wall" vs. a normal one.</li>
+<li><strong>Pacing Changes</strong>: Tighter cuts between Dr. Ahmed and the heart animations (no silence).</li>
+<li><strong>Thumbnail Frame</strong>: Dr. Ahmed looking shocked at a heart scan with the text: "ليه الفحوصات بتخدعنا؟"</li>
+</ul>
+<h4 id="metadata">Metadata</h4>
+<ul>
+<li><strong>Source Timestamp</strong>: 0:00–1:30 (Condensed)</li>
+<li><strong>Word Count</strong>: 115 words → 50 seconds at Egyptian Arabic pace</li>
+<li><strong>Curiosity Gap Score</strong>: 9/10</li>
+<li><strong>Standalone Clarity Score</strong>: 8/10</li>
+</ul>
+<hr />
+<h3 id="short-2-duration-45s-platform-facebook-reels-youtube-shorts">Short #2 — فخ "فحص المرور" | Duration: 45s | Platform: Facebook Reels + YouTube Shorts</h3>
+<h4 id="script_1">Script</h4>
+<pre class="highlight"><code>=== HOOK | 0:00–0:03 | Energy: 5/5 ===
+[Bold text overlay]: "رخصة العربية مش ضمان! 🚗"
+[Spoken]: ليه فحص المرور شبه فحص قلبك؟ وليه الاتنين ممكن يخدعوك؟
+[VISUAL NOTE: Split screen: Car inspection sticker vs. Heart ECG paper]
+
+=== CORE | 0:03–0:40 | Energy: 4/5 ===
+[Spoken]: لما بتروح تفحص عربيتك، المهندس بيقولك "زي الفل" وبتاخد الرخصة. بس هل ده معناه إن مستحيل "طلمبة البنزين" تعطل فجأة وأنت على السريع؟ طبعاً لأ! 
+[ON-SCREEN TEXT: الفحص لقطة للواقع.. مش ضمان للمستقبل]
+نفس الكلام في رسم القلب (ECG).. هو بيقيس حالة قلبك في "لحظة" معينة وأنت مستريح. لكن "القفلة الكهربائية" مابتظهرش غير وأنت تحت ضغط عالي. عشان كدة "أنا سليم في الأشعة" مش معناها "أنا سليم للأبد".
+
+=== CLIFFHANGER CTA | 0:40–0:45 | Energy: 3/5 ===
+[Spoken]: إيه الفحص اللي لازم تعمله فعلاً لو قلقت؟ كمل الفيديو وهتعرف.
+[ON-SCREEN TEXT: الفيديو الكامل في أول تعليق 👇]
+[VISUAL NOTE: Visual pointer to comments]
+
+=== DISCLAIMER (text overlay) ===
+[ON-SCREEN TEXT: المعلومات للتوعية فقط — استشر طبيبك]</code></pre>
+<h4 id="editing-specifications_1">Editing Specifications</h4>
+<ul>
+<li><strong>B-Roll Changes</strong>: Overlay a car engine failing sound (SFX) when talking about the breakdown.</li>
+<li><strong>Text Animation Changes</strong>: Large "Snapshot vs. Guarantee" text in center screen.</li>
+<li><strong>Drawing Animations</strong>: Not needed; use car imagery.</li>
+<li><strong>Pacing Changes</strong>: Very fast, rhythmic delivery.</li>
+<li><strong>Thumbnail Frame</strong>: Dr. Ahmed holding a car key and a stethoscope.</li>
+</ul>
+<h4 id="metadata_1">Metadata</h4>
+<ul>
+<li><strong>Source Timestamp</strong>: 3:30–4:30</li>
+<li><strong>Word Count</strong>: 95 words → 42 seconds at Egyptian Arabic pace</li>
+<li><strong>Curiosity Gap Score</strong>: 8/10</li>
+<li><strong>Standalone Clarity Score</strong>: 10/10</li>
+</ul>
+<hr />
+<h3 id="short-3-duration-50s-platform-facebook-reels-youtube-shorts">Short #3 — خيال مآتة الأشعة | Duration: 50s | Platform: Facebook Reels + YouTube Shorts</h3>
+<h4 id="script_2">Script</h4>
+<pre class="highlight"><code>=== HOOK | 0:00–0:03 | Energy: 5/5 ===
+[Bold text overlay]: "بيبيعوا لك "الوهم" بآلاف! 💸"
+[Spoken]: الشركات اللي بتقولك "اعمل رنين مغناطيسي على جسمك كله" بتلعب على خوفك!
+[VISUAL NOTE: Dr. Ahmed looking skeptical, holding a smartphone showing a "Full Body Scan" ad]
+
+=== CORE | 0:03–0:45 | Energy: 4/5 ===
+[Spoken]: الكلية الأمريكية للأشعة (ACR) قالت بوضوح: مفيش دليل إن الفحوصات دي بتطول العمر للأصحاء. 
+[ON-SCREEN TEXT: خيال مآتة = إنذار كاذب]
+الجهاز بيشوف "ظلال" طبيعية ويقولك "اشتباه". فجأة تلاقي نفسك داخل في دوامة عينات وعمليات إنت مش محتاجها أصلاً! ده غير إن الرنين "الشامل" دقته قليلة جداً وممكن يفوت جلطة حقيقية لأن تركيزه مش على عضو محدد. 
+
+=== CLIFFHANGER CTA | 0:45–0:50 | Energy: 3/5 ===
+[Spoken]: ليه الشركات دي بتخبي الحقيقة؟ التفاصيل في الفيديو الكامل.
+[ON-SCREEN TEXT: شوف الحقيقة كاملة هنا 🔗]
+[VISUAL NOTE: Pointing to the YouTube play button overlay]
+
+=== DISCLAIMER (text overlay) ===
+[ON-SCREEN TEXT: المعلومات للتوعية فقط — استشر طبيبك]</code></pre>
+<h4 id="editing-specifications_2">Editing Specifications</h4>
+<ul>
+<li><strong>B-Roll Changes</strong>: Use stock footage of an MRI machine with a red "X" over it.</li>
+<li><strong>Text Animation Changes</strong>: "96% كذب" text pop-up.</li>
+<li><strong>Drawing Animations</strong>: A "Scarecrow" (Khayal Ma'ata) icon appearing next to an MRI scan.</li>
+<li><strong>Pacing Changes</strong>: High energy, investigative tone.</li>
+<li><strong>Thumbnail Frame</strong>: Text "فخ الرنين المغناطيسي" over a worried face.</li>
+</ul>
+<h4 id="metadata_2">Metadata</h4>
+<ul>
+<li><strong>Source Timestamp</strong>: 6:15–8:45 (Condensed)</li>
+<li><strong>Word Count</strong>: 110 words → 48 seconds at Egyptian Arabic pace</li>
+<li><strong>Curiosity Gap Score</strong>: 10/10</li>
+<li><strong>Standalone Clarity Score</strong>: 9/10</li>
+</ul>
+<hr />
+<h3 id="short-4-duration-40s-platform-facebook-reels-youtube-shorts">Short #4 — أهم فحص "ببلاش" | Duration: 40s | Platform: Facebook Reels + YouTube Shorts</h3>
+<h4 id="script_3">Script</h4>
+<pre class="highlight"><code>=== HOOK | 0:00–0:03 | Energy: 5/5 ===
+[Bold text overlay]: "أهم فحص للقلب.. ببلاش! 🆓"
+[Spoken]: السؤال ده عند دكتور القلب أهم من 100 إشعة بآلاف الجنيهات!
+[VISUAL NOTE: Dr. Ahmed pointing directly at the camera]
+
+=== CORE | 0:03–0:35 | Energy: 4/5 ===
+[Spoken]: بدل ما تصرف دم قلبك على فحوصات "موضة"، اسأل أهلك: "هل فيه حد في العيلة توفى فجأة وهو شاب؟". 
+[ON-SCREEN TEXT: تاريخ عيلتك = خريطة صحتك]
+الإجابة دي هي اللي بتعرفنا ندور فين بالظبط. ولو مفيش أعراض، يبقى الروتين "الممل" هو اللي هينقذك: خضار، رياضة، ونوم منتظم. الأفعال دي أقوى من أي جهاز رنين في العالم!
+
+=== CLIFFHANGER CTA | 0:35–0:40 | Energy: 3/5 ===
+[Spoken]: إزاي تحمي قلبك بجد من غير ما تدفع مليم؟ كمل الفيديو.
+[ON-SCREEN TEXT: الفيديو الكامل على القناة 🔗]
+[VISUAL NOTE: Transition to full video thumbnail]
+
+=== DISCLAIMER (text overlay) ===
+[ON-SCREEN TEXT: المعلومات للتوعية فقط — استشر طبيبك]</code></pre>
+<h4 id="editing-specifications_3">Editing Specifications</h4>
+<ul>
+<li><strong>B-Roll Changes</strong>: Heartbeat visual + family tree graphic.</li>
+<li><strong>Text Animation Changes</strong>: "ببلاش" should be huge and green.</li>
+<li><strong>Drawing Animations</strong>: A simple family tree icon with a heart.</li>
+<li><strong>Pacing Changes</strong>: Direct, punchy, and encouraging.</li>
+<li><strong>Thumbnail Frame</strong>: Dr. Ahmed smiling with text: "وفر فلوسك.. واعرف السر"</li>
+</ul>
+<h4 id="metadata_3">Metadata</h4>
+<ul>
+<li><strong>Source Timestamp</strong>: 9:15–10:15</li>
+<li><strong>Word Count</strong>: 85 words → 38 seconds at Egyptian Arabic pace</li>
+<li><strong>Curiosity Gap Score</strong>: 8/10</li>
+<li><strong>Standalone Clarity Score</strong>: 10/10</li>
+</ul>
+<hr />
+<h2 id="timed-captions-on-screen-overlays">TIMED CAPTIONS &amp; ON-SCREEN OVERLAYS</h2>
+<h2 id="shorts-caption-package">SHORTS CAPTION PACKAGE</h2>
+<h3 id="caption-style-spec-applies-to-all-clips">Caption Style Spec (Applies to all clips)</h3>
+<p><strong>Font</strong>: Cairo (Bold for highlights, Regular for phrases)<br />
+<strong>Primary size</strong>: 42px<br />
+<strong>Highlight size</strong>: 58px<br />
+<strong>Position</strong>: Bottom-center (Safe zone: 250px from bottom to avoid UI)<br />
+<strong>Background</strong>: Semi-transparent black rounded "pill" box<br />
+<strong>Highlight treatment</strong>: Bold + Electric Yellow (#FFFF00) + 1.1x Scale-up<br />
+<strong>RTL</strong>: Forced Right-to-Left alignment with UTF-8 encoding</p>
+<hr />
+<h3 id="short-1-the-athletes-heart-mystery">Short #1 — لغز قلب الرياضي (The Athlete's Heart Mystery)</h3>
+<h4 id="timed-captions-srt-compatible">Timed Captions (SRT-Compatible)</h4>
+<pre class="highlight"><code class="language-srt">1
+00:00:00,000 --&gt; 00:00:02,500
+إزاي لعيب كورة محترف
+Highlight: محترف
+
+2
+00:00:02,500 --&gt; 00:00:04,500
+قلبه حديد.. يقع فجأة؟
+Highlight: فجأة
+
+3
+00:00:04,500 --&gt; 00:00:07,500
+اللي حصل مع أحمد رفعت
+Highlight: أحمد رفعت
+
+4
+00:00:07,500 --&gt; 00:00:10,000
+وقبله عبد الوهاب وجعنا كلنا
+Highlight: وجعنا
+
+5
+00:00:10,000 --&gt; 00:00:13,000
+بس العلم بيقول حاجة غريبة
+Highlight: غريبة
+
+6
+00:00:13,000 --&gt; 00:00:16,000
+قلب الرياضي من كتر قوته
+Highlight: قوته
+
+7
+00:00:16,000 --&gt; 00:00:19,000
+بيداري عيوب خَلقية ورا عضلاته
+Highlight: عيوب
+
+8
+00:00:19,000 --&gt; 00:00:22,500
+زي تضخم عضلة القلب الوراثي
+Highlight: HCM
+
+9
+00:00:22,500 --&gt; 00:00:25,500
+فيه مشاكل في كهرباء القلب
+Highlight: كهرباء
+
+10
+00:00:25,500 --&gt; 00:00:28,500
+مابتظهرش غير تحت ضغط رهيب
+Highlight: ضغط
+
+11
+00:00:28,500 --&gt; 00:00:31,500
+الفحوصات العادية هي لقطة للواقع
+Highlight: لقطة
+
+12
+00:00:31,500 --&gt; 00:00:34,500
+بس مابتضمنش ليك المستقبل
+Highlight: المستقبل
+
+13
+00:00:34,500 --&gt; 00:00:37,500
+فيه سر الأجهزة مابتشوفوش
+Highlight: سر
+
+14
+00:00:37,500 --&gt; 00:00:40,000
+عايز تفهم سر القفلة دي؟
+Highlight: القفلة</code></pre>
+<h4 id="on-screen-text-overlays">On-Screen Text Overlays</h4>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Timestamp</th>
+<th>Text Content</th>
+<th>Size</th>
+<th>Position</th>
+<th>Entry Animation</th>
+<th>Hold (s)</th>
+<th>Exit Animation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0:00</td>
+<td>"ليه أقوى قلب بيقف فجأة؟ 💔"</td>
+<td>60px</td>
+<td>Top-center</td>
+<td>Pop</td>
+<td>3s</td>
+<td>Fade</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0:20</td>
+<td>"تضخم عضلة القلب (HCM)"</td>
+<td>56px</td>
+<td>Middle</td>
+<td>Slide-in</td>
+<td>2.5s</td>
+<td>Scale-down</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0:45</td>
+<td>"المعلومات للتوعية فقط — استشر طبيبك"</td>
+<td>32px</td>
+<td>Bottom-center</td>
+<td>Fade</td>
+<td>5s</td>
+<td>None</td>
+</tr>
+</tbody>
+</table></div>
+<h4 id="english-subtitle-track">English Subtitle Track</h4>
+<pre class="highlight"><code class="language-srt">1
+00:00:00,000 --&gt; 00:00:04,500
+How can a pro athlete with a "heart of steel" collapse?
+
+2
+00:00:04,500 --&gt; 00:00:10,000
+What happened to Refaat and Abdel-Wahab broke our hearts.
+
+3
+00:00:10,000 --&gt; 00:00:16,000
+But science says something strange: an athlete's heart is so strong...
+
+4
+00:00:16,000 --&gt; 00:00:22,500
+It can hide serious genetic defects behind its muscles, like HCM.
+
+5
+00:00:22,500 --&gt; 00:00:31,500
+Electrical heart issues often only appear under extreme physical stress.
+
+6
+00:00:31,500 --&gt; 00:00:40,000
+Standard tests are just a snapshot; they don't guarantee the future.</code></pre>
+<hr />
+<h3 id="short-2-the-car-inspection-trap">Short #2 — فخ "فحص المرور" (The Car Inspection Trap)</h3>
+<h4 id="timed-captions-srt-compatible_1">Timed Captions (SRT-Compatible)</h4>
+<pre class="highlight"><code class="language-srt">1
+00:00:00,000 --&gt; 00:00:03,000
+ليه فحص المرور شبه قلبك؟
+Highlight: المرور
+
+2
+00:00:03,000 --&gt; 00:00:06,000
+وليه الاتنين ممكن يخدعوك؟
+Highlight: يخدعوك
+
+3
+00:00:06,000 --&gt; 00:00:09,000
+لما بتروح تفحص عربيتك
+Highlight: عربيتك
+
+4
+00:00:09,000 --&gt; 00:00:12,000
+المهندس بيقولك "زي الفل"
+Highlight: زي الفل
+
+5
+00:00:12,000 --&gt; 00:00:15,000
+هل ده معناه إنها مش هتعطل؟
+Highlight: هتعطل
+
+6
+00:00:15,000 --&gt; 00:00:18,000
+طبعاً لأ! الفحص لقطة للواقع
+Highlight: لقطة
+
+7
+00:00:18,000 --&gt; 00:00:21,000
+نفس الكلام في رسم القلب
+Highlight: ECG
+
+8
+00:00:21,000 --&gt; 00:00:24,000
+بيقيس حالتك وأنت مستريح
+Highlight: مستريح
+
+9
+00:00:24,000 --&gt; 00:00:27,000
+لكن القفلة مابتظهرش دلوقتي
+Highlight: القفلة
+
+10
+00:00:27,000 --&gt; 00:00:30,000
+بتظهر بس تحت ضغط عالي
+Highlight: ضغط
+
+11
+00:00:30,000 --&gt; 00:00:33,000
+"أنا سليم في الأشعة"
+Highlight: سليم
+
+12
+00:00:33,000 --&gt; 00:00:36,000
+مش معناها "سليم للأبد"
+Highlight: للأبد</code></pre>
+<h4 id="on-screen-text-overlays_1">On-Screen Text Overlays</h4>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Timestamp</th>
+<th>Text Content</th>
+<th>Size</th>
+<th>Position</th>
+<th>Entry Animation</th>
+<th>Hold (s)</th>
+<th>Exit Animation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0:00</td>
+<td>"رخصة العربية مش ضمان! 🚗"</td>
+<td>60px</td>
+<td>Top-center</td>
+<td>Shake</td>
+<td>3s</td>
+<td>Slide-up</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0:16</td>
+<td>"لقطة للواقع ≠ ضمان للمستقبل"</td>
+<td>50px</td>
+<td>Middle</td>
+<td>Pop</td>
+<td>4s</td>
+<td>Fade</td>
+</tr>
+</tbody>
+</table></div>
+<h4 id="english-subtitle-track_1">English Subtitle Track</h4>
+<pre class="highlight"><code class="language-srt">1
+00:00:00,000 --&gt; 00:00:06,000
+Why is a car inspection like your heart? And how do both deceive you?
+
+2
+00:00:06,000 --&gt; 00:00:12,000
+When the mechanic says your car is "perfect," does that mean it won't break down?
+
+3
+00:00:12,000 --&gt; 00:00:18,000
+Of course not! It's just a snapshot of its current state.
+
+4
+00:00:18,000 --&gt; 00:00:24,000
+Same with an ECG; it measures your heart while you're resting.
+
+5
+00:00:24,000 --&gt; 00:00:36,000
+"Clear on the scan" doesn't mean "safe forever."</code></pre>
+<hr />
+<h3 id="short-3-the-radiology-scarecrow">Short #3 — خيال مآتة الأشعة (The Radiology Scarecrow)</h3>
+<h4 id="timed-captions-srt-compatible_2">Timed Captions (SRT-Compatible)</h4>
+<pre class="highlight"><code class="language-srt">1
+00:00:00,000 --&gt; 00:00:03,000
+بيبيعوا لك "الوهم" بآلاف!
+Highlight: الوهم
+
+2
+00:00:03,000 --&gt; 00:00:06,000
+شركات الرنين على الجسم كله
+Highlight: الرنين
+
+3
+00:00:06,000 --&gt; 00:00:09,000
+بتلعب على أغلى حاجة: خوفك
+Highlight: خوفك
+
+4
+00:00:09,000 --&gt; 00:00:12,000
+الكلية الأمريكية للأشعة قالت بوضوح
+Highlight: ACR
+
+5
+00:00:12,000 --&gt; 00:00:15,000
+مفيش دليل إنها بتطول العمر
+Highlight: بتطول
+
+6
+00:00:15,000 --&gt; 00:00:18,000
+الجهاز بيشوف "ظلال" طبيعية
+Highlight: ظلال
+
+7
+00:00:18,000 --&gt; 00:00:21,000
+ويقولك "اشتباه".. فتدخل في دوامة
+Highlight: دوامة
+
+8
+00:00:21,000 --&gt; 00:00:24,000
+عينات وعمليات إنت مش محتاجها
+Highlight: محتاجها
+
+9
+00:00:24,000 --&gt; 00:00:27,000
+ده غير إن دقته قليلة
+Highlight: دقته
+
+10
+00:00:27,000 --&gt; 00:00:30,000
+وممكن يفوت جلطة حقيقية!
+Highlight: جلطة</code></pre>
+<h4 id="on-screen-text-overlays_2">On-Screen Text Overlays</h4>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Timestamp</th>
+<th>Text Content</th>
+<th>Size</th>
+<th>Position</th>
+<th>Entry Animation</th>
+<th>Hold (s)</th>
+<th>Exit Animation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0:13</td>
+<td>"خيال مآتة = إنذار كاذب ❌"</td>
+<td>56px</td>
+<td>Middle</td>
+<td>Stamp</td>
+<td>3s</td>
+<td>Fade</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0:25</td>
+<td>"دقة منخفضة ⚠️"</td>
+<td>50px</td>
+<td>Top-right</td>
+<td>Pulse</td>
+<td>2s</td>
+<td>Slide-out</td>
+</tr>
+</tbody>
+</table></div>
+<h4 id="english-subtitle-track_2">English Subtitle Track</h4>
+<pre class="highlight"><code class="language-srt">1
+00:00:00,000 --&gt; 00:00:06,000
+They are selling you an expensive illusion! Full-body scan companies...
+
+2
+00:00:06,000 --&gt; 00:00:12,000
+They exploit your deepest fear. The ACR stated clearly:
+
+3
+00:00:12,000 --&gt; 00:00:18,000
+There's no evidence these scans extend life for healthy people.
+
+4
+00:00:18,000 --&gt; 00:00:24,000
+The machine sees normal "shadows" and calls them "suspicious."
+
+5
+00:00:24,000 --&gt; 00:00:30,000
+Suddenly, you're in a spiral of unnecessary biopsies and surgeries.</code></pre>
+<hr />
+<h3 id="short-4-the-best-free-test">Short #4 — أهم فحص "ببلاش" (The Best Free Test)</h3>
+<h4 id="timed-captions-srt-compatible_3">Timed Captions (SRT-Compatible)</h4>
+<pre class="highlight"><code class="language-srt">1
+00:00:00,000 --&gt; 00:00:03,000
+أهم فحص للقلب.. ببلاش!
+Highlight: ببلاش
+
+2
+00:00:03,000 --&gt; 00:00:06,000
+السؤال ده أهم من الأشعة
+Highlight: السؤال
+
+3
+00:00:06,000 --&gt; 00:00:09,000
+بدل ما تصرف دم قلبك
+Highlight: تصرف
+
+4
+00:00:09,000 --&gt; 00:00:12,000
+على فحوصات "موضة".. اسأل أهلك
+Highlight: أهلك
+
+5
+00:00:12,000 --&gt; 00:00:15,000
+حد في العيلة توفى فجأة؟
+Highlight: فجأة
+
+6
+00:00:15,000 --&gt; 00:00:18,000
+الإجابة دي هي الخريطة لقلبك
+Highlight: الخريطة
+
+7
+00:00:18,000 --&gt; 00:00:21,000
+ولو مفيش أعراض.. الروتين هينقذك
+Highlight: الروتين
+
+8
+00:00:21,000 --&gt; 00:00:24,000
+خضار.. رياضة.. ونوم منتظم
+Highlight: رياضة
+
+9
+00:00:24,000 --&gt; 00:00:27,000
+الأفعال دي أقوى من الرنين
+Highlight: أقوى</code></pre>
+<h4 id="on-screen-text-overlays_3">On-Screen Text Overlays</h4>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Timestamp</th>
+<th>Text Content</th>
+<th>Size</th>
+<th>Position</th>
+<th>Entry Animation</th>
+<th>Hold (s)</th>
+<th>Exit Animation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0:01</td>
+<td>"ببلاش! 🆓"</td>
+<td>80px</td>
+<td>Middle</td>
+<td>Pop</td>
+<td>2s</td>
+<td>Scale-up</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0:10</td>
+<td>"تاريخ عيلتك = خريطة صحتك"</td>
+<td>50px</td>
+<td>Top-center</td>
+<td>Slide-down</td>
+<td>4s</td>
+<td>Fade</td>
+</tr>
+</tbody>
+</table></div>
+<h4 id="english-subtitle-track_3">English Subtitle Track</h4>
+<pre class="highlight"><code class="language-srt">1
+00:00:00,000 --&gt; 00:00:06,000
+The most important heart test is free! This question beats any scan.
+
+2
+00:00:06,000 --&gt; 00:00:12,000
+Instead of wasting money on "trendy" tests, ask your family:
+
+3
+00:00:12,000 --&gt; 00:00:18,000
+"Did anyone in our family die suddenly at a young age?"
+
+4
+00:00:18,000 --&gt; 00:00:24,000
+That answer is your health map. If there are no symptoms, stick to the basics.
+
+5
+00:00:24,000 --&gt; 00:00:30,000
+Veggie, exercise, and sleep are more powerful than any MRI.</code></pre>
+      </article>
+
+    </main>
+  </div>
+
+  <!-- Quick Floating Action Pill -->
+  <div class="floating-pill no-print">
+    <button class="pill-btn" onclick="adjustCurrentScreenFont(-1)" title="تصغير الخط">
+      <span>A-</span>
+    </button>
+    <button class="pill-btn" onclick="adjustCurrentScreenFont(1)" title="تكبير الخط">
+      <span>A+</span>
+    </button>
+    <button class="pill-btn pill-btn-primary" onclick="openSettings()" title="إعدادات حجم الخط لكل الشاشات">
+      <span>⚙️</span> <span>التحكم بالشاشات</span>
+    </button>
+  </div>
+
+  <!-- Settings Modal (Control font size of Mobile, Tablet, Small PC, Large PC) -->
+  <div class="settings-overlay no-print" id="settingsModal" onclick="handleOverlayClick(event)">
+    <div class="settings-card">
+      <div class="settings-header">
+        <div class="settings-title">
+          <span>🎛️</span>
+          <span>التحكم في أحجام الخطوط والشاشات</span>
+        </div>
+        <button class="close-btn" onclick="closeSettings()">&times;</button>
+      </div>
+
+      <div class="settings-body">
+        
+        <!-- Current Screen Badge -->
+        <div style="background: rgba(56, 189, 248, 0.1); border: 1px solid var(--accent-primary); border-radius: var(--radius-sm); padding: 10px 14px; font-size: 0.9rem; color: var(--accent-primary); display: flex; align-items: center; justify-content: space-between;">
+          <span>🖥️ الشاشة النشطة حالياً:</span>
+          <strong id="currentScreenLabel">شاشة لابتوب</strong>
+        </div>
+
+        <!-- 1. Mobile Font Size Control -->
+        <div class="screen-slider-row">
+          <div class="screen-slider-top">
+            <span class="screen-name">📱 شاشة الموبايل (أقل من 640px)</span>
+            <span class="screen-badge-size" id="badge-fs-mobile">16px</span>
+          </div>
+          <div class="slider-container">
+            <input type="range" id="range-fs-mobile" min="12" max="28" value="16" oninput="updateFontSize('mobile', this.value)">
+          </div>
+          <div class="preset-pills">
+            <span class="preset-pill" onclick="updateFontSize('mobile', 14)">صغير (14px)</span>
+            <span class="preset-pill" onclick="updateFontSize('mobile', 16)">افتراضي (16px)</span>
+            <span class="preset-pill" onclick="updateFontSize('mobile', 18)">كبير (18px)</span>
+            <span class="preset-pill" onclick="updateFontSize('mobile', 22)">كبير جداً (22px)</span>
+          </div>
+        </div>
+
+        <!-- 2. Tablet Font Size Control -->
+        <div class="screen-slider-row">
+          <div class="screen-slider-top">
+            <span class="screen-name">📱 شاشة التابلت (640px - 1023px)</span>
+            <span class="screen-badge-size" id="badge-fs-tablet">18px</span>
+          </div>
+          <div class="slider-container">
+            <input type="range" id="range-fs-tablet" min="14" max="32" value="18" oninput="updateFontSize('tablet', this.value)">
+          </div>
+          <div class="preset-pills">
+            <span class="preset-pill" onclick="updateFontSize('tablet', 16)">صغير (16px)</span>
+            <span class="preset-pill" onclick="updateFontSize('tablet', 18)">افتراضي (18px)</span>
+            <span class="preset-pill" onclick="updateFontSize('tablet', 22)">كبير (22px)</span>
+            <span class="preset-pill" onclick="updateFontSize('tablet', 26)">كبير جداً (26px)</span>
+          </div>
+        </div>
+
+        <!-- 3. Small Screen PC / Laptop Font Size Control -->
+        <div class="screen-slider-row">
+          <div class="screen-slider-top">
+            <span class="screen-name">💻 كمبيوتر صغير ولابتوب (1024px - 1439px)</span>
+            <span class="screen-badge-size" id="badge-fs-laptop">20px</span>
+          </div>
+          <div class="slider-container">
+            <input type="range" id="range-fs-laptop" min="14" max="36" value="20" oninput="updateFontSize('laptop', this.value)">
+          </div>
+          <div class="preset-pills">
+            <span class="preset-pill" onclick="updateFontSize('laptop', 18)">صغير (18px)</span>
+            <span class="preset-pill" onclick="updateFontSize('laptop', 20)">افتراضي (20px)</span>
+            <span class="preset-pill" onclick="updateFontSize('laptop', 24)">كبير (24px)</span>
+            <span class="preset-pill" onclick="updateFontSize('laptop', 28)">كبير جداً (28px)</span>
+          </div>
+        </div>
+
+        <!-- 4. Large Screen PC Font Size Control -->
+        <div class="screen-slider-row">
+          <div class="screen-slider-top">
+            <span class="screen-name">🖥️ كمبيوتر وشاشات كبيرة (1440px فأكثر)</span>
+            <span class="screen-badge-size" id="badge-fs-desktop">22px</span>
+          </div>
+          <div class="slider-container">
+            <input type="range" id="range-fs-desktop" min="16" max="44" value="22" oninput="updateFontSize('desktop', this.value)">
+          </div>
+          <div class="preset-pills">
+            <span class="preset-pill" onclick="updateFontSize('desktop', 20)">صغير (20px)</span>
+            <span class="preset-pill" onclick="updateFontSize('desktop', 22)">افتراضي (22px)</span>
+            <span class="preset-pill" onclick="updateFontSize('desktop', 26)">كبير (26px)</span>
+            <span class="preset-pill" onclick="updateFontSize('desktop', 32)">كبير جداً (32px)</span>
+          </div>
+        </div>
+
+        <!-- Viewport Simulator for PC Users -->
+        <div class="setting-group">
+          <div class="setting-label">
+            <span>📐 معاينة محاكاة الشاشات (Viewport Simulator)</span>
+          </div>
+          <div class="setting-desc">يمكنك تجربة مظهر الشاشات المختلفة وأحجام خطوطها مباشرة من هنا:</div>
+          <select class="select-input" id="simSelect" onchange="changeSimulation(this.value)">
+            <option value="real">عرض الشاشة الطبيعي (الحالي)</option>
+            <option value="mobile">📱 محاكاة الموبايل (390px)</option>
+            <option value="tablet">📱 محاكاة التابلت (768px)</option>
+            <option value="laptop">💻 محاكاة اللابتوب (1100px)</option>
+            <option value="desktop">🖥️ محاكاة الشاشة الكبيرة (1440px+)</option>
+          </select>
+        </div>
+
+        <!-- Font Family Selection -->
+        <div class="setting-group">
+          <div class="setting-label">
+            <span>🖋️ نوع الخط (Font Family)</span>
+          </div>
+          <select class="select-input" id="fontFamilySelect" onchange="changeFontFamily(this.value)">
+            <option value="'Cairo', sans-serif">Cairo (عصري، واضح وسهل القراءة - افتراضي)</option>
+            <option value="'Tajawal', sans-serif">Tajawal (انسيابي ومريح للعين)</option>
+            <option value="'Amiri', serif">Amiri (نسخي أدبي تقليدي)</option>
+            <option value="system-ui, -apple-system, BlinkMacSystemFont, sans-serif">System UI (خط النظام الافتراضي)</option>
+          </select>
+        </div>
+
+        <!-- Line Height -->
+        <div class="setting-group">
+          <div class="setting-label">
+            <span>↕️ تباعد الأسطر (Line Height)</span>
+            <span id="badge-line-height" style="color: var(--accent-primary); font-family: var(--font-mono);">1.8</span>
+          </div>
+          <input type="range" id="range-line-height" min="14" max="24" value="18" oninput="updateLineHeight(this.value / 10)">
+        </div>
+
+        <!-- Themes -->
+        <div class="setting-group">
+          <div class="setting-label">
+            <span>🎨 نمط المظهر والقراءة</span>
+          </div>
+          <div class="theme-grid">
+            <button class="theme-btn" id="btn-theme-dark" onclick="applyTheme('dark')">🌙 ليلي</button>
+            <button class="theme-btn" id="btn-theme-light" onclick="applyTheme('light')">☀️ نهاري</button>
+            <button class="theme-btn" id="btn-theme-tele" onclick="applyTheme('teleprompter')">🎬 ملقن</button>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="settings-footer">
+        <button class="btn" onclick="resetToDefaults()">🔄 استعادة الافتراضي</button>
+        <button class="btn btn-primary" onclick="closeSettings()">حفظ وإغلاق</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive JavaScript Logic -->
+  <script>
+    // Configuration state
+    const DEFAULT_CONFIG = {
+      fsMobile: 16,
+      fsTablet: 18,
+      fsLaptop: 20,
+      fsDesktop: 22,
+      fontFamily: "'Cairo', sans-serif",
+      lineHeight: 1.8,
+      theme: 'dark'
+    };
+
+    let appConfig = { ...DEFAULT_CONFIG };
+
+    // Load saved settings from localStorage
+    function loadSavedSettings() {
+      try {
+        const saved = localStorage.getItem('script_viewer_settings');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          appConfig = { ...appConfig, ...parsed };
+        }
+      } catch (e) {
+        console.warn('Could not read localStorage:', e);
+      }
+      applyAllSettings();
+    }
+
+    // Save to localStorage
+    function persistSettings() {
+      try {
+        localStorage.setItem('script_viewer_settings', JSON.stringify(appConfig));
+      } catch (e) {}
+    }
+
+    // Apply font size for a specific screen tier
+    function updateFontSize(tier, val) {
+      val = parseInt(val, 10);
+      const root = document.documentElement;
+      
+      if (tier === 'mobile') {
+        appConfig.fsMobile = val;
+        root.style.setProperty('--fs-mobile', val + 'px');
+        document.getElementById('badge-fs-mobile').textContent = val + 'px';
+        document.getElementById('range-fs-mobile').value = val;
+      } else if (tier === 'tablet') {
+        appConfig.fsTablet = val;
+        root.style.setProperty('--fs-tablet', val + 'px');
+        document.getElementById('badge-fs-tablet').textContent = val + 'px';
+        document.getElementById('range-fs-tablet').value = val;
+      } else if (tier === 'laptop') {
+        appConfig.fsLaptop = val;
+        root.style.setProperty('--fs-laptop', val + 'px');
+        document.getElementById('badge-fs-laptop').textContent = val + 'px';
+        document.getElementById('range-fs-laptop').value = val;
+      } else if (tier === 'desktop') {
+        appConfig.fsDesktop = val;
+        root.style.setProperty('--fs-desktop', val + 'px');
+        document.getElementById('badge-fs-desktop').textContent = val + 'px';
+        document.getElementById('range-fs-desktop').value = val;
+      }
+      persistSettings();
+    }
+
+    // Quick font size adjustment for current screen
+    function adjustCurrentScreenFont(delta, e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      const width = window.innerWidth;
+      if (width < 640) {
+        updateFontSize('mobile', appConfig.fsMobile + delta);
+      } else if (width < 1024) {
+        updateFontSize('tablet', appConfig.fsTablet + delta);
+      } else if (width < 1440) {
+        updateFontSize('laptop', appConfig.fsLaptop + delta);
+      } else {
+        updateFontSize('desktop', appConfig.fsDesktop + delta);
+      }
+    }
+
+    // Update line height
+    function updateLineHeight(val) {
+      appConfig.lineHeight = val;
+      document.documentElement.style.setProperty('--line-height', val);
+      document.getElementById('badge-line-height').textContent = val.toFixed(1);
+      document.getElementById('range-line-height').value = Math.round(val * 10);
+      persistSettings();
+    }
+
+    // Change font family
+    function changeFontFamily(family) {
+      appConfig.fontFamily = family;
+      document.documentElement.style.setProperty('--font-family', family);
+      document.getElementById('fontFamilySelect').value = family;
+      persistSettings();
+    }
+
+    // Change Theme
+    function applyTheme(theme) {
+      appConfig.theme = theme;
+      document.documentElement.setAttribute('data-theme', theme);
+      
+      const icon = document.getElementById('theme-icon');
+      const text = document.getElementById('theme-text');
+      
+      if (theme === 'light') {
+        if (icon) icon.textContent = '🌙';
+        if (text) text.textContent = 'ليلي';
+      } else if (theme === 'dark') {
+        if (icon) icon.textContent = '☀️';
+        if (text) text.textContent = 'نهاري';
+      } else if (theme === 'teleprompter') {
+        if (icon) icon.textContent = '🎬';
+        if (text) text.textContent = 'ملقن';
+      }
+
+      // Update buttons active class
+      document.querySelectorAll('.theme-btn').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = document.getElementById('btn-theme-' + (theme === 'teleprompter' ? 'tele' : theme));
+      if (activeBtn) activeBtn.classList.add('active');
+
+      persistSettings();
+    }
+
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      if (current === 'dark') {
+        applyTheme('light');
+      } else {
+        applyTheme('dark');
+      }
+    }
+
+    let previousThemeBeforeTeleprompter = 'dark';
+
+    function setTeleprompterMode() {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      if (current !== 'teleprompter') {
+        previousThemeBeforeTeleprompter = current;
+      }
+      applyTheme('teleprompter');
+      updatePrompterUI();
+    }
+
+    function exitTeleprompterMode(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      stopAutoScroll();
+      applyTheme(previousThemeBeforeTeleprompter || 'dark');
+    }
+
+    // Simulation selector
+    function changeSimulation(val) {
+      document.body.className = '';
+      if (val !== 'real') {
+        document.body.classList.add('sim-' + val);
+      }
+    }
+
+    // Reset to defaults
+    function resetToDefaults() {
+      appConfig = { ...DEFAULT_CONFIG };
+      localStorage.removeItem('script_viewer_settings');
+      applyAllSettings();
+    }
+
+    // Apply all settings to DOM
+    function applyAllSettings() {
+      updateFontSize('mobile', appConfig.fsMobile);
+      updateFontSize('tablet', appConfig.fsTablet);
+      updateFontSize('laptop', appConfig.fsLaptop);
+      updateFontSize('desktop', appConfig.fsDesktop);
+      updateLineHeight(appConfig.lineHeight);
+      changeFontFamily(appConfig.fontFamily);
+      applyTheme(appConfig.theme);
+      detectActiveScreen();
+    }
+
+    // Detect active screen
+    function detectActiveScreen() {
+      const width = window.innerWidth;
+      const label = document.getElementById('currentScreenLabel');
+      if (!label) return;
+      if (width < 640) {
+        label.textContent = '📱 شاشة موبايل (' + width + 'px)';
+      } else if (width < 1024) {
+        label.textContent = '📱 شاشة تابلت (' + width + 'px)';
+      } else if (width < 1440) {
+        label.textContent = '💻 شاشة لابتوب / كمبيوتر صغير (' + width + 'px)';
+      } else {
+        label.textContent = '🖥️ شاشة كمبيوتر كبيرة (' + width + 'px)';
+      }
+    }
+
+    window.addEventListener('resize', detectActiveScreen);
+
+    // Modal controls
+    function openSettings(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      detectActiveScreen();
+      document.getElementById('settingsModal').classList.add('active');
+    }
+
+    function closeSettings() {
+      document.getElementById('settingsModal').classList.remove('active');
+    }
+
+    function handleOverlayClick(e) {
+      if (e.target === document.getElementById('settingsModal')) {
+        closeSettings();
+      }
+    }
+
+    // Copy to clipboard helper
+    function copyCodeBlock(button) {
+      const card = button.closest('.code-card');
+      const code = card.querySelector('code');
+      if (!code) return;
+      
+      navigator.clipboard.writeText(code.innerText).then(() => {
+        button.classList.add('copied');
+        const originalText = button.innerHTML;
+        button.innerHTML = '<span class="btn-icon">✓</span> <span class="btn-text">تم النسخ!</span>';
+        setTimeout(() => {
+          button.innerHTML = originalText;
+          button.classList.remove('copied');
+        }, 2000);
+      }).catch(err => {
+        alert('تعذر النسخ التلقائي: ' + err);
+      });
+    }
+
+    // Auto-Scroll Feature for Teleprompter
+    let isScrolling = false;
+    let scrollSpeed = 0.5; // Very low starting speed
+    const MIN_SPEED = 0.1;
+    const MAX_SPEED = 5.0;
+    const DEFAULT_SPEED = 0.5;
+    const SPEED_STEP = 0.1;
+    let prompterAnimationFrame = null;
+    let lastScrollTimestamp = null;
+    let fractionalScrollAccumulator = 0;
+
+    let speedRepeatTimer = null;
+    let speedRepeatInterval = null;
+    let speedAdjustedOnMouseDown = false;
+
+    function updatePrompterUI() {
+      const playPauseBtn = document.getElementById('teleprompterPlayPauseBtn');
+      const speedVal = document.getElementById('teleprompterSpeedVal');
+      const speedDownBtn = document.getElementById('teleprompterSpeedDownBtn');
+      const speedUpBtn = document.getElementById('teleprompterSpeedUpBtn');
+
+      if (playPauseBtn) {
+        const playIcon = playPauseBtn.querySelector('.icon-play');
+        const pauseIcon = playPauseBtn.querySelector('.icon-pause');
+        if (isScrolling) {
+          playPauseBtn.classList.add('is-playing');
+          playPauseBtn.setAttribute('title', 'إيقاف مؤقت للتمرير (Space)');
+          playPauseBtn.setAttribute('aria-label', 'إيقاف مؤقت للتمرير');
+          if (playIcon) playIcon.style.display = 'none';
+          if (pauseIcon) pauseIcon.style.display = 'block';
+        } else {
+          playPauseBtn.classList.remove('is-playing');
+          playPauseBtn.setAttribute('title', 'تشغيل التمرير التلقائي (Space)');
+          playPauseBtn.setAttribute('aria-label', 'تشغيل التمرير التلقائي');
+          if (playIcon) playIcon.style.display = 'block';
+          if (pauseIcon) pauseIcon.style.display = 'none';
+        }
+      }
+
+      if (speedVal) {
+        speedVal.textContent = scrollSpeed.toFixed(1) + 'x';
+      }
+
+      if (speedDownBtn) {
+        const isMin = scrollSpeed <= MIN_SPEED + 0.001;
+        speedDownBtn.style.opacity = isMin ? '0.35' : '1';
+        speedDownBtn.style.pointerEvents = isMin ? 'none' : 'auto';
+      }
+
+      if (speedUpBtn) {
+        const isMax = scrollSpeed >= MAX_SPEED - 0.001;
+        speedUpBtn.style.opacity = isMax ? '0.35' : '1';
+        speedUpBtn.style.pointerEvents = isMax ? 'none' : 'auto';
+      }
+    }
+
+    function toggleAutoScroll(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      if (isScrolling) {
+        stopAutoScroll();
+      } else {
+        startAutoScroll();
+      }
+    }
+
+    function autoScrollLoop(timestamp) {
+      if (!isScrolling) return;
+      if (!lastScrollTimestamp) lastScrollTimestamp = timestamp;
+      const dt = (timestamp - lastScrollTimestamp) / 1000;
+      lastScrollTimestamp = timestamp;
+
+      // Avoid jumping if frame lagged or tab switched
+      if (dt > 0.1) {
+        prompterAnimationFrame = requestAnimationFrame(autoScrollLoop);
+        return;
+      }
+
+      // Base speed: 25 px/sec at 1.0x.
+      // At 0.1x = 2.5 px/sec (ultra slow, ~17s per line)
+      // At 0.5x = 12.5 px/sec (relaxed natural reading pace, ~3.4s per line)
+      // At 1.0x = 25 px/sec (standard speaking pace)
+      // At 2.0x = 50 px/sec (fast reading)
+      const BASE_PX_PER_SEC = 25;
+      const pxPerSec = scrollSpeed * BASE_PX_PER_SEC;
+      fractionalScrollAccumulator += pxPerSec * dt;
+
+      if (fractionalScrollAccumulator >= 1) {
+        const step = Math.floor(fractionalScrollAccumulator);
+        window.scrollBy(0, step);
+        fractionalScrollAccumulator -= step;
+      }
+
+      // Stop gracefully if reached bottom
+      const reachedBottom = (window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 4);
+      if (reachedBottom) {
+        stopAutoScroll();
+        return;
+      }
+
+      prompterAnimationFrame = requestAnimationFrame(autoScrollLoop);
+    }
+
+    function startAutoScroll() {
+      if (isScrolling) return;
+      isScrolling = true;
+      lastScrollTimestamp = null;
+      fractionalScrollAccumulator = 0;
+      updatePrompterUI();
+      prompterAnimationFrame = requestAnimationFrame(autoScrollLoop);
+    }
+
+    function stopAutoScroll() {
+      isScrolling = false;
+      if (prompterAnimationFrame) {
+        cancelAnimationFrame(prompterAnimationFrame);
+        prompterAnimationFrame = null;
+      }
+      lastScrollTimestamp = null;
+      fractionalScrollAccumulator = 0;
+      updatePrompterUI();
+    }
+
+    function restartPrompter(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      stopAutoScroll();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function adjustScrollSpeed(delta, e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      let stepDelta = delta;
+      if (e && e.shiftKey) {
+        stepDelta = delta > 0 ? 0.5 : -0.5;
+      }
+      let newSpeed = Math.round((scrollSpeed + stepDelta) * 10) / 10;
+      newSpeed = Math.max(MIN_SPEED, Math.min(MAX_SPEED, newSpeed));
+      if (Math.abs(newSpeed - scrollSpeed) > 0.001) {
+        scrollSpeed = newSpeed;
+        try {
+          localStorage.setItem('script_prompter_speed_v2', scrollSpeed.toString());
+        } catch (err) {}
+        updatePrompterUI();
+      }
+    }
+
+    function startSpeedRepeat(delta, e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      speedAdjustedOnMouseDown = true;
+      adjustScrollSpeed(delta, e);
+      stopSpeedRepeat();
+      speedRepeatTimer = setTimeout(() => {
+        speedRepeatInterval = setInterval(() => {
+          adjustScrollSpeed(delta, e);
+        }, 110);
+      }, 350);
+    }
+
+    function stopSpeedRepeat() {
+      if (speedRepeatTimer) {
+        clearTimeout(speedRepeatTimer);
+        speedRepeatTimer = null;
+      }
+      if (speedRepeatInterval) {
+        clearInterval(speedRepeatInterval);
+        speedRepeatInterval = null;
+      }
+    }
+
+    function handleSpeedClick(delta, e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      if (!speedAdjustedOnMouseDown) {
+        adjustScrollSpeed(delta, e);
+      }
+      speedAdjustedOnMouseDown = false;
+    }
+
+    const SPEED_PRESETS = [0.2, 0.5, 0.8, 1.0, 1.5, 2.0];
+    function cycleSpeedPreset(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      let nextSpeed = SPEED_PRESETS[0];
+      for (let i = 0; i < SPEED_PRESETS.length; i++) {
+        if (scrollSpeed < SPEED_PRESETS[i] - 0.05) {
+          nextSpeed = SPEED_PRESETS[i];
+          break;
+        }
+      }
+      scrollSpeed = nextSpeed;
+      try {
+        localStorage.setItem('script_prompter_speed_v2', scrollSpeed.toString());
+      } catch (err) {}
+      updatePrompterUI();
+    }
+
+    // Keyboard shortcuts for teleprompter mode
+    document.addEventListener('keydown', (e) => {
+      const theme = document.documentElement.getAttribute('data-theme');
+      if (theme !== 'teleprompter') return;
+
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        toggleAutoScroll();
+      } else if (e.code === 'ArrowDown' || e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        adjustScrollSpeed(e.shiftKey ? -0.5 : -SPEED_STEP, e);
+      } else if (e.code === 'ArrowUp' || e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        adjustScrollSpeed(e.shiftKey ? 0.5 : SPEED_STEP, e);
+      } else if (e.code === 'Home') {
+        e.preventDefault();
+        restartPrompter(e);
+      } else if (e.code === 'Escape') {
+        e.preventDefault();
+        exitTeleprompterMode();
+      }
+    });
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      loadSavedSettings();
+      try {
+        const savedSpeed = localStorage.getItem('script_prompter_speed_v2');
+        if (savedSpeed) {
+          const p = parseFloat(savedSpeed);
+          if (!isNaN(p) && p >= MIN_SPEED && p <= MAX_SPEED) {
+            scrollSpeed = Math.round(p * 10) / 10;
+          }
+        }
+      } catch (err) {}
+      updatePrompterUI();
+    });
+  </script>
+</body>
+</html>

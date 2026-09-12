@@ -5,6 +5,8 @@ from langgraph.graph import StateGraph, START, END
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage
 import json
+import urllib.request
+import urllib.parse
 from dotenv import load_dotenv
 
 # Load environment variables (e.g. OPENAI_API_KEY)
@@ -47,6 +49,7 @@ class PipelineState(TypedDict):
     sensitive_handling: str
     presenter_profile: str
     creator_profile: str
+    video_analysis: str
     
     max_translation_revision_count: int
     max_quality_revision_count: int
@@ -55,6 +58,21 @@ class PipelineState(TypedDict):
     source_analysis: str
     strategy_plan: str
     hook: str
+
+    # SEO Keyword Research (grounds packaging in real search data)
+    seo_primary_keyword: str
+    seo_secondary_keywords: str
+    seo_search_intent: str
+    seo_research_output: str
+
+    # Packaging Loop state (Loop 5 — titles, thumbnails, honesty/CTR gate)
+    packaging_brainstorm_output: str
+    title_options: str
+    thumbnail_concepts: str
+    packaging_critique_output: str
+    packaging_grade: str
+    packaging_revision_count: int
+    max_packaging_revision_count: int
 
     # Translation Fidelity Loop state
     translation_grade: str
@@ -113,6 +131,54 @@ def call_llm(system_prompt: str, user_prompt: str, temperature: Optional[float] 
         kwargs["max_tokens"] = max_tokens
     response = llm.invoke(messages, **kwargs)
     return response.content
+
+def fetch_youtube_autocomplete(query: str, hl: str = "ar", gl: str = "EG") -> list:
+    """
+    Hits YouTube's public autocomplete endpoint (no API key required) and returns
+    the raw completion strings for a query. This is the grounding data that turns
+    seo_keyword_researcher from an LLM guess into evidence-based keyword research —
+    it's what real people are actually typing into YouTube search.
+
+    Fails soft: any network or parsing error returns an empty list so the pipeline
+    never crashes on a flaky connection or a blocked domain. The LLM is instructed
+    to proceed with best-effort reasoning if grounding data is thin or empty.
+    """
+    try:
+        params = urllib.parse.urlencode({
+            "client": "youtube",
+            "ds": "yt",
+            "hl": hl,
+            "gl": gl,
+            "q": query,
+        })
+        url = f"https://suggestqueries.google.com/complete/search?{params}"
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            raw = resp.read().decode("utf-8", errors="ignore")
+        # Response is a JSON array: ["query", [["suggestion", 0, [...]], ...]]
+        data = json.loads(raw)
+        suggestions = []
+        for item in data[1]:
+            text = item[0] if isinstance(item, list) else item
+            # Strip any HTML bolding tags Google sometimes includes
+            text = re.sub(r"<[^>]+>", "", str(text)).strip()
+            if text and text not in suggestions:
+                suggestions.append(text)
+        return suggestions
+    except Exception:
+        return []
+
+def fetch_autocomplete_grounding(queries: list) -> str:
+    """Runs fetch_youtube_autocomplete across several phrasings and formats the
+    combined, deduplicated result as a plain-text block for the LLM prompt."""
+    all_suggestions = []
+    for q in queries:
+        for s in fetch_youtube_autocomplete(q):
+            if s not in all_suggestions:
+                all_suggestions.append(s)
+    if not all_suggestions:
+        return "(No live autocomplete data retrieved — network unavailable or no results. Proceed using judgment and the topic/fact ledger alone, and note this in seo_research_output.)"
+    return "\n".join(f"- {s}" for s in all_suggestions[:40])
 
 # --- Upstream Nodes ---
 def source_script_analyzer(state: PipelineState) -> dict:
@@ -188,12 +254,33 @@ MARKDOWN FORMAT FOR `source_analysis` FIELD:
 ### Flags for the Strategy Planner
 - **NEEDS CLARIFICATION**: [any claim too vague/ambiguous to restate precisely]
 - **HIGH-RISK CLAIMS** (causal, strong, or easily misread if simplified): [list]
-- **MISSING DISCLAIMER RISK**: [does this topic need a "not a substitute for medical advice" line that the source doesn't already have?]"""
+- **MISSING DISCLAIMER RISK**: [does this topic need a "not a substitute for medical advice" line that the source doesn't already have?]
+
+PART 3 — EDITORIAL INTELLIGENCE BRIEF (only if Video Analysis is provided)
+If a Video Analysis is provided in the user prompt, extract and log the following as a SEPARATE section — do NOT mix these into the Medical Fact Ledger:
+1. CULTURAL CONTEXT ADDITIONS: Egyptian references, events, or cultural phenomena mentioned in the analysis that do NOT exist in the source script. These are APPROVED creative additions for the Egyptian rebuild — not medical claims, but contextual framing. Log each one clearly.
+2. EMPHASIS REWEIGHTING: Which points from the source should be AMPLIFIED as core themes in the Egyptian version (even if they were minor in the source), and which should be COMPRESSED.
+3. RISK GUARDRAILS: Specific pitfalls flagged in the analysis (e.g., "avoid fear-mongering around athletic exertion"). These are MANDATORY constraints for all downstream nodes.
+4. RECOMMENDED ANALOGIES: Any Egyptian analogies suggested in the analysis.
+5. ADAPTATION NOTES: Verdict, scores, and any reframing directives from the analysis.
+
+These items are NOT medical claims and must NOT be added to the Medical Fact Ledger. They are editorial direction that governs creative decisions downstream.
+
+If Video Analysis is provided, add to the JSON output: "editorial_brief": "Full markdown of the Editorial Intelligence Brief"
+
+And add to the `source_analysis` markdown output:
+### Editorial Intelligence Brief
+[contents extracted above]
+
+If no Video Analysis is provided, omit the Editorial Intelligence Brief entirely."""
 
     user_prompt = f"""Analyze the following source script and produce the Metadata, Structural Map, and Medical Fact Ledger.
 
 ORIGINAL SCRIPT:
 {state.get("original_script", "")}
+
+VIDEO ANALYSIS INTELLIGENCE (pre-curated insights for this specific video — use to extract the Editorial Intelligence Brief. If empty, skip the Editorial Brief):
+{state.get("video_analysis", "")}
 
 Do not rewrite or translate anything. Only analyze and extract. Every claim in the ledger must be traceable back to a specific point in the script above. Output ONLY the JSON object."""
 
@@ -221,6 +308,94 @@ Do not rewrite or translate anything. Only analyze and extract. Every claim in t
         # Fallback if JSON parsing fails
         return {"source_analysis": response}
 
+def seo_keyword_researcher(state: PipelineState) -> dict:
+    """
+    Grounds YouTube SEO in real search-completion data instead of an LLM guess.
+    Runs BEFORE strategy_planner so the primary keyword can also inform the hook
+    (spoken keywords help YouTube's caption/ASR-based indexing, not just the
+    title and description text) and the narrative structure.
+    """
+    medical_topic = state.get("medical_topic", "").strip()
+    source_analysis = state.get("source_analysis", "")
+
+    # Build a few phrasing variants of the topic to query autocomplete with.
+    # We ask the LLM for query variants first because the raw medical_topic
+    # string alone (3-8 words, English-flavored) is a poor search query —
+    # real Egyptian viewers search in colloquial Arabic phrasings.
+    variant_prompt = """You generate YouTube search-box query variants for autocomplete grounding.
+Given a medical topic, output 4-6 short phrasings (2-5 words each) an Egyptian Arabic speaker would actually type into YouTube's search box about this topic — mix formal and colloquial phrasings, mix question and statement forms. Output ONLY a JSON array of strings, nothing else."""
+    variant_user = f"Medical topic: {medical_topic}\n\nContext (for topic accuracy only):\n{source_analysis[:800]}"
+    try:
+        variants_raw = call_llm(variant_prompt, variant_user, temperature=0.5, max_tokens=300).strip()
+        if variants_raw.startswith("```"):
+            variants_raw = variants_raw.split("```")[1]
+            if variants_raw.startswith("json"):
+                variants_raw = variants_raw[4:]
+        query_variants = json.loads(variants_raw.strip())
+        if not isinstance(query_variants, list) or not query_variants:
+            query_variants = [medical_topic]
+    except Exception:
+        query_variants = [medical_topic]
+
+    autocomplete_grounding = fetch_autocomplete_grounding(query_variants)
+
+    system_prompt = """You are an SEO researcher for a new, zero-authority Egyptian Arabic medical YouTube channel. Your job is to turn real search-completion data into an actionable keyword plan — NOT to invent keywords from the topic string alone. A new channel's biggest edge is ranking for specific long-tail phrases it can actually win, not competing head-on for broad terms already owned by established channels.
+
+YOU ARE GIVEN real YouTube autocomplete completions gathered from several phrasings of this video's topic. Treat these as ground truth for what people actually type — even incomplete or oddly-phrased suggestions tell you something about real search behavior. If the grounding data is thin or empty, say so explicitly and fall back to informed judgment, but never present a guess as if it were grounded data.
+
+YOUR OUTPUT MUST DETERMINE:
+1. ONE primary keyword/phrase — the single best phrase to build the title and hook around. For a new channel, prefer a specific, winnable long-tail phrase over a broad, saturated head-term, unless the autocomplete data shows a head-term with clear, high-volume signal and no realistic alternative.
+2. 6-10 secondary/long-tail keyword variants — phrases to weave naturally into the description, not stuffed.
+3. Search intent — what is the person actually trying to find out or solve when they type this? (symptom-checking, myth-verification, "should I worry", treatment-seeking, curiosity/general-knowledge)
+4. One explicit note on why the primary keyword was chosen over the alternatives, given this is a starting channel.
+
+OUTPUT — ONLY valid JSON:
+```json
+{
+  "primary_keyword": "the single best phrase",
+  "secondary_keywords": ["phrase 1", "phrase 2", "..."],
+  "search_intent": "1-2 sentence description of what the searcher wants",
+  "research_notes": "Markdown-formatted reasoning: what the autocomplete data showed, why this primary keyword over alternatives, and any gaps in the grounding data"
+}
+```"""
+
+    user_prompt = f"""MEDICAL TOPIC: {medical_topic}
+
+QUERY VARIANTS USED FOR AUTOCOMPLETE LOOKUP:
+{json.dumps(query_variants, ensure_ascii=False)}
+
+REAL YOUTUBE AUTOCOMPLETE COMPLETIONS (ground truth search behavior):
+{autocomplete_grounding}
+
+SOURCE SCRIPT ANALYSIS (for topic/claim accuracy — do not invent keywords beyond what this content actually supports):
+{source_analysis}
+
+Produce the keyword plan. Output ONLY the JSON object."""
+
+    response = call_llm(system_prompt, user_prompt, temperature=0.4, max_tokens=1500)
+    text = response.strip()
+    try:
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        data = json.loads(text.strip())
+        secondary = data.get("secondary_keywords", [])
+        secondary_str = ", ".join(secondary) if isinstance(secondary, list) else str(secondary)
+        return {
+            "seo_primary_keyword": data.get("primary_keyword", "") or medical_topic,
+            "seo_secondary_keywords": secondary_str,
+            "seo_search_intent": data.get("search_intent", ""),
+            "seo_research_output": data.get("research_notes", "") or text,
+        }
+    except Exception:
+        return {
+            "seo_primary_keyword": medical_topic,
+            "seo_secondary_keywords": "",
+            "seo_search_intent": "",
+            "seo_research_output": response,
+        }
+
 def strategy_planner(state: PipelineState) -> dict:
     system_prompt = """You are a senior content strategist who specializes in adapting medical content for Egyptian YouTube audiences. You never write the script itself — your job is the blueprint the restructuring nodes will follow. You've been given a structural map and fact ledger from an English source script; your job is to plan how it gets rebuilt, not translated, into Egyptian Arabic.
 
@@ -235,11 +410,9 @@ YOUR OUTPUT MUST ANSWER:
 8. Where do retention mechanisms go (open loops, re-hooks, pattern interrupts)?
 9. Term by term: which English words from the source script should STAY in English, which should be rendered in Egyptian Arabic, and which should be said once in Arabic-with-English-echo the first time and then just in English after?
 10. PRESENTER PERSONA & ANECDOTE ADAPTATION PLAN: How should the script frame the presenter's voice based on `presenterProfile` / `creatorProfile`? (MANDATORY RULE: The script is spoken strictly by the presenter in `presenterProfile`. The presenter must NEVER falsely adopt the original author's name, credentials, or personal clinical actions—such as performing surgeries, catheterizations, or running a UK clinic—as their own first-person experience. Instead, reframe all first-person clinical stories/experiences from the source into third-person expert case studies and clinical reports WITHOUT mentioning foreign doctor names: e.g., 'استشاري قلب وقسطرة في إنجلترا حكى عن ملاحظة غريبة...' or 'في واحدة من المستشفيات الكبيرة في بريطانيا، الأطباء استقبلوا 5 حالات...', while the presenter speaks with authority and warmth as a trusted medical communicator).
-11. YOUTUBE PACKAGING & PACING STRATEGY:
-    - Formulate 3 distinct title angles (Curiosity Loop, Shock/Paradox, Direct Warning).
-      * CRITICAL TITLE RULE: "Shock & Paradox" means counter-intuitive medical reality, myth-busting, or surprising science (e.g., 'فورمة ورياضي بس الشرايين مسدودة؟ إزاي ده يحصل؟'). It must NEVER rely on cheap melodrama, betrayal tropes, or biological hostility (STRICTLY FORBIDDEN: 'جسمك بيخونك', 'غدر وخيانة', 'طعنة في ضهرك', 'قلبه يخذله').
-    - Outline 3 thumbnail concepts with high visual contrast and 3-4 word punchy overlays.
+11. PACING STRATEGY:
     - Pacing constraint: No speaking block should exceed 30–45 seconds without a visual cut, SFX, or interactive audience question (Pattern Interrupt).
+    - NOTE: Title and thumbnail packaging are NOT decided here. That work now happens downstream, after the script is fully locked, by a dedicated packaging team who can see the finished script and real SEO keyword data. Your only packaging-adjacent job is the Hook Angle above (the spoken opening) and, if useful, noting in your reasoning whether the SEO Primary Keyword below fits naturally into that spoken hook.
 
 TERMINOLOGY RETENTION RULES — this is a separate decision from dialect and grammar:
 Go through every technical/medical term in the Fact Ledger and the source script and sort it:
@@ -324,9 +497,7 @@ OUTPUT FORMAT:
 **Presenter Persona**: [How the presenter introduces and frames themselves based on presenterProfile / mandatoryMentions]
 **Source Anecdote Reframing**: [How original first-person stories/experiences in the ledger will be transformed into third-person case studies without naming the original doctor]
 
-### YouTube Packaging & Pacing Strategy
-**Title Angles**: [Curiosity / Paradox / Warning]
-**Thumbnail Directions**: [3 visual concepts with 3-4 word text overlays]
+### Pacing & Chapters Strategy
 **Pacing & Pattern Interrupt Plan**: [Every 30–45s visual/audio shift schedule]
 **YouTube Chapters Plan**: Each chapter timestamp MUST align with a real content start cue / main point from the script (will be used for YouTube segments). Plan chapter names and approximate timestamps that correspond to the actual narrative beats and section transitions:
 | Chapter # | Approx. Timestamp | Chapter Name (Arabic) | Main Cue / Point from Script |
@@ -356,14 +527,27 @@ OUTPUT FORMAT:
 
 ### Mandatory Elements Placement
 | Element | Position | Reason |
-|---|---|---|"""
+|---|---|---|
+
+VIDEO ANALYSIS INTEGRATION (when provided):
+- The Editorial Intelligence Brief in the source analysis (extracted from the Video Analysis) is your PRIMARY creative direction. It contains Egyptian cultural context, emphasis reweighting directives, approved analogies, and risk guardrails that the source script does NOT have.
+- The Egyptian angle from the Video Analysis is your PRIMARY hook angle and framing direction — build your hook angle, analogy bank, and cultural sensitivity notes around it.
+- Risk-to-pre-solve items from the Video Analysis are MANDATORY guardrails — they must appear in your Cultural Sensitivity Notes and inform your De-Clinicalization Priority List.
+- If the analysis suggests emphasis reweighting (amplify X, compress Y), reflect this in your Act Breakdown word count allocations.
+- Cultural references from the analysis (Egyptian events, local phenomena) that don't exist in the source script are APPROVED for inclusion — add them to the Analogy Bank and Hook Angle sections. These are editorial additions, not medical claims.
+- RECOMMENDED ANALOGIES from the Editorial Brief should be seeded into your Analogy Bank and adapted as needed."""
 
     user_prompt = f"""Build the restructure strategy plan.
 
-SOURCE SCRIPT ANALYSIS (structural map + fact ledger):
+SOURCE SCRIPT ANALYSIS (structural map + fact ledger + Editorial Intelligence Brief if available):
 {state.get("source_analysis", "")}
 
+VIDEO ANALYSIS INTELLIGENCE (AUTHORITATIVE creative brief — the Egyptian angle, risks, and emphasis directives below should be treated as editorial mandates, not optional suggestions. They contain cultural context that the source script does NOT have. If empty, rely on source analysis alone):
+{state.get("video_analysis", "")}
+
 MEDICAL TOPIC: {state.get("medical_topic", "")}
+SEO PRIMARY KEYWORD (from real YouTube search data — consider whether it fits naturally into the hook angle; do not force it): {state.get("seo_primary_keyword", "")}
+SEO SEARCH INTENT: {state.get("seo_search_intent", "")}
 CONTENT STYLE: {state.get("content_style", "")}
 TARGET PLATFORM: {state.get("target_platform", "")}
 DIALECT REGISTER: {state.get("dialect_register", "")}
@@ -406,6 +590,7 @@ MEDICAL HOOK GUARDRAILS:
 - PRESENTER PERSONA & HOOK PERSPECTIVE: Write the hook from the authentic voice and perspective of the presenter defined in `presenterProfile`. If the source script uses a first-person clinical anecdote (e.g., 'I treated 5 patients with heart attacks'), do NOT have the presenter claim they performed those treatments themselves. Frame it as an alarming clinical observation or real-world mystery (e.g., 'تخيل واحد فورمة... وفجأة في العناية المركزة بجلطة! القصة دي مش خيال، دي ملاحظة سجلها استشاري قلب لما استقبل 5 حالات في شهر واحد...').
 - STRICT BAN ON BODY-ANTAGONISM & CHEAP MELODRAMA: Never frame involuntary medical events or normal physiology as betrayal, treason, or malice (STRICTLY FORBIDDEN: 'جسمك بيخونك', 'القلب بيغدر بصاحبه', 'طعنة من جسمك', 'خيانة الأعضاء'). Hooks must arouse curiosity through genuine scientific paradoxes, surprising clinical facts, or bust misconceptions — NOT soap-opera melodrama.
 - STRICT BAN ON LOW-BROW STREET SLANG & FORCED COLLOQUIALISMS: The presenter (Dr. Ahmed Hosney) is an educated physician speaking in natural, moderate Egyptian Arabic. Strictly avoid vulgar street slang or coarse idioms (e.g. 'كلبشت', 'قفشت', 'ناشف'). Use natural, context-appropriate phrasing (e.g., 'شَدّت عليك فجأة', 'انقباض مفاجئ ومؤلم').
+- SEO NOTE: If an SEO Primary Keyword is provided below and it fits naturally into one of the three hooks without sounding forced, prefer working it into that hook's spoken words — YouTube's caption/transcript-based indexing weighs what's actually said, not just the title and description. This is a bonus, never a requirement: a hook that sounds natural without the keyword beats one that sounds stiff with it.
 
 EGYPTIAN HOOK PATTERNS THAT WORK (use as inspiration, not templates to fill in):
 - Direct question to the viewer: "إنت حاسس بالتعب ده من غير سبب واضح؟"
@@ -451,7 +636,11 @@ RESTRUCTURE STRATEGY PLAN (hook angle + de-clinicalization direction):
 SOURCE SCRIPT ANALYSIS (fact ledger — pull the most hook-worthy true fact from here):
 {state.get("source_analysis", "")}
 
+VIDEO ANALYSIS INTELLIGENCE (contains a pre-curated Egyptian angle and scroll-stop factor — use as primary creative direction for hook construction. The Egyptian cultural references here may NOT exist in the source script but are approved for use. If empty, rely on source analysis alone):
+{state.get("video_analysis", "")}
+
 MEDICAL TOPIC: {state.get("medical_topic", "")}
+SEO PRIMARY KEYWORD (work in naturally if it fits — never force it): {state.get("seo_primary_keyword", "")}
 DIALECT REGISTER: {state.get("dialect_register", "")}
 CODE-SWITCHING LEVEL: {state.get("code_switching_level", "")}
 VOICE STYLE: {state.get("voice_style", "")}
@@ -475,6 +664,14 @@ def body_restructurer(state: PipelineState) -> dict:
     system_prompt = """You are an Egyptian health-content scriptwriter. You take an English source script that has already been deconstructed into a fact ledger, and you REBUILD it — you do not translate it — into an Egyptian Arabic talking-head + B-roll script that tells the medical content as a story or a guided explanation, never a lecture.
 
 THE ONE RULE THAT OVERRIDES EVERYTHING ELSE: every medical claim in your output must be traceable to an item in the Medical Fact Ledger. You may reorder, re-explain, use an analogy, or cut something for time. You may NOT add a new statistic, a new causal claim, a new mechanism, or strengthen/soften a claim's certainty. If you want to say something the ledger doesn't support, don't say it.
+
+EDITORIAL INTELLIGENCE BRIEF ADDITIONS (when provided):
+The source analysis may contain an Editorial Intelligence Brief with APPROVED cultural context additions — Egyptian events, local references, and cultural framing that do NOT exist in the source script or fact ledger. These are NOT medical claims — they are contextual framing approved by the editorial process. You MAY and SHOULD incorporate them into the script as:
+- Cultural anchoring (e.g., referencing an Egyptian footballer's collapse when discussing sudden cardiac death)
+- Local analogies (e.g., comparing ECG screening to annual car inspection)
+- Audience-relevant framing (e.g., addressing Egyptian-specific health anxieties)
+These additions must NEVER introduce new medical claims, statistics, or causal mechanisms. They are storytelling and cultural framing elements only. Any medical fact you state must still trace to the Medical Fact Ledger.
+Risk guardrails from the Editorial Brief are MANDATORY — if the brief says "avoid fear-mongering around athletic exertion," that constraint is as binding as any medical fidelity rule.
 
 REBUILD PRINCIPLES:
 
@@ -570,6 +767,9 @@ RESTRUCTURE STRATEGY PLAN:
 
 SOURCE SCRIPT ANALYSIS + MEDICAL FACT LEDGER (the only source of truth for claims):
 {state.get("source_analysis", "")}
+
+VIDEO ANALYSIS INTELLIGENCE (contains APPROVED cultural context to incorporate and MANDATORY risk guardrails. If empty, rely on source analysis and strategy plan alone):
+{state.get("video_analysis", "")}
 
 ORIGINAL SCRIPT (for reference — do not translate line by line):
 {state.get("original_script", "")}
@@ -963,6 +1163,13 @@ VERDICT:
 - Minor wording differences that don't change the ledger's meaning or certainty level are NOT violations — you are checking substance, not word-for-word matching (this script is a rebuild, not a translation)
 - `fidelity_score` (1–10): 10 = perfect fidelity, no notes. Below 9 should be rare for a script otherwise ready to ship — this is the strictest gate in the workflow because it's the one with real-world safety stakes
 
+EDITORIAL INTELLIGENCE BRIEF EXEMPTIONS:
+If the source analysis contains an Editorial Intelligence Brief, the following are NOT fidelity violations:
+- Egyptian cultural references, events, or local phenomena used as contextual framing (e.g., "Ahmed Refaat's collapse" as an anchor for sudden cardiac death discussion) — these are approved editorial additions, not invented medical claims
+- Local analogies approved in the brief (e.g., comparing ECG screening to annual car inspection)
+- Emphasis reweighting that amplifies a minor source point into a major Egyptian theme
+These are editorial/creative additions, not medical claims. Only flag them if they introduce a NEW medical claim, statistic, or causal mechanism that isn't in the fact ledger. Cultural storytelling framing ≠ medical claim invention.
+
 OUTPUT — ONLY valid JSON:
 ```json
 {
@@ -980,6 +1187,9 @@ CURRENT SCRIPT (post dialect/warmth rewrite):
 
 SOURCE SCRIPT ANALYSIS + MEDICAL FACT LEDGER (ground truth):
 {state.get("source_analysis", "")}
+
+VIDEO ANALYSIS INTELLIGENCE (if present, cultural references from this are approved editorial additions — do not flag as invented claims):
+{state.get("video_analysis", "")}
 
 RESTRUCTURE STRATEGY PLAN (analogy bank + disclaimer plan, for checking analogies and disclaimer placement):
 {state.get("strategy_plan", "")}
@@ -1123,6 +1333,9 @@ AUDIT DIMENSIONS (CHECK EVERY LINE & SECTION):
 
 6. ABSOLUTE ZERO TOLERANCE FOR HALLUCINATIONS OR VAGUE COLLOQUIAL DISTORTIONS:
    - Check that no scientific claim was diluted, distorted, or invented during dialect adaptation.
+
+EDITORIAL CONTEXT VS. MEDICAL CLAIMS:
+Cultural references, Egyptian events, and local analogies that were added as contextual framing (not medical claims) from an Editorial Intelligence Brief are NOT subject to medical truth verification. Only verify the medical/scientific substance of claims, not the cultural storytelling wrapper around them. For example, if the script mentions "Ahmed Refaat's collapse" as a cultural anchor for sudden cardiac death, you are not verifying the details of that event — you are verifying the medical claims about sudden cardiac death itself.
 
 SCORING & VERDICT:
 - `truth_score` (1–10):
@@ -1319,6 +1532,215 @@ Output ONLY the JSON object. Include the full revised script."""
             "truth_score": state.get("truth_score", 0),
             "truth_pass": state.get("truth_pass", False)
         }
+
+# --- Packaging Loop Nodes (Loop 5 — titles, thumbnails, honesty/CTR gate) ---
+# Runs AFTER the script is locked (self_critique PASS), so packaging is built
+# against what the video actually delivers, not guessed at before it exists.
+
+def packaging_creative_director(state: PipelineState) -> dict:
+    system_prompt = """You are a YouTube packaging creative director for a starting Egyptian Arabic medical channel. The script for this video is finished and locked — your job is to brainstorm WIDE before anything gets narrowed down to finalists.
+
+WHY THIS STEP EXISTS: the old process defaulted to the same 3 title flavors (Curiosity / Shock-Paradox / Warning) on every single video, which caps creativity and makes the channel feel formulaic. Your job is to break that by pulling from a much wider set of proven hook mechanisms and grounding every one of them in something the finished script actually contains.
+
+BRAINSTORM 6-8 CONCEPTS, each pulling from a DIFFERENT mechanism. Do not default to the same 2-3 mechanisms every time — rotate across this bank based on what actually fits this video's content:
+- Curiosity gap / open loop ("what happens when...")
+- Hyper-specificity (exact numbers, exact timeframes — "3 علامات... خلال 10 دقايق")
+- Second-person direct address ("لو بتعمل كذا... وقف")
+- Contrarian / myth-bust ("اللي فاكره... غلط")
+- Transformation / before-after
+- Insider-info framing (what doctors know that patients don't)
+- Relatable story open (a patient scenario from the script)
+- Bold, medically-honest claim/warning
+
+THE ONE RULE THAT OVERRIDES EVERYTHING: every single concept must cite the EXACT fact, moment, or line from the finished script that it is honestly built on, plus a one-line "promise" of what the viewer will actually learn or see resolved. A concept that can't point to a real anchor in the script gets discarded here, before it ever reaches a title. This is what keeps creative expansion from turning into overpromising.
+
+For each concept also give: the mechanism it uses, and a rough visual idea for how it could look as a thumbnail (not a full prompt yet — just the core image idea).
+
+OUTPUT FORMAT:
+
+---
+
+## PACKAGING BRAINSTORM (6-8 concepts)
+
+### Concept 1 — [Mechanism name]
+**Anchor in the script**: [exact fact/line/moment this is built on]
+**Promise to the viewer**: [one sentence — what they'll actually learn/see]
+**Rough title direction**: [a working phrase, not final]
+**Rough visual idea**: [core thumbnail image idea, 1-2 sentences]
+
+[Repeat for all 6-8 concepts, each a genuinely different mechanism]
+
+### Strongest 3-5 for the Generator
+[List which concepts should move forward and a one-line reason each — prioritize a mix of mechanisms, not 3 variations on the same one]"""
+
+    user_prompt = f"""Brainstorm packaging concepts for this finished video.
+
+FINAL LOCKED SCRIPT:
+{state.get("refined_script", "")}
+
+MEDICAL TOPIC: {state.get("medical_topic", "")}
+SEO PRIMARY KEYWORD: {state.get("seo_primary_keyword", "")}
+SEO SEARCH INTENT: {state.get("seo_search_intent", "")}
+
+RESTRUCTURE STRATEGY PLAN (for tone/audience context):
+{state.get("strategy_plan", "")}
+
+AVOID LIST:
+{state.get("avoid_list", "")}
+
+Brainstorm 6-8 concepts across distinct mechanisms, each anchored to something real in the script above. Recommend the strongest 3-5 to carry forward."""
+
+    response = call_llm(system_prompt, user_prompt, temperature=0.9, max_tokens=3000)
+    return {"packaging_brainstorm_output": response}
+
+
+def packaging_generator(state: PipelineState) -> dict:
+    system_prompt = """You are a senior YouTube packaging producer. You take a wide creative brainstorm and narrow it into 3-5 finalist titles plus 3 fully-specified thumbnail concepts, ready for production.
+
+TITLE CONSTRAINTS (non-negotiable):
+- Put the payoff and, where it fits naturally, the SEO primary keyword within the first ~60 characters. YouTube's hard cap is 100 characters, but search results and suggested-video tiles typically only display 50-70 characters before truncating (mobile is the tighter end of that range), so anything after that point is often invisible at the moment someone decides whether to click.
+- STRICTLY FREE of sensationalist body-antagonism or melodrama tropes ('بيخونك', 'غدر', 'خيانة', 'يخذله', 'طعنة'). If a "shock/paradox" mechanism is used, it must be a genuine counter-intuitive medical reality or myth-bust — never betrayal-by-the-body framing.
+- Each finalist title must be traceable to a DIFFERENT concept from the brainstorm — do not submit 3-5 minor rewordings of the same idea.
+
+THUMBNAIL CONSTRAINTS (non-negotiable):
+- Produce exactly 3 thumbnail concepts, each fully specified — no abbreviations, no "same as concept 1", no placeholder fields.
+- Each thumbnail's text overlay must carry DIFFERENT information from its paired title, not repeat it. Redundant text/title pairs waste the curiosity-gap mechanism — the two should combine to create curiosity, not duplicate each other.
+- Actively AVOID the standard medical-channel visual clichés unless a specific concept is genuinely the strongest option for that idea: glowing red heart, hand clutching chest, doctor pointing at an X-ray/scan, red arrows overlaid on a body part, generic DNA helix, stethoscope close-up. If you do use one of these, justify explicitly why it's the strongest choice here, not just the default.
+- Every thumbnail must include a legibility note: confirm the text overlay and focal element are readable at small size (mobile feed thumbnail size), not just at full resolution.
+
+OUTPUT FORMAT:
+
+---
+
+## PACKAGING FINALISTS
+
+### Title Options (3-5, each from a different brainstorm concept)
+| # | Title | Character Count | Mechanism | Anchored fact from script |
+|---|---|---|---|---|
+| 1 | | | | |
+
+### Thumbnail Concepts (exactly 3)
+Each MUST have every field below — no abbreviations, no cross-references to another concept.
+
+- **Visual Scene**: Detailed background, setting, props, lighting.
+- **Presenter Expression / Gesture**: Exact face, hands, gaze.
+- **Bold Arabic Text Overlay (3-4 words)**: `"[TEXT]"` — must carry different information from the paired title.
+- **Focal Element / Prop**: Primary visual hook.
+- **Color Palette**: Primary + accent colors.
+- **Cliché Check**: [Which standard medical-thumbnail trope, if any, was considered and avoided/justified]
+- **Legibility at Small Size**: [Confirm text and focal element remain clear at mobile thumbnail size]
+- **🤖 AI Image Generation Prompt** *(Google Flow / Nano Banana / Gemini)*:
+  One full paragraph covering: subject (pose, expression, clothing, prop), background (setting, depth), lighting (source, direction, color temp), camera (lens mm, f-stop, angle), composition (rule of thirds, which quadrant is clear for Arabic text overlay), color grading, style (photorealistic cinematic YouTube thumbnail), negative prompts (no AI artifacts, no uncanny valley, no extra fingers, no text in image). End: Aspect ratio: 16:9.
+
+* **Concept 1**: [Which title # it pairs with] — [all fields in full]
+* **Concept 2**: [Which title # it pairs with] — [all fields in full]
+* **Concept 3**: [Which title # it pairs with] — [all fields in full]"""
+
+    correction_note = state.get("packaging_critique_output", "") if state.get("packaging_revision_count", 0) > 0 else ""
+
+    user_prompt = f"""Narrow this brainstorm into finalists.
+
+PACKAGING BRAINSTORM:
+{state.get("packaging_brainstorm_output", "")}
+
+FINAL LOCKED SCRIPT (for fact-checking anchors):
+{state.get("refined_script", "")}
+
+SEO PRIMARY KEYWORD: {state.get("seo_primary_keyword", "")}
+SEO SECONDARY KEYWORDS: {state.get("seo_secondary_keywords", "")}
+
+REVISION COUNT: {state.get("packaging_revision_count", 0)}
+{"PREVIOUS CRITIQUE — YOU MUST RESOLVE THESE SPECIFIC ISSUES:" + chr(10) + correction_note if correction_note else ""}
+
+Produce 3-5 finalist titles and exactly 3 fully-specified thumbnail concepts."""
+
+    response = call_llm(system_prompt, user_prompt, temperature=0.7, max_tokens=4000)
+    # Split the two sections out for downstream nodes that only need one or the other.
+    title_section, _, thumb_section = response.partition("### Thumbnail Concepts")
+    return {
+        "title_options": title_section.strip(),
+        "thumbnail_concepts": ("### Thumbnail Concepts" + thumb_section).strip() if thumb_section else response,
+    }
+
+
+def packaging_honesty_ctr_auditor(state: PipelineState) -> dict:
+    system_prompt = """You are the honesty and CTR quality gate for YouTube packaging on a medical channel. Your job is the mechanical, evidence-based version of "don't fake it" — not a banned-word list, but a hard check on whether each title's implied promise is actually paid off by the finished script.
+
+SCORE EACH FINALIST TITLE 1-10 ON:
+1. CURIOSITY STRENGTH — does it create a real open loop or specific enough claim that the brain wants closed?
+2. SPECIFICITY — numbers, timeframes, named mechanisms beat vague claims
+3. SEO KEYWORD PRESENCE — is the primary keyword (or a close natural variant) present, ideally in the first ~60 characters?
+4. TITLE/THUMBNAIL COMPLEMENTARITY — for the paired thumbnail, does the overlay text add NEW information rather than repeat the title?
+5. VISUAL DIFFERENTIATION — does the paired thumbnail avoid generic medical-channel clichés, or justify using one?
+6. PROMISE-DELIVERY MATCH (hard gate) — read the finished script. Does it actually contain, and pay off by roughly when implied, whatever the title claims? A title promising "3 signs" needs 3 signs in the script. A title implying a surprising twist needs that twist to actually land. This is the core anti-overpromising check — score it strictly.
+
+HARD GATE: if PROMISE-DELIVERY MATCH < 9 for ANY finalist that would otherwise be your top pick, the packaging is NEEDS_REVISION regardless of every other score. An overpromising title/thumbnail combination gets the click but tanks average view duration and triggers "not interested" signals — for a channel still building algorithmic trust, that costs more than a weaker but honest title.
+
+ALSO CHECK (fail if violated):
+- Any finalist title contains sensationalist body-antagonism/melodrama tropes ('بيخونك', 'غدر', 'خيانة', 'يخذله', 'طعنة') → NEEDS_REVISION
+- No finalist title exceeds ~100 characters, and at least the top recommended title fits its payoff within ~60 characters
+- All 3 thumbnail concepts are fully specified (no abbreviations, no cross-references)
+
+REVISION MODE: if packaging_revision_count > 0, verify the SPECIFIC issues from your previous critique were actually fixed, not superficially reworded.
+
+OUTPUT — ONLY valid JSON:
+```json
+{
+  "packaging_grade": "PASS",
+  "packaging_critique_report": "Full audit in markdown: per-title score table (all 6 criteria), the Promise-Delivery Match reasoning for the top title against the actual script, thumbnail complementarity/cliché notes, and a specific fix list for anything below threshold",
+  "recommended_title": "The single strongest finalist title, to carry forward as the primary Video Title",
+  "top_promise_delivery_score": 0
+}
+```"""
+
+    correction_note = f"\n\nREVISION COUNT: {state.get('packaging_revision_count', 0)} — verify prior issues were actually fixed." if state.get("packaging_revision_count", 0) > 0 else ""
+
+    user_prompt = f"""Audit these packaging finalists against the actual finished script.
+
+TITLE OPTIONS:
+{state.get("title_options", "")}
+
+THUMBNAIL CONCEPTS:
+{state.get("thumbnail_concepts", "")}
+
+FINAL LOCKED SCRIPT (the ground truth for Promise-Delivery Match):
+{state.get("refined_script", "")}
+
+SEO PRIMARY KEYWORD: {state.get("seo_primary_keyword", "")}
+{correction_note}
+
+Score every finalist. Apply the hard gates. Output ONLY the JSON object."""
+
+    response = call_llm(system_prompt, user_prompt, temperature=0.3, max_tokens=3000)
+    text = response.strip()
+    try:
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        data = json.loads(text.strip())
+
+        grade = str(data.get("packaging_grade", "")).strip().upper()
+        top_pd_score = int(data.get("top_promise_delivery_score", 0))
+
+        # Hard gate: Promise-Delivery Match must be >= 9 regardless of the LLM's self-reported grade
+        if top_pd_score < 9:
+            grade = "NEEDS_REVISION"
+        if grade != "PASS":
+            grade = "NEEDS_REVISION"
+
+        return {
+            "packaging_grade": grade,
+            "packaging_critique_output": data.get("packaging_critique_report", "") or text,
+            "packaging_revision_count": state.get("packaging_revision_count", 0) + 1,
+        }
+    except Exception:
+        return {
+            "packaging_grade": "NEEDS_REVISION",
+            "packaging_critique_output": response,
+            "packaging_revision_count": state.get("packaging_revision_count", 0) + 1,
+        }
+
 
 # --- Post-Production Editing Layer Nodes (Loop 3) ---
 
@@ -1690,9 +2112,9 @@ OUTPUT FORMAT:
 **Anti-AI baseline**: [Standard suffix appended to all prompts for photorealism]
 
 ### B-Roll Prompt Table
-| # | Timestamp | Script Context (what's being said) | Type | Main Cue (most important visual element that MUST be present) | AI Generation Prompt | Composition Notes | Linked to Transition # | Linked to Overlay # | Duration (s) |
-|---|---|---|---|---|---|---|---|---|---|
-| 1 | 0:08 | Hook — dramatic medical scenario | 🎬 Video | "Cinematic close-up of a young athletic man's chest with ECG electrode patches attached, hospital emergency room setting, cool-tinted overhead fluorescent lighting, shallow depth of field at f/2.0, heart monitor in soft-focus background, slight camera dolly forward, tense atmosphere. Shot on 50mm cinema lens, natural film grain, realistic skin texture and electrode adhesive detail. Avoid: plastic skin, AI artifacts, hyper-symmetry, unnatural lighting." | Focal point center-left (callout box upper-right at this timestamp) | After T#2 (zoom-in) | Before I#1 | 4s |
+| # | Timestamp | ▶️ START CUE (exact first Arabic words) | ⏹️ END CUE (exact last Arabic words) | Script Context (what's being said) | Type | Main Cue (most important visual element that MUST be present) | AI Generation Prompt | Composition Notes | Linked to Transition # | Linked to Overlay # | Duration (s) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 0:08 | [exact first Arabic words from script at this moment] | [exact last Arabic words when B-roll ends] | Hook — dramatic medical scenario | 🎬 Video | "Cinematic close-up of a young athletic man's chest with ECG electrode patches attached, hospital emergency room setting, cool-tinted overhead fluorescent lighting, shallow depth of field at f/2.0, heart monitor in soft-focus background, slight camera dolly forward, tense atmosphere. Shot on 50mm cinema lens, natural film grain, realistic skin texture and electrode adhesive detail. Avoid: plastic skin, AI artifacts, hyper-symmetry, unnatural lighting." | Focal point center-left (callout box upper-right at this timestamp) | After T#2 (zoom-in) | Before I#1 | 4s |
 
 ### B-Roll Density Summary
 | Act | Total B-Roll Moments | 🖼️ Images | 🎬 Videos | Talking Head % | B-Roll % |
@@ -1918,34 +2340,33 @@ Evaluate all three layers individually AND as an integrated system. Score each c
 MAX_FINAL_PACKAGE_RETRIES = 2
 
 def _audit_part1(text: str) -> list:
-    """Audit Part 1 (Script + Packaging) for quality issues."""
+    """Audit Part 1 (Script + Packaging) for quality issues.
+
+    NOTE: title/thumbnail quality (count, completeness, anti-cliché, honesty)
+    is no longer checked here — that's the job of packaging_honesty_ctr_auditor,
+    which gates the packaging BEFORE it ever reaches this assembly step. This
+    audit now only needs to confirm those approved sections were copied through
+    and that the production script itself is clean.
+    """
     issues = []
 
-    # Must have all 3 thumbnail AI prompts
-    count = text.count("\U0001f916 AI Image Generation Prompt")
-    if count < 3:
+    # Approved packaging sections must actually be present (copy-through check,
+    # not a quality check — quality was already gated upstream).
+    if "\U0001f916 AI Image Generation Prompt" not in text:
         issues.append(
-            f"MISSING THUMBNAIL PROMPTS: Only {count}/3 '\U0001f916 AI Image Generation Prompt' sections found. "
-            "You MUST produce a complete AI Generation Prompt for ALL THREE thumbnail concepts. "
-            "Do not abbreviate or reference another concept's prompt."
+            "MISSING APPROVED THUMBNAIL CONCEPTS: The approved thumbnail concepts (with AI Image Generation Prompts) "
+            "were not copied through from the packaging loop output. Copy them through in full, unmodified."
         )
-
-    # Check for lazy shortcuts in thumbnail prompts
-    shortcuts = ["same as concept", "same as above", "see concept", "as described above", "[all fields]"]
-    for s in shortcuts:
-        if s.lower() in text.lower():
-            issues.append(
-                f"SHORTCUT DETECTED in thumbnail section: '{s}'. "
-                "Write every thumbnail AI prompt in full — never reference a previous concept."
-            )
-            break
 
     # Production script must be present
     if "\u0646\u0628\u0631\u0629" not in text and "HOOK" not in text:
         issues.append("MISSING PRODUCTION SCRIPT: The full teleprompter-ready script is absent.")
 
-    # Extract only the relevant content (titles and production script) to check forbidden terms
-    # This avoids false positives when the model echoes compliance notes (e.g. "free of 'بيخونك'")
+    # Extract only the production script content to check forbidden terms.
+    # Title/thumbnail wording is no longer generated here (it's copied through
+    # already-approved packaging output), so this is now purely a safety net
+    # on the SPOKEN script — the same content self_critique already checked,
+    # re-verified here in case anything drifted during final assembly.
     content_lines = []
     in_script = False
     for line in text.splitlines():
@@ -1958,19 +2379,17 @@ def _audit_part1(text: str) -> list:
         
         if in_script:
             content_lines.append(line)
-        elif any(marker in line for marker in ["Video Title (Egyptian Arabic)", "Option A", "Option B", "Option C"]):
-            content_lines.append(line)
 
     # Filter out compliance explanations, disclaimers, or echoed rules
     clean_lines = [
         l for l in content_lines 
         if not any(k in l.lower() for k in ["free of", "strictly forbidden", "forbidden", "title rules", "rules:", "قواعد", "خالي من", "تنبيه"])
     ]
-    target_dialogue_and_titles = "\n".join(clean_lines) if clean_lines else text
+    target_dialogue = "\n".join(clean_lines) if clean_lines else text
 
-    # Check for forbidden body-antagonism / melodrama clichés in titles or script
+    # Check for forbidden body-antagonism / melodrama clichés in the script
     forbidden_terms = ["بيخونك", "يخونك", "غدر", "خيانة", "طعنة", "يخذله", "بيطعنك"]
-    found_forbidden = [t for t in forbidden_terms if t in target_dialogue_and_titles]
+    found_forbidden = [t for t in forbidden_terms if t in target_dialogue]
     if found_forbidden:
         issues.append(
             f"SENSATIONALIST BODY-ANTAGONISM DETECTED: Found forbidden melodrama/betrayal term(s): {found_forbidden}. "
@@ -1984,7 +2403,7 @@ def _audit_part1(text: str) -> list:
         "بتغلس", "بيتجنن", "تتجنن", "مابتخرفش", "بتخرف", "حتة لحمة", "وجع رخم", "قرصت عليها",
         "فيوزات", "فيوز", "تجنزر", "يجنزر", "يصدي", "تصدي", "تفرك"
     ]
-    found_slang = [s for s in slang_forbidden if s in target_dialogue_and_titles]
+    found_slang = [s for s in slang_forbidden if s in target_dialogue]
     if found_slang:
         issues.append(
             f"VULGAR / STREET SLANG DETECTED: Found inappropriate street slang or mechanic term(s): {found_slang}. "
@@ -2132,9 +2551,10 @@ def final_script_package(state: PipelineState) -> dict:
 
     system_prompt_1 = """You are a senior YouTube executive producer compiling Part 1 of a production deliverable.
 
-TITLE & CONTENT INTEGRITY RULES:
-- The main Video Title (in Script Metadata table) and all 3 title options must be compelling and high-CTR, but STRICTLY FREE of sensationalist melodrama or body-antagonism tropes ('بيخونك', 'غدر', 'خيانة', 'يخذله', 'طعنة').
-- Option B (Shock & Paradox) MUST be anchored in counter-intuitive medical reality, myth-busting, or surprising science (e.g., 'رياضي وبياكل صحي... بس الشريان اتقفل؟ السر الطبي الصادم'), NOT betrayal by the body.
+TITLE & THUMBNAIL SOURCING RULE — READ CAREFULLY:
+- The title options and thumbnail concepts have ALREADY been created, brainstormed, narrowed, and quality-gated by a dedicated upstream packaging team (creative director → generator → honesty/CTR auditor). They are provided to you below as APPROVED, FINAL content.
+- Your job here is to ASSEMBLE them into this deliverable's format, not to rewrite, regenerate, or second-guess them. Copy the approved title options and thumbnail concepts through with only light reformatting to match the section structure below — do not alter the wording of titles, text overlays, or AI image prompts.
+- Use the approved "recommended_title" (provided below) as the Video Title in the Script Metadata table.
 - IMPORTANT: Do NOT include any compliance notes, checklists, or rule explanations in your markdown output (e.g., NEVER output '*TITLE RULES:*' or write 'All titles are free of...'). Output ONLY the deliverable sections directly.
 
 Your ONLY job in this call is to produce these sections exactly as formatted below:
@@ -2168,32 +2588,14 @@ Your ONLY job in this call is to produce these sections exactly as formatted bel
 ### \U0001f680 YOUTUBE PACKAGING & DISTRIBUTION SUITE
 
 #### 1. High-CTR Title Options
-* **Option A (Curiosity & Open Loop)**: [Title]
-* **Option B (Shock & Paradox)**: [Title]
-* **Option C (Direct Medical Warning)**: [Title]
+Copy the approved finalist titles through exactly as provided in TITLE OPTIONS below (reformat into a simple list, do not reword). Mark the approved recommended title clearly as the primary one.
 
 #### 2. Thumbnail Visual Blueprints + AI Generation Prompts
-Produce ALL THREE concepts. Each MUST have every field below - no abbreviations.
-
-Fields per concept:
-- **Visual Scene**: Detailed background, setting, props, lighting.
-- **Presenter Expression / Gesture**: Exact face, hands, gaze.
-- **Bold Arabic Text Overlay (3-4 words)**: `"[TEXT]"`
-- **Focal Element / Prop**: Primary visual hook.
-- **Color Palette**: Primary + accent colors.
-- **\U0001f916 AI Image Generation Prompt** *(Google Flow / Nano Banana / Gemini)*:
-  Write as one full paragraph covering: subject (pose, expression, clothing, prop), background (setting, depth), lighting (source, direction, color temp), camera (lens mm, f-stop, angle), composition (rule of thirds, which quadrant clear for Arabic text overlay), color grading, style (photorealistic cinematic YouTube thumbnail), negative prompts (no AI artifacts, no uncanny valley, no extra fingers, no text in image). End: Aspect ratio: 16:9.
-
-* **Concept 1 (High Drama / Shock)**:
-  [All fields - write the full AI prompt in full]
-* **Concept 2 (Medical Mystery / Curiosity)**:
-  [All fields - write the full AI prompt in full, do not reference Concept 1]
-* **Concept 3 (Relatable Contrast / Gym vs. Medical Reality)**:
-  [All fields - write the full AI prompt in full, do not reference other concepts]
+Copy the approved thumbnail concepts through exactly as provided in THUMBNAIL CONCEPTS below, for all 3 concepts, with every field intact — do not shorten, reword, or drop any field (especially the full AI Image Generation Prompt paragraphs).
 
 #### 3. YouTube SEO Description & Timestamps (Copy-Paste Ready)
 ```text
-[2-3 sentence Arabic summary]
+[2-3 sentence Arabic summary — the SEO PRIMARY KEYWORD below MUST appear naturally within these first 1-2 lines, since that's the part visible before "Show more" and the part search and suggested-video ranking weighs most heavily]
 
 \U0001f4cc \u0631\u0648\u0627\u0628\u0637 \u0645\u0647\u0645\u0629 \u0648\u062a\u0646\u0628\u064a\u0647\u0627\u062a:
 - \u0627\u0644\u0643\u0644\u0627\u0645 \u0641\u064a \u0647\u0630\u0627 \u0627\u0644\u0641\u064a\u062f\u064a\u0648 \u0644\u0623\u063a\u0631\u0627\u0636 \u0627\u0644\u062a\u0648\u0639\u064a\u0629 \u0648\u0627\u0644\u062a\u062b\u0642\u064a\u0641 \u0627\u0644\u0637\u0628\u064a \u0627\u0644\u0639\u0627\u0645 \u0648\u0644\u0627 \u064a\u063a\u0646\u064a \u0639\u0646 \u0627\u0633\u062a\u0634\u0627\u0631\u0629 \u0637\u0628\u064a\u0628\u0643 \u0627\u0644\u0645\u062e\u062a\u0635.
@@ -2201,8 +2603,9 @@ Fields per concept:
 \u23f1\ufe0f \u0627\u0644\u0641\u0635\u0648\u0644 (Chapters):
 [Complete chapter list with accurate timecodes. CRITICAL: Each chapter MUST align with the START CUE / main point of a real content section in the production script. Chapters mark narrative beats, not arbitrary time intervals. Use the YouTube Chapters Plan from the Strategy Plan as the reference.]
 
-[Arabic hashtags]
+[Arabic hashtags — include at least 2-3 built from the SEO SECONDARY KEYWORDS below]
 ```
+DESCRIPTION SEO RULE: weave the SEO SECONDARY KEYWORDS below naturally through the description body (not just the summary line and not stuffed as a keyword list) — these came from real YouTube search-completion data, so using them as written (or a close natural variant) matters more than paraphrasing them into something else.
 
 #### 4. Pinned Comment Draft
 ```text
@@ -2276,7 +2679,16 @@ Fields per concept:
 | Visual integration | | Pass/Warn/Fail |
 | Density balance | | Pass/Warn/Fail |
 | Platform fit | | Pass/Warn/Fail |
-| Organic feel | | Pass/Warn/Fail |"""
+| Organic feel | | Pass/Warn/Fail |
+
+---
+
+### 📹 VIDEO SECTIONS (YouTube Editing Guide)
+A section-by-section breakdown of the entire video for the editor. Each row represents one distinct content section with its title and the exact first/last spoken Arabic sentences that mark its boundaries in the production script.
+
+| # | Section Title (Arabic) | ▶️ Start Sentence (exact first Arabic sentence of this section from the script) | ⏹️ End Sentence (exact last Arabic sentence of this section from the script) | Duration Estimate | Notes for Editor |
+|---|---|---|---|---|---|
+| 1 | [e.g., المقدمة والهوك] | [exact first spoken sentence] | [exact last spoken sentence before next section] | [Xm Xs] | [any special notes] |"""
 
     base_user_prompt_1 = f"""Compile Part 1 of the YouTube Production Deliverable.
 
@@ -2288,6 +2700,18 @@ HOOK VARIATIONS:
 
 CTA VERSIONS:
 {state.get("cta_output", "")}
+
+APPROVED TITLE OPTIONS (from the packaging loop — copy through, do not rewrite):
+{state.get("title_options", "")}
+
+APPROVED THUMBNAIL CONCEPTS (from the packaging loop — copy through, do not rewrite):
+{state.get("thumbnail_concepts", "")}
+
+PACKAGING AUDIT (contains the recommended_title to use as the primary Video Title):
+{state.get("packaging_critique_output", "")}
+
+SEO PRIMARY KEYWORD: {state.get("seo_primary_keyword", "")}
+SEO SECONDARY KEYWORDS: {state.get("seo_secondary_keywords", "")}
 
 SOURCE ANALYSIS + MEDICAL FACT LEDGER (for adaptation log):
 {state.get("source_analysis", "")}
@@ -2311,7 +2735,7 @@ PLATFORM: {state.get("target_platform", "")}
 PRESENTER PROFILE: {state.get("presenter_profile", "")}
 AVOID LIST: {state.get("avoid_list", "")}
 
-CRITICAL: For each of the 3 Thumbnail Concepts, write the AI Image Generation Prompt as a complete detailed paragraph. Do NOT abbreviate or say "same as above"."""
+CRITICAL: Copy the APPROVED TITLE OPTIONS and APPROVED THUMBNAIL CONCEPTS through in full, including every AI Image Generation Prompt paragraph in full. Do NOT abbreviate, reword, or say "same as above" — these were already written and quality-gated upstream."""
 
     part1 = ""
     correction_note_1 = ""
@@ -2376,7 +2800,7 @@ MANDATORY: Every English technical term in the script MUST have a TOP-RIGHT POPU
 ---
 
 ### \U0001f5bc\ufe0f AI B-ROLL GENERATION PROMPTS (Detail Reference)
-Reproduce the full B-Roll prompt table. Include: generation settings + complete table with columns: #, Timestamp, Type, Main Cue (the single most important visual element that MUST be present), FULL AI Generation Prompt, SB# + density summary.
+Reproduce the full B-Roll prompt table. Include: generation settings + complete table with columns: #, Timestamp, ▶️ START CUE (exact first Arabic words), ⏹️ END CUE (exact last Arabic words), Type, Main Cue (the single most important visual element that MUST be present), FULL AI Generation Prompt, SB# + density summary.
 
 ZERO TOLERANCE: The "FULL AI Prompt" column MUST have the complete prompt for EVERY row. NEVER write "[Full Prompt in SB]", "[See SB#X]", "[Same as above]", "..." or any cross-reference. This table must work standalone without reading the storyboard.
 
@@ -2918,9 +3342,21 @@ def route_quality_loop(state: PipelineState) -> str:
     hit_max = state.get("quality_revision_count", 0) >= max_iterations
 
     if quality_pass or hit_max:
-        return "transition_designer"
+        return "packaging_creative_director"
     else:
         return "cta_retention_writer"
+
+MAX_PACKAGING_ITERATIONS = 2
+
+def route_packaging_quality(state: PipelineState) -> str:
+    packaging_pass = (state.get("packaging_grade") == "PASS")
+    max_iterations = state.get("max_packaging_revision_count", MAX_PACKAGING_ITERATIONS)
+    hit_max = state.get("packaging_revision_count", 0) >= max_iterations
+
+    if packaging_pass or hit_max:
+        return "transition_designer"
+    else:
+        return "packaging_generator"
 
 MAX_PRODUCTION_ITERATIONS = 2
 
@@ -2950,8 +3386,9 @@ def route_shorts_quality(state: PipelineState) -> str:
 # --- Graph Wiring ---
 workflow = StateGraph(PipelineState)
 
-# Add all 20 nodes
+# Add all 24 nodes
 workflow.add_node("source_script_analyzer", source_script_analyzer)
+workflow.add_node("seo_keyword_researcher", seo_keyword_researcher)
 workflow.add_node("strategy_planner", strategy_planner)
 workflow.add_node("hook_writer", hook_writer)
 workflow.add_node("body_restructurer", body_restructurer)
@@ -2962,6 +3399,9 @@ workflow.add_node("fidelity_auditor", fidelity_auditor)
 workflow.add_node("script_refinement", script_refinement)
 workflow.add_node("medical_truth_verifier", medical_truth_verifier)
 workflow.add_node("self_critique", self_critique)
+workflow.add_node("packaging_creative_director", packaging_creative_director)
+workflow.add_node("packaging_generator", packaging_generator)
+workflow.add_node("packaging_honesty_ctr_auditor", packaging_honesty_ctr_auditor)
 workflow.add_node("transition_designer", transition_designer)
 workflow.add_node("text_animation_overlay_designer", text_animation_overlay_designer)
 workflow.add_node("broll_prompt_generator", broll_prompt_generator)
@@ -2974,7 +3414,8 @@ workflow.add_node("shorts_quality_gate", shorts_quality_gate)
 
 # Linear edges (upstream pipeline)
 workflow.add_edge(START, "source_script_analyzer")
-workflow.add_edge("source_script_analyzer", "strategy_planner")
+workflow.add_edge("source_script_analyzer", "seo_keyword_researcher")
+workflow.add_edge("seo_keyword_researcher", "strategy_planner")
 workflow.add_edge("strategy_planner", "hook_writer")
 workflow.add_edge("hook_writer", "body_restructurer")
 
@@ -3001,8 +3442,20 @@ workflow.add_conditional_edges(
     "self_critique",
     route_quality_loop,
     {
-        "transition_designer": "transition_designer",
+        "packaging_creative_director": "packaging_creative_director",
         "cta_retention_writer": "cta_retention_writer",
+    }
+)
+
+# Packaging Loop (Loop 5) — runs once the script is locked, before post-production
+workflow.add_edge("packaging_creative_director", "packaging_generator")
+workflow.add_edge("packaging_generator", "packaging_honesty_ctr_auditor")
+workflow.add_conditional_edges(
+    "packaging_honesty_ctr_auditor",
+    route_packaging_quality,
+    {
+        "transition_designer": "transition_designer",
+        "packaging_generator": "packaging_generator",
     }
 )
 
@@ -3111,7 +3564,7 @@ if __name__ == "__main__":
     import datetime
     
     if len(sys.argv) < 2:
-        print("Usage: python3 main.py <path_to_original_script>")
+        print("Usage: python3 main.py <path_to_original_script> [path_to_video_analysis]")
         sys.exit(1)
         
     script_file = sys.argv[1]
@@ -3130,13 +3583,25 @@ if __name__ == "__main__":
         
     initial_state["original_script"] = original_script_content
     
+    # Load optional video analysis file (second CLI argument)
+    if len(sys.argv) >= 3:
+        analysis_file = sys.argv[2]
+        if not os.path.exists(analysis_file):
+            raise FileNotFoundError(f"Video analysis file not found: {analysis_file}")
+        with open(analysis_file, "r", encoding="utf-8") as f:
+            initial_state["video_analysis"] = f.read()
+        print(f"📋 Video analysis loaded from: {analysis_file}")
+    
     # Initialize unprovided required fields to prevent KeyError/None issues in prompts
     default_string_fields = [
         "source_format", "medical_topic", "target_duration", "target_platform",
         "medical_disclaimer_requirements", "cta_goal", "reference_egyptian_channels",
-        "creator_profile", "revised_body", "self_critique_output", "production_critique_output",
+        "creator_profile", "video_analysis", "revised_body", "self_critique_output", "production_critique_output",
         "transition_design", "text_animation_overlay", "broll_prompts", "disclaimer_check",
         "shorts_moments", "shorts_scripts", "shorts_captions", "shorts_quality_output", "shorts_quality_grade",
+        "seo_primary_keyword", "seo_secondary_keywords", "seo_search_intent", "seo_research_output",
+        "packaging_brainstorm_output", "title_options", "thumbnail_concepts",
+        "packaging_critique_output", "packaging_grade",
     ]
     for field in default_string_fields:
         if field not in initial_state:
@@ -3157,6 +3622,8 @@ if __name__ == "__main__":
         "max_quality_revision_count": 2,
         "max_production_revision_count": 2,
         "max_shorts_revision_count": 2,
+        "packaging_revision_count": 0,
+        "max_packaging_revision_count": 2,
     }
     for field, default in default_int_fields.items():
         if field not in initial_state:
