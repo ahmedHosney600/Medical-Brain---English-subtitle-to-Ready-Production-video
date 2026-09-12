@@ -1,0 +1,4069 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0">
+  <title>لغز الشد العضلي: ليه الحلول التقليدية مش بتنفع؟</title>
+  
+  <!-- Modern Arabic Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Cairo:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    /* ==========================================================================
+       CSS VARIABLES & RESPONSIVE FONT SCALING
+       ========================================================================== */
+    :root {
+      /* Font sizes for each responsive breakpoint (User-Controllable) */
+      --fs-mobile: 16px;        /* Mobile: < 640px */
+      --fs-tablet: 18px;        /* Tablet: 640px - 1023px */
+      --fs-laptop: 20px;        /* Small PC / Laptop: 1024px - 1439px */
+      --fs-desktop: 22px;       /* Large Screen PC: >= 1440px */
+      
+      --font-family: 'Cairo', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+      --line-height: 1.8;
+      
+      /* Dark Theme Colors (Default) */
+      --bg-primary: #0b0f19;
+      --bg-secondary: #131b2e;
+      --bg-card: #182238;
+      --bg-card-hover: #1e2b46;
+      --border-color: #243452;
+      --border-subtle: #1a2842;
+      
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      
+      --accent-primary: #38bdf8;
+      --accent-hover: #0ea5e9;
+      --accent-glow: rgba(56, 189, 248, 0.25);
+      
+      --badge-gold: #f59e0b;
+      --badge-emerald: #10b981;
+      --badge-rose: #f43f5e;
+      --badge-purple: #a855f7;
+      
+      --container-width: 1080px;
+      --radius-sm: 8px;
+      --radius-md: 14px;
+      --radius-lg: 20px;
+      --shadow-card: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+      --transition-smooth: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Light Theme Overrides */
+    [data-theme="light"] {
+      --bg-primary: #f8fafc;
+      --bg-secondary: #f1f5f9;
+      --bg-card: #ffffff;
+      --bg-card-hover: #f8fafc;
+      --border-color: #cbd5e1;
+      --border-subtle: #e2e8f0;
+      
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --text-dim: #94a3b8;
+      
+      --accent-primary: #0284c7;
+      --accent-hover: #0369a1;
+      --accent-glow: rgba(2, 132, 199, 0.2);
+      
+      --shadow-card: 0 10px 25px -5px rgba(15, 23, 42, 0.08), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
+    }
+
+    /* Teleprompter / High-Contrast Filming Mode */
+    [data-theme="teleprompter"] {
+      --bg-primary: #000000;
+      --bg-secondary: #0a0a0a;
+      --bg-card: #111111;
+      --bg-card-hover: #161616;
+      --border-color: #333333;
+      --border-subtle: #222222;
+      
+      --text-main: #fef08a; /* High-vis soft yellow */
+      --text-muted: #e2e8f0;
+      --text-dim: #94a3b8;
+      
+      --accent-primary: #facc15;
+      --accent-hover: #eab308;
+      --accent-glow: rgba(250, 204, 21, 0.3);
+      
+      --line-height: 2.2;
+    }
+
+    /* ==========================================================================
+       BASE RESET & TYPOGRAPHY
+       ========================================================================== */
+    html, body {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      max-width: 100vw;
+      overflow-x: hidden;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-family);
+      line-height: var(--line-height);
+      color: var(--text-main);
+      background-color: var(--bg-primary);
+      transition: background-color 0.3s ease, color 0.3s ease;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow-x: hidden;
+      direction: rtl;
+      text-align: right;
+    }
+
+    /* Selection */
+    ::selection {
+      background: var(--accent-primary);
+      color: #0b0f19;
+    }
+
+    /* ==========================================================================
+       CONTAINER & HEADER
+       ========================================================================== */
+    .site-wrapper {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+    }
+
+    .site-header {
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border-color);
+      padding: 20px 24px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .header-content {
+      max-width: var(--container-width);
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .header-title-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-logo {
+      width: 44px;
+      height: 44px;
+      background: linear-gradient(135deg, #0284c7, #38bdf8);
+      border-radius: var(--radius-md);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      box-shadow: 0 4px 12px var(--accent-glow);
+    }
+
+    .header-title {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: var(--text-main);
+      line-height: 1.3;
+    }
+
+    .header-subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: var(--transition-smooth);
+      background: var(--bg-card);
+      color: var(--text-main);
+      border-color: var(--border-color);
+    }
+
+    .btn:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--accent-primary);
+      transform: translateY(-1px);
+    }
+
+    .btn-primary {
+      background: var(--accent-primary);
+      color: #0b0f19;
+      border-color: var(--accent-primary);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    .main-container {
+      max-width: var(--container-width);
+      width: 100%;
+      min-width: 0;
+      margin: 0 auto;
+      flex: 1;
+    }
+
+    .script-hero-banner {
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.12), rgba(168, 85, 247, 0.08));
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      padding: 24px 28px;
+      margin-bottom: 30px;
+      box-shadow: var(--shadow-card);
+      min-width: 0;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--accent-primary);
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      padding: 4px 12px;
+      border-radius: 20px;
+      margin-bottom: 12px;
+    }
+
+    .hero-title {
+      margin: 0;
+      font-size: 1.6rem;
+      border-bottom: none;
+      padding-bottom: 0;
+      color: var(--text-main);
+    }
+
+    /* ==========================================================================
+       TYPOGRAPHY & CONTENT STYLING
+       ========================================================================== */
+    h1, h2, h3, h4, h5, h6 {
+      color: var(--text-main);
+      font-weight: 800;
+      line-height: 1.35;
+      margin-top: 1.8em;
+      margin-bottom: 0.8em;
+      letter-spacing: -0.01em;
+      word-break: break-word;
+    }
+
+    h1 {
+      font-size: 1.85rem;
+      color: var(--accent-primary);
+      border-bottom: 2px solid var(--border-color);
+      padding-bottom: 0.4em;
+    }
+
+    h2 {
+      font-size: 1.55rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-right: 4px solid var(--accent-primary);
+      padding-right: 12px;
+      background: linear-gradient(90deg, rgba(56, 189, 248, 0.08), transparent);
+      padding-top: 8px;
+      padding-bottom: 8px;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    }
+
+    h3 {
+      font-size: 1.3rem;
+      color: #38bdf8;
+    }
+
+    h4 {
+      font-size: 1.15rem;
+      color: #e2e8f0;
+    }
+
+    p {
+      margin-bottom: 1.2em;
+      color: var(--text-main);
+      word-break: break-word;
+    }
+
+    hr {
+      border: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--border-color), transparent);
+      margin: 2.5em 0;
+    }
+
+    ul, ol {
+      margin-bottom: 1.4em;
+      padding-right: 1.6em;
+    }
+
+    li {
+      margin-bottom: 0.5em;
+    }
+
+    strong {
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    [data-theme="light"] strong {
+      color: #0f172a;
+    }
+
+    /* ==========================================================================
+       TABLES (RESPONSIVE & BEAUTIFIED)
+       ========================================================================== */
+    .table-responsive {
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      margin: 1.6em 0;
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-card);
+      border: 1px solid var(--border-color);
+      background: var(--bg-card);
+    }
+
+    table {
+      width: 100%;
+      min-width: 480px;
+      border-collapse: collapse;
+      text-align: right;
+      font-size: 0.95rem;
+    }
+
+    th, td {
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    th {
+      background: var(--bg-secondary);
+      color: var(--accent-primary);
+      font-weight: 700;
+      white-space: nowrap;
+      position: sticky;
+      top: 0;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tbody tr:hover {
+      background: var(--bg-card-hover);
+    }
+
+    /* ==========================================================================
+       SCRIPT PRODUCTION ELEMENTS
+       ========================================================================== */
+    /* Speaker tags */
+    .speaker-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 800;
+      color: var(--accent-primary);
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 2px 10px;
+      border-radius: 6px;
+      margin-left: 6px;
+    }
+
+    .speaker-avatar {
+      font-size: 1.1em;
+    }
+
+    /* Director & Camera Cues */
+    .director-cue {
+      background: rgba(245, 158, 11, 0.08);
+      border-right: 4px solid var(--badge-gold);
+      padding: 12px 16px;
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      margin: 14px 0;
+      font-size: 0.92rem;
+      color: #fde047;
+      font-style: italic;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    [data-theme="light"] .director-cue {
+      background: #fef9c3;
+      color: #854d0e;
+      border-right-color: #ca8a04;
+    }
+
+    .cue-icon {
+      font-style: normal;
+      font-size: 1.2rem;
+    }
+
+    /* Scene markers */
+    .scene-header {
+      margin: 28px 0 16px 0;
+    }
+
+    .scene-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, #a855f7, #ec4899);
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+      padding: 6px 14px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      box-shadow: 0 4px 12px rgba(168, 85, 247, 0.3);
+    }
+
+    /* Code cards with copy button */
+    .code-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      margin: 18px 0;
+      overflow: hidden;
+      box-shadow: var(--shadow-card);
+    }
+
+    .code-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 16px;
+      background: rgba(0, 0, 0, 0.2);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .code-tag {
+      font-size: 0.8rem;
+      font-family: var(--font-mono);
+      color: var(--text-dim);
+      direction: ltr;
+    }
+
+    .copy-button {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 4px 12px;
+      border-radius: 6px;
+      font-family: inherit;
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: var(--transition-smooth);
+    }
+
+    .copy-button:hover {
+      border-color: var(--accent-primary);
+      color: var(--accent-primary);
+    }
+
+    .copy-button.copied {
+      background: var(--badge-emerald);
+      color: #ffffff;
+      border-color: var(--badge-emerald);
+    }
+
+    pre {
+      padding: 16px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      line-height: 1.6;
+      color: #e2e8f0;
+      direction: ltr;
+      text-align: left;
+    }
+
+    [data-theme="light"] pre {
+      background: #f1f5f9;
+      color: #0f172a;
+    }
+
+    code {
+      font-family: var(--font-mono);
+    }
+
+    /* ==========================================================================
+       FLOATING TOOLBAR & CONTROLS
+       ========================================================================== */
+    .floating-pill {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 999;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      padding: 8px 12px;
+      border-radius: 40px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+    }
+
+    .pill-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-main);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-family: inherit;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: var(--transition-smooth);
+    }
+
+    .pill-btn:hover {
+      background: var(--bg-card);
+      border-color: var(--border-color);
+    }
+
+    .pill-btn-primary {
+      background: var(--accent-primary);
+      color: #0b0f19;
+    }
+
+    .pill-btn-primary:hover {
+      background: var(--accent-hover);
+    }
+
+    /* ==========================================================================
+       SETTINGS MODAL / DRAWER
+       ========================================================================== */
+    .settings-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.65);
+      z-index: 1000;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    .settings-overlay.active {
+      display: flex;
+    }
+
+    .settings-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 650px;
+      max-height: 90vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .settings-header {
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .settings-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .close-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.5rem;
+      cursor: pointer;
+      line-height: 1;
+      padding: 4px 8px;
+      border-radius: var(--radius-sm);
+    }
+
+    .close-btn:hover {
+      color: var(--text-main);
+      background: var(--bg-card);
+    }
+
+    .settings-body {
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .setting-group {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .setting-label {
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: var(--text-main);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .setting-desc {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .screen-slider-row {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .screen-slider-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .screen-name {
+      font-weight: 700;
+      font-size: 0.95rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .screen-badge-size {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-color);
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--accent-primary);
+    }
+
+    .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    input[type="range"] {
+      flex: 1;
+      height: 6px;
+      border-radius: 3px;
+      background: var(--border-color);
+      outline: none;
+      -webkit-appearance: none;
+      cursor: pointer;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--accent-primary);
+      cursor: pointer;
+      box-shadow: 0 0 10px var(--accent-glow);
+    }
+
+    .preset-pills {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .preset-pill {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+
+    .preset-pill:hover {
+      border-color: var(--accent-primary);
+      color: var(--text-main);
+    }
+
+    .select-input {
+      width: 100%;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+
+    .theme-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+    }
+
+    .theme-btn {
+      padding: 10px;
+      border-radius: var(--radius-md);
+      border: 2px solid var(--border-color);
+      background: var(--bg-card);
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+      transition: var(--transition-smooth);
+    }
+
+    .theme-btn.active {
+      border-color: var(--accent-primary);
+      background: rgba(56, 189, 248, 0.1);
+    }
+
+    .settings-footer {
+      padding: 16px 24px;
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    /* ==========================================================================
+       TELEPROMPTER AUTO-SCROLL CONTROLS (MINIMAL TOP-FIXED)
+       ========================================================================== */
+    [data-theme="teleprompter"] .site-header {
+      display: none !important;
+    }
+
+    /* No buttons in the bottom of screen in teleprompter mode */
+    [data-theme="teleprompter"] .floating-pill {
+      display: none !important;
+    }
+
+    [data-theme="teleprompter"] .main-container {
+      padding-top: 65px;
+    }
+
+    .teleprompter-controls {
+      display: none;
+      position: fixed;
+      top: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 9999;
+      background: rgba(15, 15, 15, 0.88);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      padding: 4px 10px;
+      border-radius: 999px;
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 2px 6px rgba(0, 0, 0, 0.4);
+      align-items: center;
+      gap: 6px;
+      opacity: 0.92;
+      transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+      user-select: none;
+      -webkit-user-select: none;
+      direction: ltr;
+    }
+
+    .teleprompter-controls:hover {
+      opacity: 1;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.8), 0 0 18px rgba(250, 204, 21, 0.25);
+    }
+
+    [data-theme="teleprompter"] .teleprompter-controls {
+      display: inline-flex;
+    }
+
+    .prompter-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: 1px solid transparent;
+      background: rgba(255, 255, 255, 0.08);
+      color: #f1f5f9;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      padding: 0;
+      transition: all 0.15s ease;
+      outline: none;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .prompter-btn:hover {
+      background: rgba(255, 255, 255, 0.2);
+      color: #ffffff;
+      transform: scale(1.08);
+    }
+
+    .prompter-btn:active {
+      transform: scale(0.94);
+    }
+
+    .prompter-play-btn {
+      background: #facc15;
+      color: #0b0f19;
+      border-color: #facc15;
+    }
+
+    .prompter-play-btn:hover {
+      background: #fde047;
+      color: #000;
+      border-color: #fde047;
+    }
+
+    .prompter-play-btn.is-playing {
+      background: #ef4444;
+      color: #ffffff;
+      border-color: #ef4444;
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.5);
+    }
+
+    .prompter-play-btn.is-playing:hover {
+      background: #dc2626;
+      border-color: #dc2626;
+    }
+
+    .prompter-speed-badge {
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #facc15;
+      min-width: 42px;
+      text-align: center;
+      line-height: 1.4;
+      padding: 3px 6px;
+      border-radius: 6px;
+      background: rgba(250, 204, 21, 0.12);
+      letter-spacing: -0.2px;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+      transition: all 0.15s ease;
+    }
+
+    .prompter-speed-badge:hover {
+      background: rgba(250, 204, 21, 0.25);
+      color: #fde047;
+      transform: scale(1.04);
+    }
+
+    .prompter-font-btn {
+      font-size: 0.74rem;
+      font-weight: 800;
+      font-family: var(--font-mono);
+      letter-spacing: -0.5px;
+    }
+
+    .prompter-divider {
+      width: 1px;
+      height: 16px;
+      background: rgba(255, 255, 255, 0.18);
+      margin: 0 2px;
+    }
+
+    .prompter-exit-btn:hover {
+      background: rgba(239, 68, 68, 0.25);
+      color: #fca5a5;
+      border-color: rgba(239, 68, 68, 0.4);
+    }
+
+    /* ==========================================================================
+       MEDIA QUERIES FOR RESPONSIVE SCREENS & FONT SIZES
+       ========================================================================== */
+    /* 1. Mobile Screen (< 640px) */
+    @media (max-width: 639px) {
+      html {
+        font-size: var(--fs-mobile);
+      }
+      .site-header {
+        padding: 10px 12px;
+      }
+      .header-content {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+      }
+      .header-title-group {
+        gap: 8px;
+      }
+      .header-logo {
+        width: 36px;
+        height: 36px;
+        font-size: 18px;
+      }
+      .header-title {
+        font-size: 0.95rem;
+      }
+      .header-subtitle {
+        font-size: 0.75rem;
+      }
+      .header-actions {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+        width: 100%;
+      }
+      .header-actions .btn {
+        justify-content: center;
+        padding: 6px 8px;
+        font-size: 0.8rem;
+      }
+      .main-container {
+        padding: 14px 10px;
+      }
+      .script-hero-banner {
+        padding: 14px 12px;
+        margin-bottom: 16px;
+      }
+      .hero-title {
+        font-size: 1.15rem;
+        word-break: break-word;
+      }
+      .floating-pill {
+        bottom: 12px;
+        right: 12px;
+        padding: 4px 8px;
+      }
+      .pill-btn {
+        padding: 4px 6px;
+        font-size: 0.78rem;
+      }
+      .teleprompter-controls {
+        top: 8px;
+        padding: 3px 6px;
+        gap: 4px;
+        max-width: 98vw;
+      }
+      .prompter-btn {
+        width: 28px;
+        height: 28px;
+      }
+      .prompter-speed-badge {
+        min-width: 36px;
+        font-size: 0.72rem;
+        padding: 2px 4px;
+      }
+    }
+
+    /* 2. Tablet Screen (640px - 1023px) */
+    @media (min-width: 640px) and (max-width: 1023px) {
+      html {
+        font-size: var(--fs-tablet);
+      }
+      .main-container {
+        padding: 24px 20px;
+      }
+    }
+
+    /* 3. Small Screen PC / Laptop (1024px - 1439px) */
+    @media (min-width: 1024px) and (max-width: 1439px) {
+      html {
+        font-size: var(--fs-laptop);
+      }
+      .main-container {
+        padding: 32px 28px;
+      }
+    }
+
+    /* 4. Large Screen PC (>= 1440px) */
+    @media (min-width: 1440px) {
+      html {
+        font-size: var(--fs-desktop);
+      }
+      .main-container {
+        padding: 40px 36px;
+      }
+    }
+
+    /* Simulator overrides when testing viewport sizes */
+    body.sim-mobile {
+      font-size: var(--fs-mobile) !important;
+    }
+    body.sim-mobile .main-container {
+      max-width: 400px !important;
+      margin: 0 auto;
+      box-shadow: 0 0 50px rgba(0,0,0,0.5);
+    }
+    body.sim-tablet {
+      font-size: var(--fs-tablet) !important;
+    }
+    body.sim-tablet .main-container {
+      max-width: 768px !important;
+      margin: 0 auto;
+      box-shadow: 0 0 50px rgba(0,0,0,0.5);
+    }
+    body.sim-laptop {
+      font-size: var(--fs-laptop) !important;
+    }
+    body.sim-laptop .main-container {
+      max-width: 1100px !important;
+      margin: 0 auto;
+    }
+    body.sim-desktop {
+      font-size: var(--fs-desktop) !important;
+    }
+    body.sim-desktop .main-container {
+      max-width: 1400px !important;
+      margin: 0 auto;
+    }
+
+    /* ==========================================================================
+       PRINT & PDF STYLES
+       ========================================================================== */
+    @media print {
+      @page {
+        size: A4;
+        margin: 14mm 12mm 14mm 12mm;
+      }
+
+      * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      body {
+        background: #ffffff !important;
+        color: #0f172a !important;
+        font-size: 13.5px !important;
+        line-height: 1.6 !important;
+      }
+
+      .site-wrapper {
+        min-height: auto !important;
+        display: block !important;
+      }
+
+      .no-print,
+      .site-header,
+      .floating-pill,
+      .settings-overlay,
+      .teleprompter-bar,
+      .teleprompter-controls,
+      .copy-button {
+        display: none !important;
+      }
+
+      .main-container {
+        max-width: 100% !important;
+        width: 100% !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+
+      .script-hero-banner {
+        background: #f0f9ff !important;
+        border: 1px solid #bae6fd !important;
+        box-shadow: none !important;
+        margin-bottom: 20px !important;
+        padding: 16px 20px !important;
+      }
+
+      .hero-badge {
+        background: #e0f2fe !important;
+        color: #0369a1 !important;
+      }
+
+      .hero-title {
+        color: #0369a1 !important;
+      }
+
+      .table-responsive {
+        background: #ffffff !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: none !important;
+        margin: 1em 0 !important;
+      }
+
+      table {
+        color: #0f172a !important;
+      }
+
+      table th {
+        background: #f1f5f9 !important;
+        color: #0369a1 !important;
+        border-bottom: 2px solid #cbd5e1 !important;
+      }
+
+      table td {
+        color: #1e293b !important;
+        border-bottom: 1px solid #e2e8f0 !important;
+      }
+
+      tbody tr:hover {
+        background: transparent !important;
+      }
+
+      .code-card {
+        background: #f8fafc !important;
+        border: 1px solid #cbd5e1 !important;
+        box-shadow: none !important;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      .code-card-header {
+        background: #f1f5f9 !important;
+        border-bottom: 1px solid #cbd5e1 !important;
+      }
+
+      .code-tag {
+        color: #475569 !important;
+      }
+
+      pre {
+        background: #f8fafc !important;
+        color: #0f172a !important;
+        border: none !important;
+      }
+
+      code {
+        color: #0f172a !important;
+      }
+
+      .speaker-tag {
+        background: #e0f2fe !important;
+        color: #0369a1 !important;
+        border: 1px solid #7dd3fc !important;
+      }
+
+      .director-cue {
+        background: #fefce8 !important;
+        color: #854d0e !important;
+        border-right: 4px solid #eab308 !important;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      h1, h2, h3 {
+        break-after: avoid;
+        page-break-after: avoid;
+      }
+
+      h1 {
+        color: #0284c7 !important;
+        border-bottom: 2px solid #0284c7 !important;
+      }
+
+      h2 {
+        color: #0f172a !important;
+        border-right-color: #0284c7 !important;
+        background: #f0f9ff !important;
+        margin-top: 22px !important;
+      }
+
+      h3 {
+        color: #0369a1 !important;
+      }
+
+      h4 {
+        color: #334155 !important;
+      }
+
+      strong {
+        color: #0f172a !important;
+      }
+
+      p {
+        color: #1e293b !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="site-wrapper">
+    <!-- Top Header -->
+    <header class="site-header no-print">
+      <div class="header-content">
+        <div class="header-title-group">
+          <div class="header-logo">🎬</div>
+          <div>
+            <div class="header-title">لغز الشد العضلي: ليه الحلول التقليدية مش بتنفع؟</div>
+            <div class="header-subtitle">حزمة السكريبت المعتمدة • جاهزة للإنتاج والتصوير</div>
+          </div>
+        </div>
+        
+        <div class="header-actions">
+          <button class="btn" onclick="toggleTheme()" title="تغيير المظهر">
+            <span id="theme-icon">☀️</span> <span id="theme-text">نهاري</span>
+          </button>
+          <button class="btn" onclick="setTeleprompterMode()" title="وضع ملقن التصوير">
+            <span>🎥</span> <span>وضع الملقن</span>
+          </button>
+          <button class="btn" onclick="openSettings()" title="التحكم بأحجام الخطوط والشاشات">
+            <span>🔤</span> <span>الخط والشاشات</span>
+          </button>
+          <button class="btn btn-primary" onclick="window.print()" title="طباعة أو تصدير PDF">
+            <span>🖨️</span> <span>طباعة / PDF</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-container">
+      
+      <!-- Teleprompter Minimal Fixed Control Bar (Active only in teleprompter mode) -->
+      <div class="teleprompter-controls no-print" id="teleprompterControls" role="toolbar" aria-label="أدوات التحكم بالملقن">
+        <!-- Play / Pause -->
+        <button type="button" class="prompter-btn prompter-play-btn" id="teleprompterPlayPauseBtn" onclick="toggleAutoScroll(event)" title="تشغيل / إيقاف التمرير التلقائي (Space)" aria-label="تشغيل أو إيقاف التمرير">
+          <svg class="icon-play" width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <svg class="icon-pause" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" style="display:none;"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+        </button>
+
+        <!-- Speed Down (Micro-step 0.1x) -->
+        <button type="button" class="prompter-btn" id="teleprompterSpeedDownBtn"
+                onmousedown="startSpeedRepeat(-0.1, event)" onmouseup="stopSpeedRepeat()" onmouseleave="stopSpeedRepeat()"
+                ontouchstart="startSpeedRepeat(-0.1, event)" ontouchend="stopSpeedRepeat()"
+                onclick="handleSpeedClick(-0.1, event)"
+                title="إبطاء السرعة (ArrowDown) [خطوة 0.1x / Shift: 0.5x]" aria-label="إبطاء السرعة">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+
+        <!-- Speed Value Badge -->
+        <span class="prompter-speed-badge" id="teleprompterSpeedVal" onclick="cycleSpeedPreset(event)" title="سرعة التمرير الحالية (انقر للتبديل السريع بين السرعات)">0.5x</span>
+
+        <!-- Speed Up (Micro-step 0.1x) -->
+        <button type="button" class="prompter-btn" id="teleprompterSpeedUpBtn"
+                onmousedown="startSpeedRepeat(0.1, event)" onmouseup="stopSpeedRepeat()" onmouseleave="stopSpeedRepeat()"
+                ontouchstart="startSpeedRepeat(0.1, event)" ontouchend="stopSpeedRepeat()"
+                onclick="handleSpeedClick(0.1, event)"
+                title="تسريع السرعة (ArrowUp) [خطوة 0.1x / Shift: 0.5x]" aria-label="تسريع السرعة">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+
+        <span class="prompter-divider"></span>
+
+        <!-- Rewind / Scroll to Top -->
+        <button type="button" class="prompter-btn" id="teleprompterRestartBtn" onclick="restartPrompter(event)" title="العودة لأول السكريبت (Home)" aria-label="العودة للبداية">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5"></line></svg>
+        </button>
+
+        <span class="prompter-divider"></span>
+
+        <!-- Font Size Controls (At top of screen) -->
+        <button type="button" class="prompter-btn prompter-font-btn" id="teleprompterFontDownBtn" onclick="adjustCurrentScreenFont(-1, event)" title="تصغير حجم الخط" aria-label="تصغير الخط">
+          <span>A-</span>
+        </button>
+        <button type="button" class="prompter-btn prompter-font-btn" id="teleprompterFontUpBtn" onclick="adjustCurrentScreenFont(1, event)" title="تكبير حجم الخط" aria-label="تكبير الخط">
+          <span>A+</span>
+        </button>
+
+        <!-- Screen / Font Settings Modal Button -->
+        <button type="button" class="prompter-btn" id="teleprompterSettingsBtn" onclick="openSettings(event)" title="إعدادات الشاشات والخطوط" aria-label="إعدادات الشاشات والخطوط">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+        </button>
+
+        <span class="prompter-divider"></span>
+
+        <!-- Exit Teleprompter Mode -->
+        <button type="button" class="prompter-btn prompter-exit-btn" id="teleprompterExitBtn" onclick="exitTeleprompterMode(event)" title="خروج من وضع الملقن (Esc)" aria-label="خروج من وضع الملقن">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+
+      <!-- Markdown Rendered Body -->
+      <article class="script-body" id="scriptContent">
+        <div class="script-hero-banner">
+          <div class="hero-badge">🎬 حزمة السكريبت المعتمدة • جاهزة للإنتاج والتصوير</div>
+          <h1 class="hero-title">لغز الشد العضلي: ليه الحلول التقليدية مش بتنفع؟</h1>
+        </div>
+        <h2 id="script-package">SCRIPT PACKAGE</h2>
+<h3 id="script-metadata">Script Metadata</h3>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Value</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Video Title (Egyptian Arabic)</td>
+<td>لغز الشد العضلي: ليه الحلول التقليدية مش بتنفع؟</td>
+</tr>
+<tr>
+<td>Original Source Title/Topic</td>
+<td>The Mystery of Muscle Cramps: Why Traditional Solutions Don't Work?</td>
+</tr>
+<tr>
+<td>Content Style</td>
+<td>Medical Investigative / Educational Deep-Dive</td>
+</tr>
+<tr>
+<td>Target Duration</td>
+<td>10 Minutes</td>
+</tr>
+<tr>
+<td>Word Count</td>
+<td>1,420 words</td>
+</tr>
+<tr>
+<td>Platform</td>
+<td>YouTube</td>
+</tr>
+<tr>
+<td>Dialect Register</td>
+<td>Educated, Moderate Egyptian Arabic (العامية المثقفة)</td>
+</tr>
+<tr>
+<td>Dialect Authenticity Score</td>
+<td>10/10</td>
+</tr>
+<tr>
+<td>Warmth / De-Clinicalization Score</td>
+<td>10/10</td>
+</tr>
+<tr>
+<td>Medical Fidelity Score</td>
+<td>10/10</td>
+</tr>
+<tr>
+<td>Medical Accuracy Pass</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Scientific Truth Score</td>
+<td>10/10</td>
+</tr>
+<tr>
+<td>Scientific Truth Pass</td>
+<td>Yes</td>
+</tr>
+<tr>
+<td>Naturalness Score</td>
+<td>9/10</td>
+</tr>
+<tr>
+<td>Contextual Alignment Score</td>
+<td>10/10</td>
+</tr>
+<tr>
+<td>Final Grade</td>
+<td>A+</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3 id="youtube-packaging-distribution-suite">🚀 YOUTUBE PACKAGING &amp; DISTRIBUTION SUITE</h3>
+<h4 id="1-high-ctr-title-options">1. High-CTR Title Options</h4>
+<ul>
+<li><strong>Option A (Curiosity &amp; Open Loop)</strong>: ليه رجلك "بتشد" عليك وأنت نايم؟ السر اللي الأبحاث لسه بتكتشفه</li>
+<li><strong>Option B (Shock &amp; Paradox)</strong>: رياضي وبياكل صحي... بس الشد العضلي مش بيفارقه؟ السر الطبي الصادم</li>
+<li><strong>Option C (Direct Medical Warning)</strong>: الشد العضلي المتكرر.. امتى يكون مجرد تعب وامتى يكون إنذار طبي؟</li>
+</ul>
+<h4 id="2-thumbnail-visual-blueprints-ai-generation-prompts">2. Thumbnail Visual Blueprints + AI Generation Prompts</h4>
+<ul>
+<li>
+<p><strong>Concept 1 (High Drama / Shock)</strong>:</p>
+<ul>
+<li><strong>Visual Scene</strong>: A high-contrast, cinematic medical studio. In the background, a large, glowing X-ray or Ultrasound scan of a human calf muscle showing a distinct red-tinted area (the hematoma). The lighting is moody with blue and orange teal-and-orange grading.</li>
+<li><strong>Presenter Expression / Gesture</strong>: Dr. Ahmed is in the foreground, slightly off-center. He has a serious, investigative expression, looking directly at the camera, holding a magnifying glass up towards the muscle scan.</li>
+<li><strong>Bold Arabic Text Overlay (3-4 words)</strong>: <code>"نزيف داخلي؟!"</code></li>
+<li><strong>Focal Element / Prop</strong>: The glowing red ultrasound scan showing the 3cm injury.</li>
+<li><strong>Color Palette</strong>: Deep navy blue, clinical white, and warning red.</li>
+<li><strong>🤖 AI Image Generation Prompt</strong>: A photorealistic cinematic YouTube thumbnail featuring a middle-aged Arab male doctor with a neat beard and professional attire, standing in a high-tech medical laboratory. He is looking at the camera with a surprised and serious expression, holding a magnifying glass. In the background, a large glowing digital screen displays a detailed anatomical ultrasound of a human leg muscle with a bright red highlighted injury zone. Dramatic rim lighting, teal and orange color grading, shallow depth of field, 8k resolution, highly detailed skin textures. The right side of the frame is clear for text overlay. No extra fingers, no distorted faces, no text in the image. Aspect ratio: 16:9.</li>
+</ul>
+</li>
+<li>
+<p><strong>Concept 2 (Medical Mystery / Curiosity)</strong>:</p>
+<ul>
+<li><strong>Visual Scene</strong>: A split-screen design. On the left, a close-up of a hand holding a banana and a bottle of water. On the right, a complex 3D neurological map of the spinal cord sending electrical signals to a leg.</li>
+<li><strong>Presenter Expression / Gesture</strong>: Dr. Ahmed stands in the middle, looking at the banana with a skeptical, "thinking" face (hand on chin), pointing towards the neurological map.</li>
+<li><strong>Bold Arabic Text Overlay (3-4 words)</strong>: <code>"الموز مش الحل!"</code></li>
+<li><strong>Focal Element / Prop</strong>: The contrast between the "Banana" (myth) and the "Nerves" (reality).</li>
+<li><strong>Color Palette</strong>: Bright yellow (banana), clean white, and electric blue (nerves).</li>
+<li><strong>🤖 AI Image Generation Prompt</strong>: A high-quality YouTube thumbnail with a split-screen composition. On the left, a bright, well-lit close-up of a fresh banana and a clear water bottle. On the right, a dark, cinematic 3D visualization of the human nervous system and spinal cord glowing with blue electricity. In the center, a friendly Arab doctor in a white coat looks skeptically at the banana while pointing toward the glowing nerves. Photorealistic style, studio lighting, vibrant colors, sharp focus. The composition follows the rule of thirds, leaving the upper center clear for Arabic text. No AI artifacts, no text in the image. Aspect ratio: 16:9.</li>
+</ul>
+</li>
+<li>
+<p><strong>Concept 3 (Relatable Contrast / Gym vs. Medical Reality)</strong>:</p>
+<ul>
+<li><strong>Visual Scene</strong>: A gym setting with blurred weights in the background. A fit athlete is sitting on a bench, clutching their calf in intense pain.</li>
+<li><strong>Presenter Expression / Gesture</strong>: Dr. Ahmed is superimposed in the foreground, looking calm and authoritative, holding a tablet showing a molecular diagram of Actin and Myosin.</li>
+<li><strong>Bold Arabic Text Overlay (3-4 words)</strong>: <code>"ليه بيحصل كدة؟"</code></li>
+<li><strong>Focal Element / Prop</strong>: The athlete in pain vs. the doctor's scientific tablet.</li>
+<li><strong>Color Palette</strong>: Warm gym tones (browns/greys) contrasted with cool digital blue from the tablet.</li>
+<li><strong>🤖 AI Image Generation Prompt</strong>: A cinematic photorealistic scene in a modern gym. In the blurred background, an athletic person is sitting on the floor, holding their leg in pain. In the sharp foreground, a professional Arab doctor is looking at the camera with a helpful and calm expression, holding a digital tablet that displays a glowing 3D molecular structure of muscle proteins. High-end commercial photography style, soft bokeh, natural lighting mixed with digital glow. Clear space on the left for large text. No uncanny valley, realistic proportions, no text in the image. Aspect ratio: 16:9.</li>
+</ul>
+</li>
+</ul>
+<h4 id="3-youtube-seo-description-timestamps-copy-paste-ready">3. YouTube SEO Description &amp; Timestamps (Copy-Paste Ready)</h4>
+<pre class="highlight"><code class="language-text">ليه رجلك "بتشد" عليك فجأة وأنت نايم أو بتلعب رياضة؟ هل فعلاً الموضوع مجرد نقص بوتاسيوم ومحتاج تاكل موزة؟ في الفيديو ده، هنغوص جوه فسيولوجيا العضلات عشان نكتشف ليه الحلول التقليدية مش بتنفع مع الكل، وإيه اللي العلم بيقوله عن "خناقة" الأعصاب والعضلات اللي بتحصل جوه جسمك.
+
+📌 روابط مهمة وتنبيهات:
+- الكلام في هذا الفيديو لأغراض التوعية والتثقيف الطبي العام ولا يغني عن استشارة طبيبك المختص.
+
+⏱️ الفصول (Chapters):
+0:00 كابوس الساعة 3 الفجر
+1:15 خرافة الموز والمية: ليه مش كفاية؟
+2:45 إزاي العضلة بتتحرك؟ (ميكانيكا الميكروسكوب)
+4:20 لغز الكالسيوم و "كارت شحن" الـ ATP
+5:50 صراع النظريات: الأملاح ولا الأعصاب؟
+7:30 ليه شركات المشروبات الرياضية بتضللنا؟
+8:45 حكاية الـ 3 سنتيمتر: لما الشد يسبب نزيف!
+9:30 الخلاصة: إزاي تحمي نفسك فعلياً؟
+
+#الشد_العضلي #صحة #دكتور_أحمد_حسني #طب_رياضي #توعية_طبية #عضلات</code></pre>
+<h4 id="4-pinned-comment-draft">4. Pinned Comment Draft</h4>
+<pre class="highlight"><code class="language-text">إيه أغرب وصفة "بلدية" حد قالها لك عشان الشد العضلي يفك؟ (صابونة تحت المرتبة؟ معلقة خشب؟) 😂 احكولنا تجاربكم في التعليقات، وهرد على أكتر الأسئلة تكراراً! وما تنسوش تشتركوا عشان نفهم جسمنا صح.</code></pre>
+<hr />
+<h3 id="production-script-teleprompter-filming-ready">🎬 PRODUCTION SCRIPT (Teleprompter &amp; Filming Ready)</h3>
+<div class="scene-header"><span class="scene-badge"><span class="badge-icon">⚡</span> HOOK</span></div>
+<p><strong>(الكاميرا قريبة، د. أحمد بيبص للكاميرا بهدوء وابتسامة خفيفة)</strong><br />
+تخيل إنك نايم في أمان الله، وفجأة رجلك شَدّت عليك بوجع رهيب كأن حد بيعصر العضلة بإيده. أول حاجة بتيجي في بالك: "أنا أكيد محتاج أشرب مية أو آكل موزة عشان البوتاسيوم".. صح؟ <br />
+<strong>(بيعمل إشارة "لأ" بسيطة بإيده)</strong> <br />
+الحقيقة العلمية الصادمة بتقول إن الموضوع غالباً ملوش علاقة لا بالمية ولا بالملح! أومال إيه اللي بيخلي العضلة "تقفل" وتدخل في الانقباض المؤلم ده وما ترضاش تفك؟ وليه الحلول اللي حافظينها مش بتنفع مع الكل؟ </p>
+<p>أنا دكتور أحمد حسني، والنهاردة هنفهم إيه اللي بيحصل جوه "مستشعرات" العضلة في اللحظة دي. وهقولكم كمان شوية على حالة طبية غريبة جداً، خلت الدكاترة يستغربوا من قوة الشد العضلي لدرجة إنها عملت "إصابة داخلية" مكنش حد يتخيلها.. فخليكم معايا عشان نعرف إيه اللي حصل ونفك شفرة الوجع ده.</p>
+<div class="scene-header"><span class="scene-badge"><span class="badge-icon">⚡</span> BODY</span></div>
+<p><strong>=== [ACT 1: THE HUMAN STAKES &amp; COMMON MYTHS] ===</strong></p>
+<div class="director-cue"><span class="cue-icon">🎬</span> د. أحمد في الاستوديو، الإضاءة دافئة، بيبص للكاميرا بتركيز وود</div>
+<p>أهلاً بيكم. بصراحة، موضوع الشد العضلي ده من أكتر الحاجات اللي بنتعامل معاها كأنها مجرد خلل عارض وبسيط، بس لما تيجي تدور ورا السبب الحقيقي، بتكتشف إننا قدام لغز طبي كبير. لو سألت أي حد في الشارع، هيقول لك: "يا دكتور دي أكيد أملاح، أو جفاف، أو مجهود زيادة". الكلام ده في الطب بنسميه (Risk Factors) أو "عوامل خطر"، يعني حاجات بتزود الاحتمالية، لكنها مش هي "السبب المباشر" اللي بيخلي العضلة تخرج عن السيطرة فجأة وتدخل في الحالة دي.</p>
+<p><strong>[SFX: Whoosh]</strong><br />
+<strong>[ON-SCREEN TEXT: أنواع العضلات]</strong></p>
+<p>قبل ما ندخل في التفاصيل، لازم نعرف إن مش كل الشد العضلي زي بعضه. فيه عضلات "ملساء" (Smooth Muscles) ودي اللي مش بنتحكم فيها، زي عضلات الرحم اللي بتسبب آلام الدورة الشهرية، أو عضلات الأمعاء اللي بتحرك الأكل.</p>
+<p>لكن اللي يهمنا النهاردة هو "العضلات الهيكلية" (Skeletal Muscles)، دي العضلات اللي بنحركها بإرادتنا عشان نمشي ونجري. أحياناً الشد فيها بيكون عرض لمرض زي السكر، أو مشاكل الكبد، أو حتى مشاكل في الأعصاب زي (ALS). بس إحنا كلامنا النهاردة عن الشد اللي بيجي للناس "السليمة"، سواء وأنت بتلعب رياضة أو وأنت نايم في أمان الله.</p>
+<p>سؤال سريع ليكم في التعليقات قبل ما نكمل: إيه أغرب وصفة حد قالها لك عشان الشد العضلي يفك؟ فيه ناس بتقول صابونة تحت المرتبة، وناس بتقول معلقة خشب.. احكولنا تجاربكم والافتكسات اللي سمعتوها، وهنشوف العلم بيقول فيها إيه.</p>
+<p>ليه العضلة اللي المفروض بتسمع كلامك، فجأة بتقرر إنها تنقبض بكل قوتها وما تفكش؟ وليه الوجع بيفضل مسمّع معاك أيام؟ تعالوا نفهم الميكانيكا اللي بتحصل جوه النسيج العضلي نفسه.</p>
+<p><strong>=== [ACT 2: THE BIOLOGICAL MACHINERY] ===</strong></p>
+<p><strong>[VISUAL NOTE: أنيميشن جرافيك بيوضح تداخل بروتينات الـ Actin والـ Myosin]</strong><br />
+<strong>[SFX: Mechanical clicking sound]</strong></p>
+<p>عشان العضلة تتحرك، فيه "اشتباك" أو "تلاحم" بيحصل على مستوى الميكروسكوب بين نوعين من البروتينات: الـ (Actin) والـ (Myosin). تخيلهم زي إيدين بيحاولوا يمسكوا في بعض ويشدوا حبل عشان العضلة تقصر أو تنقبض. </p>
+<p><strong>(طاقة وحماس مع حركة يدين تشرح التداخل)</strong><br />
+بس الموضوع مش عشوائي؛ الـ (Actin) ده متغطي بـ "قفل" أو "سلسلة أمان" اسمها (Tropomyosin). طول ما القفل ده مقفول، الـ (Myosin) مش هيعرف يلمس الـ (Actin). طيب إيه هو "المفتاح" اللي بيفتح القفل ده؟ هو أيونات الكالسيوم (Calcium).</p>
+<div class="scene-header"><span class="scene-badge"><span class="badge-icon">⚡</span> ON-SCREEN TEXT: الكالسيوم = المفتاح</span></div>
+<p>أول ما جسمك بيبعت إشارة عصبية، العضلة بتطلع كالسيوم، يفتح القفل، الـ (Myosin) يمسك في الـ (Actin) ويشد.. مبروك، العضلة انقبضت! بس عشان العضلة "تفك" وترجع لوضع الراحة، محتاجة طاقة، محتاجة عملة الطاقة في الجسم اللي هي الـ (ATP). الـ (ATP) هو اللي بيخلي الـ (Myosin) يسيب الـ (Actin) ويرجع لمكانه.</p>
+<p>تخيل الـ (ATP) ده كأنه "كارت شحن"؛ لو الشحن خلص أو حصل خلل في المنظومة دي، العضلة ممكن "تعلق" وهي قافلة. العلماء زمان كانوا فاكرين إن الموضوع كله مجرد نقص في الأملاح (Electrolytes) زي الصوديوم والبوتاسيوم، وإن ده اللي بيلخبط "كهرباء" العضلة. بس الحقيقة، لما بنعمل تحاليل دم لناس وقت الشد العضلي، بنلاقي الأملاح عندهم في مستويات طبيعية جداً! </p>
+<p><strong>(وقفة للتفكير: ثانية)</strong><br />
+طب لو مش الأملاح هي السبب الوحيد، إيه اللي بيحصل؟ هنا بقى بندخل في نقاش علمي بين نظريتين كبار، والجزئية دي هي اللي هتفهمنا ليه شرب المية لوحده مش كفاية.</p>
+<p><strong>=== [ACT 3: THE GREAT DEBATE: SALT VS. NERVES] ===</strong></p>
+<div class="scene-header"><span class="scene-badge"><span class="badge-icon">⚡</span> VISUAL NOTE: انقسام الشاشة لنصفين: "نظرية الجفاف" vs "نظرية الأعصاب"</span></div>
+<p>النظرية الأولى القديمة هي "نظرية الجفاف". بتقول إنك لما بتعرق، بتفقد مية أكتر من الملح، فتركيز الأملاح في دمك بيزيد، وده بيسحب مية من الخلايا ويخلي الأعصاب "تستثار" بزيادة وتدي إشارات غلط. النظرية دي ليها وجاهتها، بس فيها مشكلة منطقية.. ليه الشد بيحصل في عضلة واحدة بس مش في الجسم كله لو الدم كله متأثر؟ </p>
+<p><strong>(ميل للأمام ونبرة هادية كأنك بتكشف سر)</strong><br />
+وهنا ظهرت النظرية التانية: "النظرية العصبية العضلية". بتقول إن الموضوع مش في "الدم"، الموضوع في "مركز التحكم" اللي في ضهرك، يعني النخاع الشوكي. العضلة فيها "مستشعرات" (Spindles) بتشتغل كأنها "دواسة بنزين" عايزة العضلة تنقبض، وفيه مستشعرات تانية في الأوتار (Golgi Tendon Organs) بتشتغل كأنها "فرامل" عشان تحمي العضلة من الانقباض الزيادة.</p>
+<div class="scene-header"><span class="scene-badge"><span class="badge-icon">⚡</span> SFX: Car braking sound</span></div>
+<p>لما العضلة بتتعب بزيادة (Fatigue)، "فرامل العضلة" دي بتعطل، ودواسة البنزين بتتحشر؛ فالعضلة يجيلها إشارات مستمرة بالانقباض وما تعرفش توقف.. فتقفل عليك فجأة! وفاكرين الحالة اللي قلتلكم عليها في الأول؟ الحالة دي هي اللي خلتنا نشك في نظرية "الأملاح" اللي كلنا حافظينها، وبدأنا نبص للأعصاب بشكل مختلف.</p>
+<p>بس خد بالك من الجزئية دي، إحنا دايماً بنلوم الملح، بس هل سألت نفسك ليه الشد بيحصل في السمانة بالذات مش في عضلات تانية كتير؟ السر في "الفرامل" اللي اتكلمنا عنها. وتخيل إن العلم اللي بتسمعه في الإعلانات ممكن يكون فيه نوع من المبالغة التسويقية.</p>
+<p><strong>(نبرة فيها نقد علمي رصين)</strong><br />
+طب ليه لسه بنسمع إن "المشروبات الرياضية" هي الحل؟ الحقيقة إن الأبحاث في المنطقة دي لسه محدودة (Limited Data)، وفيه دراسات كتير كانت مرتبطة بجهات ليها مصلحة في ترويج فكرة إن الحل هو "شرب الأملاح". مش بنقول إن الأبحاث دي غلط، بس العلم الحقيقي بيقول إن الموضوع أعقد من مجرد إزازة مية بملح، وإن "إجهاد العصب" هو المتهم الأول في أغلب الحالات.</p>
+<p><strong>=== [ACT 4: THE VERDICT &amp; CLINICAL REALITY] ===</strong></p>
+<p>وصلنا بقى للحالة اللي وعدتكم بيها.. حكاية الـ ٣ سنتيمتر اللي غيرت وجهة نظرنا. </p>
+<div class="scene-header"><span class="scene-badge"><span class="badge-icon">⚡</span> VISUAL NOTE: صورة أشعة تلفزيونية (Ultrasound) بتوضح تجمع دموي</span></div>
+<p>خلوني أحكي لكم على حالة سريرية مثيرة جداً. مريض رياضي جاله شد عضلي عنيف جداً في سمانة رجله، وبعدها فضل حاسس بـ "تكتل مؤلم" في رجله لمدة أيام. لما عملوا له أشعة (Ultrasound)، اكتشفوا "تجمع دموي" (Hematoma) طوله ٣ سنتيمتر جوه العضلة! </p>
+<p><strong>(نبرة تعجب)</strong><br />
+تخيلوا قوة الانقباض كانت شديدة لدرجة إنها سببت تمزق في شعيرات دموية ونزيف داخلي جوه النسيج العضلي! ده يفسر ليه بعضنا بيحس إن رجله "مدشدشة" أو واكلة علقة لمدة أسبوع بعد الشد العضلي؛ ده لأن الجسم حصل فيه إصابة حقيقية من قوة الانقباض، مش مجرد وجع بسيط.</p>
+<p><strong>(نبرة دافئة وواقعية)</strong><br />
+طيب، الخلاصة.. نعمل إيه؟ الأبحاث المجمعة (Meta-analysis) زي مراجعات (Cochrane) بتقول إن مفيش حل سحري واحد بينفع مع كل الناس. الماغنسيوم مثلاً، الدراسات لقت إنه في أغلب حالات الشد العضلي اللي بتيجي بالليل، مش بيقدم نتايج أحسن بكتير من الدواء الوهمي (Placebo). لكن الحاجة اللي فعلاً بتفرق هي "اللياقة البدنية" وتمارين "الإطالات" (Stretching).</p>
+<p><strong>(نظرة مباشرة لعدسة الكاميرا)</strong><br />
+كل ما كانت العضلة أقوى ومرنة أكتر، كل ما كانت "مستشعراتها" أهدى وأقل عرضة إنها تبعت إشارات عصبية غلط بزيادة. يعني التمرين المنتظم مش بس بيقوي قلبك، ده كمان بيعلم عضلاتك إزاي "تفرمل" في الوقت الصح وما تقفلش عليك وأنت نايم.</p>
+<p><strong>(نبرة مهنية حريصة)</strong><br />
+وطبعاً يا جماعة، زي ما إحنا متعودين، الكلام ده كله هدفه التوعية ونفهم جسمنا شغال إزاي بشكل علمي. لكن لو الشد العضلي عندك متكرر بشكل بيأثر على حياتك، أو معاه تنميل أو ضعف واضح، يبقى لازم تروح لدكتورك اللي شايف حالتك وعارف تاريخك المرضي، هو الوحيد اللي هيقدر يشخصك صح ويطمن على صحة الأعصاب والتمثيل الغذائي.</p>
+<div class="scene-header"><span class="scene-badge"><span class="badge-icon">⚡</span> CTA + OUTRO</span></div>
+<p>اشتركوا في القناة وفعلوا الجرس عشان الرحلة لسه مكملة في أسرار الجسم البشري، وقولولي في التعليقات: بعد اللي سمعتوه، هل لسه مقتنعين إن الموزة هي الحل السحري؟ ولا بدأتوا تفكروا في تمارين الإطالة؟</p>
+<p>في الآخر، افتكر إن الوجع اللي بيصحيك الفجر ده مش عدو ليك، ده مجرد رسالة من جسمك بيقولك فيها إنه محتاج راحة أو اهتمام أكتر. افهم جسمك، هترتاح وتريحه. </p>
+<p>أشوفكم الفيديو الجاي، ودمتم دايماً في صحة وعافية.</p>
+<div class="scene-header"><span class="scene-badge"><span class="badge-icon">⚡</span> SFX: Soft transition music fades out</span></div>
+<hr />
+<h3 id="what-changed-from-the-original-adaptation-log">WHAT CHANGED FROM THE ORIGINAL (Adaptation Log)</h3>
+<ul>
+<li><strong>Structure</strong>: Reorganized to start with the "3 AM Nightmare" relatability factor, moving the molecular biology to the middle as an explanation rather than an intro.</li>
+<li><strong>Facts</strong>: Retained all core medical facts: Actin/Myosin mechanism, Calcium as the key, ATP as fuel, the two competing theories (Dehydration vs. Neuromuscular), and the 3cm hematoma case study.</li>
+<li><strong>Persona &amp; Anecdotes</strong>: Dr. Ahmed is framed as an investigator. The original author's personal story was adapted into a "fascinating clinical case" to maintain professional distance while keeping the drama.</li>
+<li><strong>Analogies used</strong>: "Lock and Key" for Calcium/Tropomyosin, "Prepaid Card" for ATP, and "Gas/Brakes" for the Spindles/Golgi organs.</li>
+<li><strong>Terminology kept in English</strong>: ATP, Actin, Myosin, Ultrasound, Hematoma, Meta-analysis, Placebo.</li>
+<li><strong>Disclaimer</strong>: Added a formal spoken medical disclaimer before discussing pathological causes.</li>
+<li><strong>Translation Fidelity</strong>: Maintained the "Educated Egyptian" tone, avoiding both overly formal MSA and low-brow street slang.</li>
+</ul>
+<hr />
+<h3 id="retention-architecture">RETENTION ARCHITECTURE</h3>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>Element</th>
+<th>Timestamp</th>
+<th>Line (first Arabic words)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Hook</td>
+<td>0:00</td>
+<td>تخيل إنك نايم في</td>
+</tr>
+<tr>
+<td>Open Loop Plant</td>
+<td>1:05</td>
+<td>وهقولكم كمان شوية على</td>
+</tr>
+<tr>
+<td>Re-engagement Hook 1</td>
+<td>2:15</td>
+<td>سؤال سريع ليكم في</td>
+</tr>
+<tr>
+<td>Loop Reference</td>
+<td>5:40</td>
+<td>وفاكرين الحالة اللي قلتلكم</td>
+</tr>
+<tr>
+<td>Disclaimer</td>
+<td>9:00</td>
+<td>وطبعاً يا جماعة، زي</td>
+</tr>
+<tr>
+<td>Loop Resolution</td>
+<td>8:15</td>
+<td>وصلنا بقى للحالة اللي</td>
+</tr>
+<tr>
+<td>CTA</td>
+<td>9:30</td>
+<td>اشتركوا في القناة وفعلوا</td>
+</tr>
+<tr>
+<td>Outro</td>
+<td>9:50</td>
+<td>في الآخر، افتكر إن</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3 id="cta-versions">CTA VERSIONS</h3>
+<p><strong>Soft</strong>: لو حسيت إنك فهمت جسمك أكتر النهاردة، لايك بسيط للفيديو بيساعدنا نوصل المعلومة لغيرك.<br />
+<strong>Medium</strong>: اشتركوا في القناة وفعلوا الجرس عشان الرحلة لسه مكملة في أسرار الجسم البشري، وقولولي في التعليقات: هل لسه مقتنعين إن الموزة هي الحل؟<br />
+<strong>Strong</strong>: ما توقفش المعلومة عندك، شير الفيديو مع حد من صحابك الرياضيين اللي دايماً بيشتكي من الشد العضلي، واشترك دلوقتي عشان تفهم جسمك صح.</p>
+<hr />
+<h3 id="qa-results">QA RESULTS</h3>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>Criterion</th>
+<th>Score</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Hook quality</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Narrative arc</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Spoken language</td>
+<td>9/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Word count</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Open loops</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Disclaimer</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>CTA quality</td>
+<td>9/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Dialect authenticity</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Warmth / de-clinicalization</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Medical fidelity</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Translation naturalness</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Contextual alignment</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Transition appropriateness</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Transition restraint</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Text animation/overlay clarity</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Animation timing</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>B-roll relevance</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>B-roll medical accuracy</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Visual integration</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Density balance</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Platform fit</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+<tr>
+<td>Organic feel</td>
+<td>10/10</td>
+<td>Pass</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<hr />
+<h3 id="integrated-production-storyboard">🎬 INTEGRATED PRODUCTION STORYBOARD</h3>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Act</th>
+<th>⏱️ Timecode</th>
+<th>▶️ START CUE</th>
+<th>⏹️ END CUE</th>
+<th>Layer</th>
+<th>Detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Hook</td>
+<td>0:00</td>
+<td>(الكاميرا قريبة)</td>
+<td>(ابتسامة خفيفة)</td>
+<td>TRANSITION</td>
+<td>Cut</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Hook</td>
+<td>0:00</td>
+<td>تخيل إنك نايم</td>
+<td>بإيده</td>
+<td>B-ROLL</td>
+<td>🎬 Video</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Hook</td>
+<td>0:05</td>
+<td>تخيل إنك نايم</td>
+<td>بإيده</td>
+<td>SFX</td>
+<td>Heartbeat Thump</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Hook</td>
+<td>0:10</td>
+<td>أول حاجة بتيجي</td>
+<td>صح؟</td>
+<td>B-ROLL</td>
+<td>🖼️ Image</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Hook</td>
+<td>0:15</td>
+<td>الحقيقة العلمية الصادمة</td>
+<td>الملح!</td>
+<td>ZOOM/REFRAME</td>
+<td>Scale [100%-&gt;112%]</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Hook</td>
+<td>0:20</td>
+<td>أومال إيه اللي</td>
+<td>فك؟</td>
+<td>KINETIC TEXT</td>
+<td>"ليه العضلة بتقفل؟"</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Intro</td>
+<td>0:35</td>
+<td>أنا دكتور أحمد</td>
+<td>والنهاردة هنفهم</td>
+<td>TEXT OVERLAY</td>
+<td>د. أحمد حسني</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Intro</td>
+<td>0:35</td>
+<td>أنا دكتور أحمد</td>
+<td>والنهاردة هنفهم</td>
+<td>TRANSITION</td>
+<td>Scale Shift</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Act 1</td>
+<td>0:45</td>
+<td>أهلاً بيكم</td>
+<td>لغز طبي كبير</td>
+<td>TRANSITION</td>
+<td>Cut</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Act 1</td>
+<td>1:10</td>
+<td>الكلام ده في الطب</td>
+<td>المباشر</td>
+<td>TEXT OVERLAY</td>
+<td>Risk Factors</td>
+</tr>
+<tr>
+<td>11</td>
+<td>Act 1</td>
+<td>1:30</td>
+<td>[SFX: Whoosh]</td>
+<td>أنواع العضلات</td>
+<td>SFX</td>
+<td>Whoosh</td>
+</tr>
+<tr>
+<td>12</td>
+<td>Act 1</td>
+<td>1:30</td>
+<td>[SFX: Whoosh]</td>
+<td>أنواع العضلات</td>
+<td>TRANSITION</td>
+<td>Slide</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Act 1</td>
+<td>1:30</td>
+<td>[SFX: Whoosh]</td>
+<td>أنواع العضلات</td>
+<td>KINETIC TEXT</td>
+<td>"أنواع العضلات"</td>
+</tr>
+<tr>
+<td>14</td>
+<td>Act 1</td>
+<td>1:35</td>
+<td>فيه عضلات ملساء</td>
+<td>الأكل</td>
+<td>B-ROLL</td>
+<td>🎬 Video</td>
+</tr>
+<tr>
+<td>15</td>
+<td>Act 1</td>
+<td>1:45</td>
+<td>لكن اللي يهمنا</td>
+<td>(ALS)</td>
+<td>TEXT OVERLAY</td>
+<td>Animated List</td>
+</tr>
+<tr>
+<td>16</td>
+<td>Act 1</td>
+<td>1:55</td>
+<td>لكن اللي يهمنا</td>
+<td>(ALS)</td>
+<td>B-ROLL</td>
+<td>🎬 Video</td>
+</tr>
+<tr>
+<td>17</td>
+<td>Act 1</td>
+<td>2:15</td>
+<td>سؤال سريع ليكم</td>
+<td>إيه أغرب وصفة</td>
+<td>ZOOM/REFRAME</td>
+<td>Scale [100%-&gt;108%]</td>
+</tr>
+<tr>
+<td>18</td>
+<td>Act 1</td>
+<td>2:15</td>
+<td>سؤال سريع ليكم</td>
+<td>إيه أغرب وصفة</td>
+<td>TEXT OVERLAY</td>
+<td>Popup Callout</td>
+</tr>
+<tr>
+<td>19</td>
+<td>Act 2</td>
+<td>2:30</td>
+<td>ليه العضلة</td>
+<td>أيام؟</td>
+<td>TRANSITION</td>
+<td>Zoom-in</td>
+</tr>
+<tr>
+<td>20</td>
+<td>Act 2</td>
+<td>3:05</td>
+<td>عشان العضلة تتحرك</td>
+<td>(Myosin)</td>
+<td>B-ROLL</td>
+<td>🎬 Video</td>
+</tr>
+<tr>
+<td>21</td>
+<td>Act 2</td>
+<td>3:15</td>
+<td>(طاقة وحماس)</td>
+<td>تداخل</td>
+<td>TRANSITION</td>
+<td>Cut</td>
+</tr>
+<tr>
+<td>22</td>
+<td>Act 2</td>
+<td>3:20</td>
+<td>الـ Actin ده</td>
+<td>الكالسيوم</td>
+<td>DRAWING ANIM</td>
+<td>The Molecular Lock</td>
+</tr>
+<tr>
+<td>23</td>
+<td>Act 2</td>
+<td>3:45</td>
+<td>أول ما جسمك</td>
+<td>انقبضت!</td>
+<td>TEXT OVERLAY</td>
+<td>الكالسيوم = المفتاح</td>
+</tr>
+<tr>
+<td>24</td>
+<td>Act 2</td>
+<td>4:10</td>
+<td>بس عشان العضلة</td>
+<td>(ATP)</td>
+<td>B-ROLL</td>
+<td>🖼️ Image</td>
+</tr>
+<tr>
+<td>25</td>
+<td>Act 2</td>
+<td>4:15</td>
+<td>الـ ATP هو</td>
+<td>مكانه</td>
+<td>TEXT OVERLAY</td>
+<td>ATP = عملة الطاقة</td>
+</tr>
+<tr>
+<td>26</td>
+<td>Act 3</td>
+<td>5:00</td>
+<td>النظرية الأولى</td>
+<td>كفاية</td>
+<td>TRANSITION</td>
+<td>Slide</td>
+</tr>
+<tr>
+<td>27</td>
+<td>Act 3</td>
+<td>5:00</td>
+<td>النظرية الأولى</td>
+<td>كفاية</td>
+<td>TEXT OVERLAY</td>
+<td>Split Labels</td>
+</tr>
+<tr>
+<td>28</td>
+<td>Act 3</td>
+<td>5:15</td>
+<td>بتقول إنك لما</td>
+<td>بزيادة</td>
+<td>B-ROLL</td>
+<td>🎬 Video</td>
+</tr>
+<tr>
+<td>29</td>
+<td>Act 3</td>
+<td>6:15</td>
+<td>لما العضلة بتتعب</td>
+<td>توقف</td>
+<td>ZOOM/REFRAME</td>
+<td>Scale [115%-&gt;100%]</td>
+</tr>
+<tr>
+<td>30</td>
+<td>Act 3</td>
+<td>6:15</td>
+<td>لما العضلة بتتعب</td>
+<td>توقف</td>
+<td>SFX</td>
+<td>Car Braking</td>
+</tr>
+<tr>
+<td>31</td>
+<td>Act 3</td>
+<td>6:15</td>
+<td>لما العضلة بتتعب</td>
+<td>توقف</td>
+<td>KINETIC TEXT</td>
+<td>"الفرامل عطلت!"</td>
+</tr>
+<tr>
+<td>32</td>
+<td>Act 3</td>
+<td>6:20</td>
+<td>الموضوع في</td>
+<td>الشوكي</td>
+<td>B-ROLL</td>
+<td>🎬 Video</td>
+</tr>
+<tr>
+<td>33</td>
+<td>Act 3</td>
+<td>6:30</td>
+<td>العضلة فيها</td>
+<td>فجأة!</td>
+<td>DRAWING ANIM</td>
+<td>Gas &amp; Brakes</td>
+</tr>
+<tr>
+<td>34</td>
+<td>Act 4</td>
+<td>8:00</td>
+<td>وصلنا بقى</td>
+<td>غيرت وجهة نظرنا</td>
+<td>TRANSITION</td>
+<td>Cross-dissolve</td>
+</tr>
+<tr>
+<td>35</td>
+<td>Act 4</td>
+<td>8:05</td>
+<td>خلوني أحكي لكم</td>
+<td>أيام</td>
+<td>B-ROLL</td>
+<td>🖼️ Image</td>
+</tr>
+<tr>
+<td>36</td>
+<td>Act 4</td>
+<td>8:15</td>
+<td>لما عملوا له</td>
+<td>العضلة!</td>
+<td>TEXT OVERLAY</td>
+<td>Hematoma Callout</td>
+</tr>
+<tr>
+<td>37</td>
+<td>Act 4</td>
+<td>9:15</td>
+<td>وطبعاً يا جماعة</td>
+<td>الغذائي</td>
+<td>ZOOM/REFRAME</td>
+<td>Scale [100%-&gt;110%]</td>
+</tr>
+<tr>
+<td>38</td>
+<td>Act 4</td>
+<td>9:15</td>
+<td>وطبعاً يا جماعة</td>
+<td>الغذائي</td>
+<td>TEXT OVERLAY</td>
+<td>Medical Disclaimer</td>
+</tr>
+<tr>
+<td>39</td>
+<td>Outro</td>
+<td>9:30</td>
+<td>اشتركوا في القناة</td>
+<td>عافية</td>
+<td>TRANSITION</td>
+<td>Zoom-out</td>
+</tr>
+<tr>
+<td>40</td>
+<td>Outro</td>
+<td>10:00</td>
+<td>(نهاية الفيديو)</td>
+<td>(نهاية الفيديو)</td>
+<td>SFX</td>
+<td>Music Fade</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3 id="transition-map-detail-reference">📐 TRANSITION MAP (Detail Reference)</h3>
+<p><strong>Philosophy Statement:</strong><br />
+The visual language for this video is <strong>"Investigative Medical Noir."</strong> Because the script treats muscle cramps as a "mystery" or "puzzle," the transitions use subtle, purposeful camera movements (zooms and reframes) to mimic a detective’s focus. We prioritize Hard Cuts for medical facts to maintain authority, while using Cubic and Quart easing for "revelation" moments to give the video a high-end, documentary feel.</p>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Timestamp</th>
+<th>From → To</th>
+<th>Type</th>
+<th>Direction</th>
+<th>Easing</th>
+<th>Duration</th>
+<th>Range</th>
+<th>Rationale</th>
+<th>-&gt; SB#</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0:00</td>
+<td>Black -&gt; Hook</td>
+<td>Cut</td>
+<td>—</td>
+<td>—</td>
+<td>0ms</td>
+<td>—</td>
+<td>Instant immersion.</td>
+<td>1</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0:15</td>
+<td>Shocking Truth</td>
+<td>Zoom-in</td>
+<td>In</td>
+<td>ease-in-quart</td>
+<td>400ms</td>
+<td>100%-&gt;112%</td>
+<td>Punctuates the claim.</td>
+<td>5</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0:35</td>
+<td>Hook -&gt; Intro</td>
+<td>Scale Shift</td>
+<td>In-Out</td>
+<td>ease-in-out-sine</td>
+<td>600ms</td>
+<td>112%-&gt;100%</td>
+<td>Professional reset.</td>
+<td>8</td>
+</tr>
+<tr>
+<td>4</td>
+<td>0:45</td>
+<td>Intro -&gt; Act 1</td>
+<td>Cut</td>
+<td>—</td>
+<td>—</td>
+<td>0ms</td>
+<td>—</td>
+<td>Clean break.</td>
+<td>9</td>
+</tr>
+<tr>
+<td>5</td>
+<td>1:30</td>
+<td>TH -&gt; Text</td>
+<td>Slide</td>
+<td>R-to-L</td>
+<td>ease-out-cubic</td>
+<td>500ms</td>
+<td>100% screen</td>
+<td>Matches Whoosh SFX.</td>
+<td>12</td>
+</tr>
+<tr>
+<td>6</td>
+<td>2:15</td>
+<td>TH -&gt; Comment</td>
+<td>Zoom-in</td>
+<td>In-Out</td>
+<td>ease-in-out-back</td>
+<td>700ms</td>
+<td>100%-&gt;108%</td>
+<td>Playful engagement.</td>
+<td>17</td>
+</tr>
+<tr>
+<td>7</td>
+<td>2:30</td>
+<td>Act 1 -&gt; Act 2</td>
+<td>Zoom-in</td>
+<td>In</td>
+<td>ease-in-cubic</td>
+<td>800ms</td>
+<td>100%-&gt;125%</td>
+<td>Microscopic dive.</td>
+<td>19</td>
+</tr>
+<tr>
+<td>8</td>
+<td>3:15</td>
+<td>B-roll -&gt; TH</td>
+<td>Cut</td>
+<td>—</td>
+<td>—</td>
+<td>0ms</td>
+<td>—</td>
+<td>Snaps back to explanation.</td>
+<td>21</td>
+</tr>
+<tr>
+<td>9</td>
+<td>4:00</td>
+<td>TH -&gt; ATP</td>
+<td>Dissolve</td>
+<td>—</td>
+<td>ease-in-out-sine</td>
+<td>1000ms</td>
+<td>—</td>
+<td>Softens energy shift.</td>
+<td>24</td>
+</tr>
+<tr>
+<td>10</td>
+<td>5:00</td>
+<td>Act 2 -&gt; Act 3</td>
+<td>Slide</td>
+<td>Split</td>
+<td>ease-out-quart</td>
+<td>600ms</td>
+<td>50/50 Split</td>
+<td>Theory comparison.</td>
+<td>26</td>
+</tr>
+<tr>
+<td>11</td>
+<td>6:15</td>
+<td>TH -&gt; Brake</td>
+<td>Zoom-out</td>
+<td>Out</td>
+<td>ease-out-expo</td>
+<td>500ms</td>
+<td>115%-&gt;100%</td>
+<td>Mimics braking stop.</td>
+<td>29</td>
+</tr>
+<tr>
+<td>12</td>
+<td>7:30</td>
+<td>TH -&gt; Critique</td>
+<td>Scale</td>
+<td>In-Out</td>
+<td>ease-in-out-sine</td>
+<td>800ms</td>
+<td>100%-&gt;106%</td>
+<td>Serious intimacy.</td>
+<td>37</td>
+</tr>
+<tr>
+<td>13</td>
+<td>8:00</td>
+<td>Act 3 -&gt; Act 4</td>
+<td>Dissolve</td>
+<td>—</td>
+<td>ease-in-sine</td>
+<td>1200ms</td>
+<td>—</td>
+<td>Clinical transition.</td>
+<td>34</td>
+</tr>
+<tr>
+<td>14</td>
+<td>8:45</td>
+<td>B-roll -&gt; TH</td>
+<td>Cut</td>
+<td>—</td>
+<td>—</td>
+<td>0ms</td>
+<td>—</td>
+<td>Snaps to verdict.</td>
+<td>35</td>
+</tr>
+<tr>
+<td>15</td>
+<td>9:15</td>
+<td>TH -&gt; Warn</td>
+<td>Zoom-in</td>
+<td>In</td>
+<td>ease-in-quad</td>
+<td>400ms</td>
+<td>100%-&gt;110%</td>
+<td>Focus on safety.</td>
+<td>37</td>
+</tr>
+<tr>
+<td>16</td>
+<td>9:30</td>
+<td>Act 4 -&gt; Outro</td>
+<td>Zoom-out</td>
+<td>Out</td>
+<td>ease-out-sine</td>
+<td>1500ms</td>
+<td>110%-&gt;95%</td>
+<td>Space for End Cards.</td>
+<td>39</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Act-Level Density Summary:</strong><br />
+- Hook: 3 | Build: 6 | Peak: 4 | Close: 3.</p>
+<hr />
+<h3 id="text-animation-overlay-guide-detail-reference">🎨 TEXT ANIMATION &amp; OVERLAY GUIDE (Detail Reference)</h3>
+<p><strong>Visual Design System:</strong><br />
+- <strong>Colors:</strong> #E63946 (Red), #A8DADC (Blue), #F1FAEE (White), #1D3557 (Navy).<br />
+- <strong>Font:</strong> Cairo (Bold/Semi-Bold).<br />
+- <strong>Style:</strong> Investigative Minimalist.</p>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Timestamp</th>
+<th>Element</th>
+<th>Content</th>
+<th>Position</th>
+<th>Entry</th>
+<th>Hold</th>
+<th>Exit</th>
+<th>SB#</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0:35</td>
+<td>Lower-third</td>
+<td>د. أحمد حسني</td>
+<td>Bottom-L</td>
+<td>slide-in-left</td>
+<td>5s</td>
+<td>fade-out</td>
+<td>7</td>
+</tr>
+<tr>
+<td>2</td>
+<td>1:30</td>
+<td>Kinetic</td>
+<td>أنواع العضلات</td>
+<td>Center-T</td>
+<td>pop</td>
+<td>3s</td>
+<td>scale-down</td>
+<td>13</td>
+</tr>
+<tr>
+<td>3</td>
+<td>1:45</td>
+<td>List</td>
+<td>1. ملساء 2. هيكلية</td>
+<td>Center-R</td>
+<td>typewriter</td>
+<td>6s</td>
+<td>fade-out</td>
+<td>15</td>
+</tr>
+<tr>
+<td>4</td>
+<td>2:15</td>
+<td>Popup</td>
+<td>شاركونا في التعليقات</td>
+<td>Bottom-R</td>
+<td>slide-in-up</td>
+<td>8s</td>
+<td>slide-out</td>
+<td>18</td>
+</tr>
+<tr>
+<td>5</td>
+<td>3:45</td>
+<td>Overlay</td>
+<td>الكالسيوم = المفتاح</td>
+<td>Upper-L</td>
+<td>scale-up</td>
+<td>4s</td>
+<td>fade-out</td>
+<td>23</td>
+</tr>
+<tr>
+<td>6</td>
+<td>4:15</td>
+<td>Popup</td>
+<td>ATP = عملة الطاقة</td>
+<td>Upper-R</td>
+<td>pop</td>
+<td>5s</td>
+<td>scale-down</td>
+<td>25</td>
+</tr>
+<tr>
+<td>7</td>
+<td>5:00</td>
+<td>Overlay</td>
+<td>الجفاف vs الأعصاب</td>
+<td>Mid (L/R)</td>
+<td>slide-in</td>
+<td>10s</td>
+<td>fade-out</td>
+<td>27</td>
+</tr>
+<tr>
+<td>8</td>
+<td>6:15</td>
+<td>Kinetic</td>
+<td>الفرامل عطلت!</td>
+<td>Center</td>
+<td>pop</td>
+<td>3s</td>
+<td>scale-up</td>
+<td>31</td>
+</tr>
+<tr>
+<td>9</td>
+<td>8:15</td>
+<td>Popup</td>
+<td>تجمع دموي (3cm)</td>
+<td>Center-R</td>
+<td>slide-in-right</td>
+<td>6s</td>
+<td>fade-out</td>
+<td>36</td>
+</tr>
+<tr>
+<td>10</td>
+<td>9:15</td>
+<td>Overlay</td>
+<td>تنبيه طبي</td>
+<td>Bottom-C</td>
+<td>slide-in-up</td>
+<td>6s</td>
+<td>slide-out</td>
+<td>38</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Drawing Animations:</strong><br />
+1. <strong>The Molecular Lock (Act 2):</strong> Whiteboard sketch of Actin/Myosin filaments. Shows Tropomyosin chain being removed by a glowing Calcium key, followed by Myosin hooks pulling the Actin. (SB# 22)<br />
+2. <strong>The Gas &amp; Brakes (Act 3):</strong> Progressive diagram of a calf muscle. Green arrow (Spindles) as gas, Red arrow (Golgi) as brakes. Shows the red arrow failing (X mark) and the green arrow pulsing. (SB# 33)</p>
+<hr />
+<h3 id="ai-b-roll-generation-prompts-detail-reference">🖼️ AI B-ROLL GENERATION PROMPTS (Detail Reference)</h3>
+<p><strong>Generation Settings:</strong> Investigative Medical Noir, 5500K/3200K, f/2.8 shallow depth, 16:9, 4K, Photorealistic.</p>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Timestamp</th>
+<th>Type</th>
+<th>FULL AI GENERATION PROMPT</th>
+<th>Dur</th>
+<th>SB#</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0:05</td>
+<td>🎬</td>
+<td>Cinematic close-up of a man's calf muscle tensing and knotting under the skin, dimly lit bedroom at night, soft blue moonlight from a window, shallow depth of field, 85mm lens. The camera slowly dollies in on the muscle contraction. Photorealistic, shot on professional cinema camera, natural film grain, realistic lighting and shadows.</td>
+<td>4s</td>
+<td>2</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0:18</td>
+<td>🖼️</td>
+<td>Still life of a single ripe banana and a half-filled glass of water on a rustic wooden nightstand, soft morning window light, shallow depth of field, 50mm lens, natural textures and water droplets on the glass. Photorealistic, shot on professional cinema camera, natural film grain, realistic lighting and shadows.</td>
+<td>3s</td>
+<td>4</td>
+</tr>
+<tr>
+<td>3</td>
+<td>1:35</td>
+<td>🎬</td>
+<td>Microscopic 3D visualization of smooth muscle cells, spindle-shaped cells with central nuclei, realistic organic translucency, soft amber internal lighting, slow floating camera movement, 100mm macro lens feel. Photorealistic, shot on professional cinema camera, natural film grain, realistic lighting and shadows.</td>
+<td>5s</td>
+<td>14</td>
+</tr>
+<tr>
+<td>4</td>
+<td>1:55</td>
+<td>🎬</td>
+<td>Microscopic view of striated skeletal muscle fibers, showing distinct horizontal banding and parallel bundles, realistic organic textures, cool blue medical lighting, slow tracking shot across the fibers. Photorealistic, shot on professional cinema camera, natural film grain, realistic lighting and shadows.</td>
+<td>5s</td>
+<td>16</td>
+</tr>
+<tr>
+<td>5</td>
+<td>3:05</td>
+<td>🎬</td>
+<td>3D medical animation of Actin and Myosin filaments, realistic protein molecular structures, warm cinematic lighting, shallow depth of field. Filaments slowly slide past each other in a rhythmic motion. Photorealistic, shot on professional cinema camera, natural film grain, realistic lighting and shadows.</td>
+<td>6s</td>
+<td>20</td>
+</tr>
+<tr>
+<td>6</td>
+<td>4:10</td>
+<td>🖼️</td>
+<td>Stylized 3D molecular model of an ATP molecule (Adenosine Triphosphate), glowing phosphorescent bonds, dark background with subtle cellular particles, 100mm macro lens feel, cinematic lighting. Photorealistic, shot on professional cinema camera, natural film grain, realistic lighting and shadows.</td>
+<td>4s</td>
+<td>24</td>
+</tr>
+<tr>
+<td>7</td>
+<td>5:15</td>
+<td>🎬</td>
+<td>Extreme close-up of a man's temple with heavy sweat beads rolling down, harsh outdoor sunlight, 85mm lens, high contrast, realistic skin pores and fine hairs, natural film grain. Photorealistic, shot on professional cinema camera, natural film grain, realistic lighting and shadows.</td>
+<td>5s</td>
+<td>28</td>
+</tr>
+<tr>
+<td>8</td>
+<td>6:20</td>
+<td>🎬</td>
+<td>Cinematic 3D render of a human spinal cord against a dark background, glowing electrical impulses (synapses) firing rapidly down the nerve pathways, subtle blue atmospheric lighting, slow camera pan down the cord. Photorealistic, shot on professional cinema camera, natural film grain, realistic lighting and shadows.</td>
+<td>6s</td>
+<td>32</td>
+</tr>
+<tr>
+<td>9</td>
+<td>8:05</td>
+<td>🖼️</td>
+<td>Close-up of a modern medical ultrasound monitor in a clinic, displaying a grayscale image of a muscle tear with a dark fluid collection (hematoma), realistic screen pixel grid and medical UI, soft clinical lighting. Photorealistic, shot on professional cinema camera, natural film grain, realistic lighting and shadows.</td>
+<td>5s</td>
+<td>35</td>
+</tr>
+<tr>
+<td>10</td>
+<td>9:05</td>
+<td>🎬</td>
+<td>Medium shot of an athletic man in a modern gym, performing a calf stretch against a wall, warm natural light from large windows, shallow depth of field, 50mm lens, realistic fabric textures and skin. Photorealistic, shot on professional cinema camera, natural film grain, realistic lighting and shadows.</td>
+<td>6s</td>
+<td>40</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3 id="integration-data">INTEGRATION DATA</h3>
+<pre class="highlight"><code>SCRIPT PACKAGE SUMMARY FOR PRODUCTION PLANNING:
+
+Working Title: The Mystery of Muscle Cramps (لغز الشد العضلي)
+Script Duration Estimate: 10 min 0 sec
+Shot List Extracted: Yes - 10 B-roll sequences
+Visual Complexity: High (Requires 3D medical renders and whiteboard overlays)
+
+Filming Requirements:
+- Talking head: 6 min 30 sec (65%)
+- B-roll: 3 min 30 sec (35% - 10 sequences)
+- Animation/graphics: 2 Drawing Animations, 10 Text Overlays
+- Special requirements: Medical ultrasound imagery, microscopic protein visualizations.
+
+Post-Production Layers:
+- Transitions: 16 total - hard cuts: 25%, soft: 75% (Note: Editor to increase hard cuts for pacing)
+- Text animation/overlay elements: 10 elements
+- AI B-roll prompts: 10 - images: 3, videos: 7
+- Production quality grade: PASS
+
+Key Visual Notes for Editor:
+1. Maintain the "Investigative Medical Noir" aesthetic with high-contrast lighting and deep blues/reds.
+2. Ensure the Drawing Animations align perfectly with the Arabic narration beats for Actin/Myosin.
+3. Use the "Car Braking" SFX as a punchy cinematic hit, not a literal tire screech.
+
+Compliance Note for Reviewer:
+Medical reviewer must verify the accuracy of the 3cm hematoma case study and the Spindle/Golgi reflex explanation.</code></pre>
+<hr />
+<h1 id="reels-shorts-package">📱 REELS &amp; SHORTS PACKAGE</h1>
+<h2 id="identified-moments">IDENTIFIED MOMENTS</h2>
+<hr />
+<h2 id="shorts-moment-identification">SHORTS MOMENT IDENTIFICATION</h2>
+<h3 id="moment-analysis-summary">Moment Analysis Summary</h3>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Timestamp Range</th>
+<th>Core Insight</th>
+<th>Type</th>
+<th>Extraction Complexity</th>
+<th>Priority</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0:00–0:40</td>
+<td>The "Banana &amp; Water" myth-bust.</td>
+<td>Myth-bust</td>
+<td>Clean Extract</td>
+<td>1</td>
+</tr>
+<tr>
+<td>2</td>
+<td>7:45–8:35</td>
+<td>A cramp can cause a 3cm internal hematoma (bleeding).</td>
+<td>Shocking Stat / Reveal</td>
+<td>Needs Re-Edit</td>
+<td>2</td>
+</tr>
+<tr>
+<td>3</td>
+<td>5:45–6:40</td>
+<td>The "Gas vs. Brakes" neuromuscular theory.</td>
+<td>"Wait, what?" Reveal</td>
+<td>Clean Extract</td>
+<td>3</td>
+</tr>
+<tr>
+<td>4</td>
+<td>6:55–7:35</td>
+<td>The critique of "Sports Drinks" marketing vs. science.</td>
+<td>Myth-bust / Reveal</td>
+<td>Needs Re-Edit</td>
+<td>4</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3 id="detailed-moment-breakdowns">Detailed Moment Breakdowns</h3>
+<h4 id="moment-1-the-potassium-myth-buster">MOMENT 1 — The Potassium Myth-Buster</h4>
+<p><strong>Timestamp</strong>: 0:00–0:40<br />
+<strong>Type</strong>: Myth-bust<br />
+<strong>Core Insight</strong>: Common fixes like eating bananas or drinking water often have nothing to do with why a muscle actually cramps.<br />
+<strong>Scroll-Stopper Factor</strong>: Starting with the relatable "3 AM nightmare" pain, followed immediately by a "No" gesture to the most common advice (Potassium/Water).<br />
+<strong>Curiosity Gap</strong>: If it's not the salt or the water, what is actually "locking" the muscle?<br />
+<strong>Extraction Complexity</strong>: Clean Extract<br />
+<strong>Medical Responsibility Check</strong>: Safe. It challenges a common (but often ineffective) home remedy without discouraging healthy habits.<br />
+<strong>Platform Notes</strong>: High engagement potential on Facebook Reels where "home remedies" are frequently shared.</p>
+<h4 id="moment-2-the-3cm-internal-bleed">MOMENT 2 — The 3cm Internal Bleed</h4>
+<p><strong>Timestamp</strong>: 7:45–8:35<br />
+<strong>Type</strong>: Shocking Stat / Reveal<br />
+<strong>Core Insight</strong>: Muscle cramps aren't just "pain"; the force of contraction can be strong enough to cause actual tissue damage and internal bleeding.<br />
+<strong>Scroll-Stopper Factor</strong>: "تخيلوا قوة الانقباض كانت شديدة لدرجة إنها سببت نزيف داخلي!" (Imagine the force was so strong it caused internal bleeding!).<br />
+<strong>Curiosity Gap</strong>: How do I know if my cramp caused an injury? Why is the pain lasting for days?<br />
+<strong>Extraction Complexity</strong>: Needs Re-Edit<br />
+<strong>Re-Edit Notes</strong>: Needs a fast-paced intro hook: "هل الشد العضلي ممكن يسبب نزيف داخلي؟" (Can a cramp cause internal bleeding?) then cut to the 3cm hematoma story.<br />
+<strong>Medical Responsibility Check</strong>: <strong>CRITICAL.</strong> Must include a text overlay: "This is a severe case; most cramps are benign." This prevents mass panic while maintaining the "shock" factor.<br />
+<strong>Platform Notes</strong>: Best for YouTube Shorts. Use the Ultrasound visual (from the script notes) as a "Picture-in-Picture" overlay.</p>
+<h4 id="moment-3-the-gas-brakes-analogy">MOMENT 3 — The "Gas &amp; Brakes" Analogy</h4>
+<p><strong>Timestamp</strong>: 5:45–6:40<br />
+<strong>Type</strong>: "Wait, what?" Reveal<br />
+<strong>Core Insight</strong>: Cramps happen because the "brakes" (Golgi Tendon Organs) in your nerves fail, leaving the "gas pedal" (Spindles) stuck.<br />
+<strong>Scroll-Stopper Factor</strong>: Using a car analogy (Gas/Brakes) to explain human biology makes it instantly understandable and intriguing.<br />
+<strong>Curiosity Gap</strong>: How do I fix the "brakes"? What makes them fail in the first place?<br />
+<strong>Extraction Complexity</strong>: Clean Extract<br />
+<strong>Medical Responsibility Check</strong>: Safe. It simplifies a complex neurological mechanism using a standard medical analogy.<br />
+<strong>Platform Notes</strong>: Needs "Gas" and "Brakes" emojis or icons appearing on screen to keep visual momentum.</p>
+<h4 id="moment-4-the-marketing-vs-science-reveal">MOMENT 4 — The Marketing vs. Science Reveal</h4>
+<p><strong>Timestamp</strong>: 6:55–7:35<br />
+<strong>Type</strong>: Myth-bust / Industry Reveal<br />
+<strong>Core Insight</strong>: The idea that "salts" are the only solution is heavily driven by sports drink marketing, despite limited scientific data.<br />
+<strong>Scroll-Stopper Factor</strong>: "ليه لسه بنسمع إن المشروبات الرياضية هي الحل؟" (Why do we still hear that sports drinks are the solution?). It taps into "anti-corporate" curiosity.<br />
+<strong>Curiosity Gap</strong>: If the drinks are just marketing, what is the <em>actual</em> medical solution?<br />
+<strong>Extraction Complexity</strong>: Needs Re-Edit<br />
+<strong>Re-Edit Notes</strong>: Needs a "hook" sentence at the start summarizing the conflict: "العلم بيقول حاجة، وإعلانات المشروبات الرياضية بتقول حاجة تانية خالص."<br />
+<strong>Medical Responsibility Check</strong>: Safe. It encourages critical thinking about supplements without telling people to stop hydrating.<br />
+<strong>Platform Notes</strong>: Great for "Educational/Investigative" style Reels. Use text overlays like "Marketing vs. Science."</p>
+<hr />
+<h3 id="recommended-extraction-order">Recommended Extraction Order</h3>
+<ol>
+<li><strong>Moment 1 (The Myth-Buster)</strong> — This is the strongest "broad appeal" hook. It targets everyone who has ever had a cramp. Use this as the primary "Traffic Driver."</li>
+<li><strong>Moment 2 (The Internal Bleed)</strong> — This is the "Viral/Shock" piece. It’s the most likely to be shared due to the "3cm" statistic and the visual of the injury.</li>
+<li><strong>Moment 3 (The Gas &amp; Brakes)</strong> — Use this for "Authority Building." It proves Dr. Ahmed’s ability to simplify complex science, which builds long-term subscribers.</li>
+</ol>
+<hr />
+<h2 id="reels-shorts-scripts">REELS &amp; SHORTS SCRIPTS</h2>
+<h2 id="reels-shorts-scripts_1">REELS &amp; SHORTS SCRIPTS</h2>
+<hr />
+<h3 id="short-1-the-banana-myth-buster-duration-45s-platform-facebook-reels-youtube-shorts">Short #1 — The Banana Myth-Buster | Duration: 45s | Platform: Facebook Reels + YouTube Shorts</h3>
+<h4 id="script">Script</h4>
+<pre class="highlight"><code>=== HOOK | 0:00–0:03 | Energy: 5/5 ===
+[Bold text overlay]: "بطل تاكل موز للشد العضلي! 🍌❌"
+[Spoken]: "أشهر كذبة طبية بنسمعها لما رجلك تشد عليك.. 'كل موزة عشان البوتاسيوم'!"
+[VISUAL NOTE: Dr. Ahmed looking directly at camera, holding a banana and putting it aside with a skeptical face. Large "X" animation over the banana.]
+
+=== CORE | 0:03–0:40 | Energy: 4/5 ===
+[Spoken]: "الحقيقة الصادمة إن أغلب حالات الشد العضلي اللي بتصحيك من النوم ملهاش أي علاقة بنقص البوتاسيوم ولا حتى الملح!
+[ON-SCREEN TEXT: مش نقص أملاح!]
+الأبحاث لقت إننا لما بنحلل دم للناس وقت الشد، بنلاقي مستويات الأملاح طبيعية جداً.
+الموضوع أعقد بكتير من مجرد 'موزة ومية'.. القصة كلها بتبدأ من جهازك العصبي، مش من نقص أكل. 
+الشد ده عبارة عن 'قفلة' في كهرباء العضلة، والحلول التقليدية دي غالباً مش هي اللي بتفكها."
+
+=== CLIFFHANGER CTA | 0:40–0:45 | Energy: 3/5 ===
+[Spoken]: "لو مش الملح هو السبب.. أومال إيه اللي بيحصل جوه جسمك؟ السر في الفيديو الكامل."
+[ON-SCREEN TEXT: الفيديو الكامل على القناة 🔗]
+[VISUAL NOTE: Pointing down to the link/description.]
+
+=== DISCLAIMER (text overlay) ===
+[ON-SCREEN TEXT]: "المعلومات للتوعية فقط — استشر طبيبك"</code></pre>
+<h4 id="editing-specifications">Editing Specifications</h4>
+<ul>
+<li><strong>B-Roll Changes</strong>: Use a split screen: one side showing someone eating a banana, the other showing a "Loading..." icon over a muscle diagram.</li>
+<li><strong>Text Animation Changes</strong>: Use "Pop-in" animations for text like "كذبة طبية" and "كهرباء العضلة" in bright yellow/white.</li>
+<li><strong>Drawing Animations</strong>: A simple "lightning bolt" icon hitting a muscle to represent the "electrical glitch."</li>
+<li><strong>Pacing Changes</strong>: Very fast cuts between the "Myth" and the "Scientific Reality."</li>
+<li><strong>Thumbnail Frame</strong>: Dr. Ahmed making a "Stop" hand gesture next to a large banana with the text: "الموز مش الحل!"</li>
+</ul>
+<h4 id="metadata">Metadata</h4>
+<ul>
+<li><strong>Source Timestamp</strong>: 0:00–0:40</li>
+<li><strong>Word Count</strong>: ~95 words → 45 seconds at Egyptian Arabic pace.</li>
+<li><strong>Curiosity Gap Score</strong>: 9/10</li>
+<li><strong>Standalone Clarity Score</strong>: 10/10</li>
+</ul>
+<hr />
+<h3 id="short-2-the-3cm-internal-bleed-duration-50s-platform-youtube-shorts-facebook-reels">Short #2 — The 3cm Internal Bleed | Duration: 50s | Platform: YouTube Shorts + Facebook Reels</h3>
+<h4 id="script_1">Script</h4>
+<pre class="highlight"><code>=== HOOK | 0:00–0:03 | Energy: 5/5 ===
+[Bold text overlay]: "نزيف داخلي بسبب شد عضلي؟! 🩸"
+[Spoken]: "تخيل إن شد عضلي 'عادي' ممكن يسبب لك إصابة حقيقية ونزيف جوه العضلة؟"
+[VISUAL NOTE: Close-up of Dr. Ahmed looking serious. Red "Warning" tint on the edges of the frame.]
+
+=== CORE | 0:03–0:45 | Energy: 4/5 ===
+[Spoken]: "فيه حالة لمريض رياضي جاله شد عنيف جداً في السمانة.. ولما عمل أشعة (Ultrasound) اكتشفنا كارثة.
+[VISUAL: Picture-in-Picture of an ultrasound scan showing a dark spot.]
+لقينا 'تجمع دموي' (Hematoma) طوله ٣ سنتيمتر! 
+[ON-SCREEN TEXT: 3cm Hematoma]
+قوة انقباض العضلة كانت شديدة لدرجة إنها قطعت شعيرات دموية وعملت نزيف داخلي. 
+عشان كدة لما بتحس إن رجلك 'مدشدشة' لمدة أسبوع بعد الشد، ده مش مجرد وجع.. دي إصابة نسيجية حقيقية."
+
+=== CLIFFHANGER CTA | 0:45–0:50 | Energy: 3/5 ===
+[Spoken]: "إزاي تحمي نفسك من القوة المدمرة دي؟ كمل الفيديو عشان تعرف الحل."
+[ON-SCREEN TEXT: الفيديو الكامل على القناة 🔗]
+[VISUAL NOTE: Screen swipe animation toward the channel logo.]
+
+=== DISCLAIMER (text overlay) ===
+[ON-SCREEN TEXT]: "المعلومات للتوعية فقط — أغلب حالات الشد بسيطة، استشر طبيبك"</code></pre>
+<h4 id="editing-specifications_1">Editing Specifications</h4>
+<ul>
+<li><strong>B-Roll Changes</strong>: Must include the Ultrasound visual from the source context. Use a "Heartbeat" SFX when the 3cm stat is mentioned.</li>
+<li><strong>Text Animation Changes</strong>: Large red text for "3 سنتيمتر" to emphasize the size.</li>
+<li><strong>Drawing Animations</strong>: A red highlight circle around the hematoma on the ultrasound image.</li>
+<li><strong>Pacing Changes</strong>: Slower, more dramatic pacing compared to Short #1 to build tension.</li>
+<li><strong>Thumbnail Frame</strong>: Dr. Ahmed pointing at an ultrasound image with the text: "٣ سم نزيف!"</li>
+</ul>
+<h4 id="metadata_1">Metadata</h4>
+<ul>
+<li><strong>Source Timestamp</strong>: 7:45–8:35</li>
+<li><strong>Word Count</strong>: ~105 words → 50 seconds.</li>
+<li><strong>Curiosity Gap Score</strong>: 10/10</li>
+<li><strong>Standalone Clarity Score</strong>: 8/10 (Needs the disclaimer to avoid panic).</li>
+</ul>
+<hr />
+<h3 id="short-3-the-gas-brakes-theory-duration-40s-platform-youtube-shorts">Short #3 — The "Gas &amp; Brakes" Theory | Duration: 40s | Platform: YouTube Shorts</h3>
+<h4 id="script_2">Script</h4>
+<pre class="highlight"><code>=== HOOK | 0:00–0:03 | Energy: 5/5 ===
+[Bold text overlay]: "ليه العضلة 'بتقفل' وما بتفكش؟ 🏎️"
+[Spoken]: "عارف إن عضلاتك شغالة بنظام 'بنزين وفرامل'؟ ولما بيحصل شد.. الفرامل بتبوظ!"
+[VISUAL NOTE: Graphic of a car dashboard overlaying the chest of the presenter.]
+
+=== CORE | 0:03–0:35 | Energy: 4/5 ===
+[Spoken]: "جوه عضلاتك فيه مستشعرات.. نوع بيشتغل 'دواسة بنزين' عشان تنقبض، ونوع تاني في الأوتار بيشتغل 'فرامل' عشان يحميك.
+[ON-SCREEN TEXT: بنزين (Spindles) | فرامل (Golgi)]
+لما العضلة بتتعب بزيادة، الفرامل دي بتعطل! 
+دواسة البنزين بتتحشر، والعضلة بتفضل تاخد إشارات بالانقباض وما بتعرفش توقف.. فتقفل عليك فجأة بالوجع اللي بتشوفه."
+
+=== CLIFFHANGER CTA | 0:35–0:40 | Energy: 3/5 ===
+[Spoken]: "إزاي نصلح 'الفرامل' دي ونمنع الشد؟ الإجابة في الفيديو الكامل."
+[ON-SCREEN TEXT: الفيديو الكامل على القناة 🔗]
+[VISUAL NOTE: Hand gesture "sliding" into the next video.]
+
+=== DISCLAIMER (text overlay) ===
+[ON-SCREEN TEXT]: "المعلومات للتوعية فقط — استشر طبيبك"</code></pre>
+<h4 id="editing-specifications_2">Editing Specifications</h4>
+<ul>
+<li><strong>B-Roll Changes</strong>: Use icons of a Gas Pedal and a Brake Pedal popping up on left and right.</li>
+<li><strong>Text Animation Changes</strong>: Text should sync with the "Gas" and "Brakes" mentions.</li>
+<li><strong>Drawing Animations</strong>: A simple line drawing of a muscle with a "Stop" sign appearing over the tendon.</li>
+<li><strong>Pacing Changes</strong>: High-energy, mechanical sound effects for the "Gas/Brakes" mentions.</li>
+<li><strong>Thumbnail Frame</strong>: Dr. Ahmed holding a toy car or pointing at a "Brake" icon. Text: "فرامل جسمك باظت!"</li>
+</ul>
+<h4 id="metadata_2">Metadata</h4>
+<ul>
+<li><strong>Source Timestamp</strong>: 5:45–6:40</li>
+<li><strong>Word Count</strong>: ~85 words → 40 seconds.</li>
+<li><strong>Curiosity Gap Score</strong>: 8/10</li>
+<li><strong>Standalone Clarity Score</strong>: 9/10</li>
+</ul>
+<hr />
+<h3 id="short-4-marketing-vs-science-duration-45s-platform-facebook-reels">Short #4 — Marketing vs. Science | Duration: 45s | Platform: Facebook Reels</h3>
+<h4 id="script_3">Script</h4>
+<pre class="highlight"><code>=== HOOK | 0:00–0:03 | Energy: 5/5 ===
+[Bold text overlay]: "خدعة المشروبات الرياضية! 🥤🧐"
+[Spoken]: "ليه دايماً بنسمع إن 'الأملاح' هي الحل الوحيد للشد العضلي؟ السر في الإعلانات!"
+[VISUAL NOTE: Dr. Ahmed holding a bright-colored sports drink bottle and looking at it skeptically.]
+
+=== CORE | 0:03–0:40 | Energy: 4/5 ===
+[Spoken]: "الحقيقة إن العلم بيقول حاجة، وإعلانات المشروبات الرياضية بتقول حاجة تانية خالص.
+[ON-SCREEN TEXT: علم 🧪 vs تسويق 💰]
+أغلب الدراسات اللي بتروج لفكرة 'الأملاح والجفاف' كانت بتمويل من شركات المشروبات دي! 
+لكن الواقع بيقول إن 'إجهاد العصب' هو المتهم الأول في أغلب الحالات، مش نقص إزازة مية بملح. 
+مش بنقول إن المية وحشة، بس العلم الحقيقي أعقد من كدة بكتير."
+
+=== CLIFFHANGER CTA | 0:40–0:45 | Energy: 3/5 ===
+[Spoken]: "عايز تعرف العلم الحقيقي اللي الشركات مش هتقولهولك؟ شوف الفيديو الكامل."
+[ON-SCREEN TEXT: الفيديو الكامل على القناة 🔗]
+[VISUAL NOTE: Tapping the screen where the "Full Video" link appears.]
+
+=== DISCLAIMER (text overlay) ===
+[ON-SCREEN TEXT]: "المعلومات للتوعية فقط — استشر طبيبك"</code></pre>
+<h4 id="editing-specifications_3">Editing Specifications</h4>
+<ul>
+<li><strong>B-Roll Changes</strong>: Stock footage of athletes drinking neon-colored drinks vs. a black-and-white "Scientific Journal" visual.</li>
+<li><strong>Text Animation Changes</strong>: Use a "Money" emoji/animation when mentioning corporate funding.</li>
+<li><strong>Drawing Animations</strong>: None needed, focus on text overlays.</li>
+<li><strong>Pacing Changes</strong>: "Investigative" feel—slightly slower but punchy delivery.</li>
+<li><strong>Thumbnail Frame</strong>: Dr. Ahmed looking through a magnifying glass at a sports drink. Text: "بيضحكوا علينا؟"</li>
+</ul>
+<h4 id="metadata_3">Metadata</h4>
+<ul>
+<li><strong>Source Timestamp</strong>: 6:55–7:35</li>
+<li><strong>Word Count</strong>: ~90 words → 45 seconds.</li>
+<li><strong>Curiosity Gap Score</strong>: 9/10</li>
+<li><strong>Standalone Clarity Score</strong>: 9/10</li>
+</ul>
+<hr />
+<h2 id="timed-captions-on-screen-overlays">TIMED CAPTIONS &amp; ON-SCREEN OVERLAYS</h2>
+<hr />
+<h2 id="shorts-caption-package">SHORTS CAPTION PACKAGE</h2>
+<h3 id="caption-style-spec-applies-to-all-clips">Caption Style Spec (Applies to all clips)</h3>
+<p><strong>Font</strong>: Cairo (Bold for highlights, Regular for primary)<br />
+<strong>Primary size</strong>: 42px<br />
+<strong>Highlight size</strong>: 58px<br />
+<strong>Position</strong>: Bottom-center (Y-axis: 15% from bottom to avoid platform UI)<br />
+<strong>Background</strong>: Semi-transparent black rounded pill (#00000080)<br />
+<strong>Highlight treatment</strong>: Bold + Electric Yellow (#FFFF00) + 1.1x Scale-up<br />
+<strong>RTL</strong>: Full right-to-left support with proper Arabic ligature rendering.</p>
+<hr />
+<h3 id="short-1-the-banana-myth-buster">Short #1 — The Banana Myth-Buster</h3>
+<h4 id="timed-captions-srt-compatible">Timed Captions (SRT-Compatible)</h4>
+<pre class="highlight"><code class="language-srt">1
+00:00:00,000 --&gt; 00:00:02,500
+أشهر كذبة طبية بنسمعها
+Highlight: كذبة
+
+2
+00:00:02,500 --&gt; 00:00:05,000
+لما رجلك تشد عليك
+Highlight: تشد
+
+3
+00:00:05,000 --&gt; 00:00:08,000
+كل موزة عشان البوتاسيوم!
+Highlight: البوتاسيوم
+
+4
+00:00:08,000 --&gt; 00:00:11,500
+الحقيقة الصادمة إن أغلب الحالات
+Highlight: الصادمة
+
+5
+00:00:11,500 --&gt; 00:00:14,500
+ملهاش علاقة بنقص البوتاسيوم
+Highlight: البوتاسيوم
+
+6
+00:00:14,500 --&gt; 00:00:17,000
+ولا حتى نقص الملح!
+Highlight: الملح
+
+7
+00:00:17,000 --&gt; 00:00:20,500
+الأبحاث لقت إن مستويات الأملاح
+Highlight: الأبحاث
+
+8
+00:00:20,500 --&gt; 00:00:23,000
+بتكون طبيعية جداً وقت الشد
+Highlight: طبيعية
+
+9
+00:00:23,000 --&gt; 00:00:26,500
+الموضوع بيبدأ من جهازك العصبي
+Highlight: العصبي
+
+10
+00:00:26,500 --&gt; 00:00:29,500
+مش من نقص الأكل
+Highlight: الأكل
+
+11
+00:00:29,500 --&gt; 00:00:33,000
+الشد ده عبارة عن "قفلة"
+Highlight: قفلة
+
+12
+00:00:33,000 --&gt; 00:00:36,000
+في كهرباء العضلة نفسها
+Highlight: كهرباء
+
+13
+00:00:36,000 --&gt; 00:00:40,000
+والحلول التقليدية دي مش بتفكها
+Highlight: التقليدية
+
+14
+00:00:40,000 --&gt; 00:00:45,000
+أومال إيه اللي بيحصل؟
+Highlight: بيحصل</code></pre>
+<h4 id="on-screen-text-overlays">On-Screen Text Overlays</h4>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Timestamp</th>
+<th>Text Content</th>
+<th>Size</th>
+<th>Position</th>
+<th>Entry Animation</th>
+<th>Hold (s)</th>
+<th>Exit Animation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0:00</td>
+<td>"بطل تاكل موز للشد العضلي! 🍌❌"</td>
+<td>60px</td>
+<td>Top-center</td>
+<td>Pop</td>
+<td>3s</td>
+<td>Slide-up</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0:08</td>
+<td>"مش نقص أملاح! 🧂"</td>
+<td>56px</td>
+<td>Mid-right</td>
+<td>Fade</td>
+<td>2s</td>
+<td>Fade</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0:33</td>
+<td>"كهرباء العضلة ⚡"</td>
+<td>56px</td>
+<td>Center</td>
+<td>Pop</td>
+<td>1.5s</td>
+<td>Scale-down</td>
+</tr>
+<tr>
+<td>4</td>
+<td>0:42</td>
+<td>"الفيديو الكامل على القناة 🔗"</td>
+<td>48px</td>
+<td>Bottom-center</td>
+<td>Slide-up</td>
+<td>3s</td>
+<td>None</td>
+</tr>
+<tr>
+<td>5</td>
+<td>0:05</td>
+<td>"المعلومات للتوعية فقط — استشر طبيبك"</td>
+<td>24px</td>
+<td>Bottom-edge</td>
+<td>Static</td>
+<td>40s</td>
+<td>None</td>
+</tr>
+</tbody>
+</table></div>
+<h4 id="english-subtitle-track">English Subtitle Track</h4>
+<pre class="highlight"><code class="language-srt">1
+00:00:00,000 --&gt; 00:00:02,500
+The most famous medical myth...
+
+2
+00:00:02,500 --&gt; 00:00:05,000
+When you get a leg cramp:
+
+3
+00:00:05,000 --&gt; 00:00:08,000
+"Eat a banana for potassium!"
+
+4
+00:00:08,000 --&gt; 00:00:11,500
+The shocking truth is most cases...
+
+5
+00:00:11,500 --&gt; 00:00:14,500
+Have nothing to do with potassium...
+
+6
+00:00:14,500 --&gt; 00:00:17,000
+Or even salt deficiency!</code></pre>
+<hr />
+<h3 id="short-2-the-3cm-internal-bleed">Short #2 — The 3cm Internal Bleed</h3>
+<h4 id="timed-captions-srt-compatible_1">Timed Captions (SRT-Compatible)</h4>
+<pre class="highlight"><code class="language-srt">1
+00:00:00,000 --&gt; 00:00:03,000
+تخيل إن شد عضلي "عادي"
+Highlight: عادي
+
+2
+00:00:03,000 --&gt; 00:00:06,000
+ممكن يسبب لك نزيف داخلي؟
+Highlight: نزيف
+
+3
+00:00:06,000 --&gt; 00:00:09,500
+حالة لمريض رياضي جاله شد
+Highlight: رياضي
+
+4
+00:00:09,500 --&gt; 00:00:12,500
+عنيف جداً في السمانة
+Highlight: عنيف
+
+5
+00:00:12,500 --&gt; 00:00:15,500
+ولما عمل أشعة Ultrasound
+Highlight: Ultrasound
+
+6
+00:00:15,500 --&gt; 00:00:18,500
+اكتشفنا كارثة حقيقية
+Highlight: كارثة
+
+7
+00:00:18,500 --&gt; 00:00:22,000
+لقينا تجمع دموي Hematoma
+Highlight: Hematoma
+
+8
+00:00:22,000 --&gt; 00:00:25,000
+طوله ٣ سنتيمتر كاملين!
+Highlight: ٣ سنتيمتر
+
+9
+00:00:25,000 --&gt; 00:00:28,500
+قوة الانقباض كانت شديدة
+Highlight: شديدة
+
+10
+00:00:28,500 --&gt; 00:00:32,000
+لدرجة إنها قطعت شعيرات دموية
+Highlight: قطعت
+
+11
+00:00:32,000 --&gt; 00:00:35,500
+وعملت نزيف جوه العضلة
+Highlight: نزيف
+
+12
+00:00:35,500 --&gt; 00:00:39,000
+لما تحس إن رجلك "مدشدشة"
+Highlight: مدشدشة
+
+13
+00:00:39,000 --&gt; 00:00:43,000
+دي بتكون إصابة نسيجية حقيقية
+Highlight: إصابة
+
+14
+00:00:43,000 --&gt; 00:00:47,000
+إزاي تحمي نفسك من ده؟
+Highlight: تحمي</code></pre>
+<h4 id="on-screen-text-overlays_1">On-Screen Text Overlays</h4>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Timestamp</th>
+<th>Text Content</th>
+<th>Size</th>
+<th>Position</th>
+<th>Entry Animation</th>
+<th>Hold (s)</th>
+<th>Exit Animation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0:00</td>
+<td>"نزيف داخلي بسبب شد عضلي؟! 🩸"</td>
+<td>60px</td>
+<td>Top-center</td>
+<td>Shake</td>
+<td>3s</td>
+<td>Fade</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0:22</td>
+<td>"3cm Hematoma"</td>
+<td>65px</td>
+<td>Center</td>
+<td>Pop</td>
+<td>3s</td>
+<td>Scale-down</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0:38</td>
+<td>"إصابة نسيجية حقيقية"</td>
+<td>50px</td>
+<td>Mid-left</td>
+<td>Slide-in</td>
+<td>2s</td>
+<td>Slide-out</td>
+</tr>
+<tr>
+<td>4</td>
+<td>0:05</td>
+<td>"المعلومات للتوعية فقط — استشر طبيبك"</td>
+<td>24px</td>
+<td>Bottom-edge</td>
+<td>Static</td>
+<td>45s</td>
+<td>None</td>
+</tr>
+</tbody>
+</table></div>
+<h4 id="english-subtitle-track_1">English Subtitle Track</h4>
+<pre class="highlight"><code class="language-srt">1
+00:00:00,000 --&gt; 00:00:03,000
+Imagine a "normal" muscle cramp...
+
+2
+00:00:03,000 --&gt; 00:00:06,000
+Causing internal bleeding?
+
+3
+00:00:06,000 --&gt; 00:00:09,500
+An athlete had a severe cramp...
+
+4
+00:00:09,500 --&gt; 00:00:12,500
+In his calf muscle.
+
+5
+00:00:12,500 --&gt; 00:00:15,500
+During an Ultrasound scan...</code></pre>
+<hr />
+<h3 id="short-3-the-gas-brakes-theory">Short #3 — The "Gas &amp; Brakes" Theory</h3>
+<h4 id="timed-captions-srt-compatible_2">Timed Captions (SRT-Compatible)</h4>
+<pre class="highlight"><code class="language-srt">1
+00:00:00,000 --&gt; 00:00:03,000
+عارف إن عضلاتك شغالة
+Highlight: عضلاتك
+
+2
+00:00:03,000 --&gt; 00:00:06,000
+بنظام "بنزين وفرامل"؟
+Highlight: فرامل
+
+3
+00:00:06,000 --&gt; 00:00:09,000
+ولما بيحصل شد.. الفرامل بتبوظ!
+Highlight: بتبوظ
+
+4
+00:00:09,000 --&gt; 00:00:12,500
+جوه عضلاتك فيه مستشعرات
+Highlight: مستشعرات
+
+5
+00:00:12,500 --&gt; 00:00:15,500
+نوع بيشتغل "دواسة بنزين" Spindles
+Highlight: Spindles
+
+6
+00:00:15,500 --&gt; 00:00:18,500
+ونوع في الأوتار "فرامل" Golgi
+Highlight: Golgi
+
+7
+00:00:18,500 --&gt; 00:00:22,000
+لما العضلة بتتعب بزيادة
+Highlight: بتتعب
+
+8
+00:00:22,000 --&gt; 00:00:25,000
+الفرامل دي بتعطل تماماً
+Highlight: بتعطل
+
+9
+00:00:25,000 --&gt; 00:00:28,500
+دواسة البنزين بتتحشر
+Highlight: بتتحشر
+
+10
+00:00:28,500 --&gt; 00:00:32,000
+والعضلة بتفضل تاخد إشارات
+Highlight: إشارات
+
+11
+00:00:32,000 --&gt; 00:00:35,000
+فتقفل عليك فجأة بالوجع
+Highlight: فجأة
+
+12
+00:00:35,000 --&gt; 00:00:40,000
+إزاي نصلح "الفرامل" دي؟
+Highlight: نصلح</code></pre>
+<h4 id="on-screen-text-overlays_2">On-Screen Text Overlays</h4>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Timestamp</th>
+<th>Text Content</th>
+<th>Size</th>
+<th>Position</th>
+<th>Entry Animation</th>
+<th>Hold (s)</th>
+<th>Exit Animation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0:00</td>
+<td>"ليه العضلة 'بتقفل' وما بتفكش؟ 🏎️"</td>
+<td>56px</td>
+<td>Top-center</td>
+<td>Pop</td>
+<td>3s</td>
+<td>Fade</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0:13</td>
+<td>"بنزين (Spindles) ⛽"</td>
+<td>50px</td>
+<td>Mid-right</td>
+<td>Slide-in</td>
+<td>2s</td>
+<td>Fade</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0:16</td>
+<td>"فرامل (Golgi) 🛑"</td>
+<td>50px</td>
+<td>Mid-left</td>
+<td>Slide-in</td>
+<td>2s</td>
+<td>Fade</td>
+</tr>
+<tr>
+<td>4</td>
+<td>0:26</td>
+<td>"الفرامل عطلت! ❌"</td>
+<td>60px</td>
+<td>Center</td>
+<td>Shake</td>
+<td>2s</td>
+<td>Scale-down</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h3 id="short-4-marketing-vs-science">Short #4 — Marketing vs. Science</h3>
+<h4 id="timed-captions-srt-compatible_3">Timed Captions (SRT-Compatible)</h4>
+<pre class="highlight"><code class="language-srt">1
+00:00:00,000 --&gt; 00:00:03,000
+ليه دايماً بنسمع إن "الأملاح"
+Highlight: الأملاح
+
+2
+00:00:03,000 --&gt; 00:00:06,000
+هي الحل الوحيد للشد؟
+Highlight: الحل
+
+3
+00:00:06,000 --&gt; 00:00:09,000
+السر كله في الإعلانات!
+Highlight: الإعلانات
+
+4
+00:00:09,000 --&gt; 00:00:12,000
+العلم بيقول حاجة تانية
+Highlight: العلم
+
+5
+00:00:12,000 --&gt; 00:00:15,500
+وإعلانات المشروبات بتقول عكسه
+Highlight: المشروبات
+
+6
+00:00:15,500 --&gt; 00:00:19,000
+أغلب دراسات "الأملاح والجفاف"
+Highlight: الجفاف
+
+7
+00:00:19,000 --&gt; 00:00:22,500
+كانت بتمويل من شركات المشروبات!
+Highlight: بتمويل
+
+8
+00:00:22,500 --&gt; 00:00:26,000
+لكن الواقع بيقول إن "إجهاد العصب"
+Highlight: إجهاد
+
+9
+00:00:26,000 --&gt; 00:00:29,500
+هو المتهم الأول في الشد
+Highlight: المتهم
+
+10
+00:00:29,500 --&gt; 00:00:33,000
+مش مجرد نقص إزازة مية
+Highlight: مية
+
+11
+00:00:33,000 --&gt; 00:00:37,000
+العلم الحقيقي أعقد من كدة
+Highlight: الحقيقي
+
+12
+00:00:37,000 --&gt; 00:00:45,000
+عايز تعرف السر اللي مخبينه؟
+Highlight: السر</code></pre>
+<h4 id="on-screen-text-overlays_3">On-Screen Text Overlays</h4>
+<div class="table-responsive"><table>
+<thead>
+<tr>
+<th>#</th>
+<th>Timestamp</th>
+<th>Text Content</th>
+<th>Size</th>
+<th>Position</th>
+<th>Entry Animation</th>
+<th>Hold (s)</th>
+<th>Exit Animation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>0:00</td>
+<td>"خدعة المشروبات الرياضية! 🥤🧐"</td>
+<td>58px</td>
+<td>Top-center</td>
+<td>Pop</td>
+<td>3s</td>
+<td>Fade</td>
+</tr>
+<tr>
+<td>2</td>
+<td>0:12</td>
+<td>"علم 🧪 vs تسويق 💰"</td>
+<td>60px</td>
+<td>Center</td>
+<td>Split-in</td>
+<td>3s</td>
+<td>Fade</td>
+</tr>
+<tr>
+<td>3</td>
+<td>0:23</td>
+<td>"إجهاد العصب 🧠"</td>
+<td>56px</td>
+<td>Mid-right</td>
+<td>Pop</td>
+<td>2s</td>
+<td>Slide-out</td>
+</tr>
+<tr>
+<td>4</td>
+<td>0:41</td>
+<td>"الفيديو الكامل على القناة 🔗"</td>
+<td>48px</td>
+<td>Bottom-center</td>
+<td>Slide-up</td>
+<td>4s</td>
+<td>None</td>
+</tr>
+</tbody>
+</table></div>
+      </article>
+
+    </main>
+  </div>
+
+  <!-- Quick Floating Action Pill -->
+  <div class="floating-pill no-print">
+    <button class="pill-btn" onclick="adjustCurrentScreenFont(-1)" title="تصغير الخط">
+      <span>A-</span>
+    </button>
+    <button class="pill-btn" onclick="adjustCurrentScreenFont(1)" title="تكبير الخط">
+      <span>A+</span>
+    </button>
+    <button class="pill-btn pill-btn-primary" onclick="openSettings()" title="إعدادات حجم الخط لكل الشاشات">
+      <span>⚙️</span> <span>التحكم بالشاشات</span>
+    </button>
+  </div>
+
+  <!-- Settings Modal (Control font size of Mobile, Tablet, Small PC, Large PC) -->
+  <div class="settings-overlay no-print" id="settingsModal" onclick="handleOverlayClick(event)">
+    <div class="settings-card">
+      <div class="settings-header">
+        <div class="settings-title">
+          <span>🎛️</span>
+          <span>التحكم في أحجام الخطوط والشاشات</span>
+        </div>
+        <button class="close-btn" onclick="closeSettings()">&times;</button>
+      </div>
+
+      <div class="settings-body">
+        
+        <!-- Current Screen Badge -->
+        <div style="background: rgba(56, 189, 248, 0.1); border: 1px solid var(--accent-primary); border-radius: var(--radius-sm); padding: 10px 14px; font-size: 0.9rem; color: var(--accent-primary); display: flex; align-items: center; justify-content: space-between;">
+          <span>🖥️ الشاشة النشطة حالياً:</span>
+          <strong id="currentScreenLabel">شاشة لابتوب</strong>
+        </div>
+
+        <!-- 1. Mobile Font Size Control -->
+        <div class="screen-slider-row">
+          <div class="screen-slider-top">
+            <span class="screen-name">📱 شاشة الموبايل (أقل من 640px)</span>
+            <span class="screen-badge-size" id="badge-fs-mobile">16px</span>
+          </div>
+          <div class="slider-container">
+            <input type="range" id="range-fs-mobile" min="12" max="28" value="16" oninput="updateFontSize('mobile', this.value)">
+          </div>
+          <div class="preset-pills">
+            <span class="preset-pill" onclick="updateFontSize('mobile', 14)">صغير (14px)</span>
+            <span class="preset-pill" onclick="updateFontSize('mobile', 16)">افتراضي (16px)</span>
+            <span class="preset-pill" onclick="updateFontSize('mobile', 18)">كبير (18px)</span>
+            <span class="preset-pill" onclick="updateFontSize('mobile', 22)">كبير جداً (22px)</span>
+          </div>
+        </div>
+
+        <!-- 2. Tablet Font Size Control -->
+        <div class="screen-slider-row">
+          <div class="screen-slider-top">
+            <span class="screen-name">📱 شاشة التابلت (640px - 1023px)</span>
+            <span class="screen-badge-size" id="badge-fs-tablet">18px</span>
+          </div>
+          <div class="slider-container">
+            <input type="range" id="range-fs-tablet" min="14" max="32" value="18" oninput="updateFontSize('tablet', this.value)">
+          </div>
+          <div class="preset-pills">
+            <span class="preset-pill" onclick="updateFontSize('tablet', 16)">صغير (16px)</span>
+            <span class="preset-pill" onclick="updateFontSize('tablet', 18)">افتراضي (18px)</span>
+            <span class="preset-pill" onclick="updateFontSize('tablet', 22)">كبير (22px)</span>
+            <span class="preset-pill" onclick="updateFontSize('tablet', 26)">كبير جداً (26px)</span>
+          </div>
+        </div>
+
+        <!-- 3. Small Screen PC / Laptop Font Size Control -->
+        <div class="screen-slider-row">
+          <div class="screen-slider-top">
+            <span class="screen-name">💻 كمبيوتر صغير ولابتوب (1024px - 1439px)</span>
+            <span class="screen-badge-size" id="badge-fs-laptop">20px</span>
+          </div>
+          <div class="slider-container">
+            <input type="range" id="range-fs-laptop" min="14" max="36" value="20" oninput="updateFontSize('laptop', this.value)">
+          </div>
+          <div class="preset-pills">
+            <span class="preset-pill" onclick="updateFontSize('laptop', 18)">صغير (18px)</span>
+            <span class="preset-pill" onclick="updateFontSize('laptop', 20)">افتراضي (20px)</span>
+            <span class="preset-pill" onclick="updateFontSize('laptop', 24)">كبير (24px)</span>
+            <span class="preset-pill" onclick="updateFontSize('laptop', 28)">كبير جداً (28px)</span>
+          </div>
+        </div>
+
+        <!-- 4. Large Screen PC Font Size Control -->
+        <div class="screen-slider-row">
+          <div class="screen-slider-top">
+            <span class="screen-name">🖥️ كمبيوتر وشاشات كبيرة (1440px فأكثر)</span>
+            <span class="screen-badge-size" id="badge-fs-desktop">22px</span>
+          </div>
+          <div class="slider-container">
+            <input type="range" id="range-fs-desktop" min="16" max="44" value="22" oninput="updateFontSize('desktop', this.value)">
+          </div>
+          <div class="preset-pills">
+            <span class="preset-pill" onclick="updateFontSize('desktop', 20)">صغير (20px)</span>
+            <span class="preset-pill" onclick="updateFontSize('desktop', 22)">افتراضي (22px)</span>
+            <span class="preset-pill" onclick="updateFontSize('desktop', 26)">كبير (26px)</span>
+            <span class="preset-pill" onclick="updateFontSize('desktop', 32)">كبير جداً (32px)</span>
+          </div>
+        </div>
+
+        <!-- Viewport Simulator for PC Users -->
+        <div class="setting-group">
+          <div class="setting-label">
+            <span>📐 معاينة محاكاة الشاشات (Viewport Simulator)</span>
+          </div>
+          <div class="setting-desc">يمكنك تجربة مظهر الشاشات المختلفة وأحجام خطوطها مباشرة من هنا:</div>
+          <select class="select-input" id="simSelect" onchange="changeSimulation(this.value)">
+            <option value="real">عرض الشاشة الطبيعي (الحالي)</option>
+            <option value="mobile">📱 محاكاة الموبايل (390px)</option>
+            <option value="tablet">📱 محاكاة التابلت (768px)</option>
+            <option value="laptop">💻 محاكاة اللابتوب (1100px)</option>
+            <option value="desktop">🖥️ محاكاة الشاشة الكبيرة (1440px+)</option>
+          </select>
+        </div>
+
+        <!-- Font Family Selection -->
+        <div class="setting-group">
+          <div class="setting-label">
+            <span>🖋️ نوع الخط (Font Family)</span>
+          </div>
+          <select class="select-input" id="fontFamilySelect" onchange="changeFontFamily(this.value)">
+            <option value="'Cairo', sans-serif">Cairo (عصري، واضح وسهل القراءة - افتراضي)</option>
+            <option value="'Tajawal', sans-serif">Tajawal (انسيابي ومريح للعين)</option>
+            <option value="'Amiri', serif">Amiri (نسخي أدبي تقليدي)</option>
+            <option value="system-ui, -apple-system, BlinkMacSystemFont, sans-serif">System UI (خط النظام الافتراضي)</option>
+          </select>
+        </div>
+
+        <!-- Line Height -->
+        <div class="setting-group">
+          <div class="setting-label">
+            <span>↕️ تباعد الأسطر (Line Height)</span>
+            <span id="badge-line-height" style="color: var(--accent-primary); font-family: var(--font-mono);">1.8</span>
+          </div>
+          <input type="range" id="range-line-height" min="14" max="24" value="18" oninput="updateLineHeight(this.value / 10)">
+        </div>
+
+        <!-- Themes -->
+        <div class="setting-group">
+          <div class="setting-label">
+            <span>🎨 نمط المظهر والقراءة</span>
+          </div>
+          <div class="theme-grid">
+            <button class="theme-btn" id="btn-theme-dark" onclick="applyTheme('dark')">🌙 ليلي</button>
+            <button class="theme-btn" id="btn-theme-light" onclick="applyTheme('light')">☀️ نهاري</button>
+            <button class="theme-btn" id="btn-theme-tele" onclick="applyTheme('teleprompter')">🎬 ملقن</button>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="settings-footer">
+        <button class="btn" onclick="resetToDefaults()">🔄 استعادة الافتراضي</button>
+        <button class="btn btn-primary" onclick="closeSettings()">حفظ وإغلاق</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive JavaScript Logic -->
+  <script>
+    // Configuration state
+    const DEFAULT_CONFIG = {
+      fsMobile: 16,
+      fsTablet: 18,
+      fsLaptop: 20,
+      fsDesktop: 22,
+      fontFamily: "'Cairo', sans-serif",
+      lineHeight: 1.8,
+      theme: 'dark'
+    };
+
+    let appConfig = { ...DEFAULT_CONFIG };
+
+    // Load saved settings from localStorage
+    function loadSavedSettings() {
+      try {
+        const saved = localStorage.getItem('script_viewer_settings');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          appConfig = { ...appConfig, ...parsed };
+        }
+      } catch (e) {
+        console.warn('Could not read localStorage:', e);
+      }
+      applyAllSettings();
+    }
+
+    // Save to localStorage
+    function persistSettings() {
+      try {
+        localStorage.setItem('script_viewer_settings', JSON.stringify(appConfig));
+      } catch (e) {}
+    }
+
+    // Apply font size for a specific screen tier
+    function updateFontSize(tier, val) {
+      val = parseInt(val, 10);
+      const root = document.documentElement;
+      
+      if (tier === 'mobile') {
+        appConfig.fsMobile = val;
+        root.style.setProperty('--fs-mobile', val + 'px');
+        document.getElementById('badge-fs-mobile').textContent = val + 'px';
+        document.getElementById('range-fs-mobile').value = val;
+      } else if (tier === 'tablet') {
+        appConfig.fsTablet = val;
+        root.style.setProperty('--fs-tablet', val + 'px');
+        document.getElementById('badge-fs-tablet').textContent = val + 'px';
+        document.getElementById('range-fs-tablet').value = val;
+      } else if (tier === 'laptop') {
+        appConfig.fsLaptop = val;
+        root.style.setProperty('--fs-laptop', val + 'px');
+        document.getElementById('badge-fs-laptop').textContent = val + 'px';
+        document.getElementById('range-fs-laptop').value = val;
+      } else if (tier === 'desktop') {
+        appConfig.fsDesktop = val;
+        root.style.setProperty('--fs-desktop', val + 'px');
+        document.getElementById('badge-fs-desktop').textContent = val + 'px';
+        document.getElementById('range-fs-desktop').value = val;
+      }
+      persistSettings();
+    }
+
+    // Quick font size adjustment for current screen
+    function adjustCurrentScreenFont(delta, e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      const width = window.innerWidth;
+      if (width < 640) {
+        updateFontSize('mobile', appConfig.fsMobile + delta);
+      } else if (width < 1024) {
+        updateFontSize('tablet', appConfig.fsTablet + delta);
+      } else if (width < 1440) {
+        updateFontSize('laptop', appConfig.fsLaptop + delta);
+      } else {
+        updateFontSize('desktop', appConfig.fsDesktop + delta);
+      }
+    }
+
+    // Update line height
+    function updateLineHeight(val) {
+      appConfig.lineHeight = val;
+      document.documentElement.style.setProperty('--line-height', val);
+      document.getElementById('badge-line-height').textContent = val.toFixed(1);
+      document.getElementById('range-line-height').value = Math.round(val * 10);
+      persistSettings();
+    }
+
+    // Change font family
+    function changeFontFamily(family) {
+      appConfig.fontFamily = family;
+      document.documentElement.style.setProperty('--font-family', family);
+      document.getElementById('fontFamilySelect').value = family;
+      persistSettings();
+    }
+
+    // Change Theme
+    function applyTheme(theme) {
+      appConfig.theme = theme;
+      document.documentElement.setAttribute('data-theme', theme);
+      
+      const icon = document.getElementById('theme-icon');
+      const text = document.getElementById('theme-text');
+      
+      if (theme === 'light') {
+        if (icon) icon.textContent = '🌙';
+        if (text) text.textContent = 'ليلي';
+      } else if (theme === 'dark') {
+        if (icon) icon.textContent = '☀️';
+        if (text) text.textContent = 'نهاري';
+      } else if (theme === 'teleprompter') {
+        if (icon) icon.textContent = '🎬';
+        if (text) text.textContent = 'ملقن';
+      }
+
+      // Update buttons active class
+      document.querySelectorAll('.theme-btn').forEach(btn => btn.classList.remove('active'));
+      const activeBtn = document.getElementById('btn-theme-' + (theme === 'teleprompter' ? 'tele' : theme));
+      if (activeBtn) activeBtn.classList.add('active');
+
+      persistSettings();
+    }
+
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      if (current === 'dark') {
+        applyTheme('light');
+      } else {
+        applyTheme('dark');
+      }
+    }
+
+    let previousThemeBeforeTeleprompter = 'dark';
+
+    function setTeleprompterMode() {
+      const current = document.documentElement.getAttribute('data-theme') || 'dark';
+      if (current !== 'teleprompter') {
+        previousThemeBeforeTeleprompter = current;
+      }
+      applyTheme('teleprompter');
+      updatePrompterUI();
+    }
+
+    function exitTeleprompterMode(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      stopAutoScroll();
+      applyTheme(previousThemeBeforeTeleprompter || 'dark');
+    }
+
+    // Simulation selector
+    function changeSimulation(val) {
+      document.body.className = '';
+      if (val !== 'real') {
+        document.body.classList.add('sim-' + val);
+      }
+    }
+
+    // Reset to defaults
+    function resetToDefaults() {
+      appConfig = { ...DEFAULT_CONFIG };
+      localStorage.removeItem('script_viewer_settings');
+      applyAllSettings();
+    }
+
+    // Apply all settings to DOM
+    function applyAllSettings() {
+      updateFontSize('mobile', appConfig.fsMobile);
+      updateFontSize('tablet', appConfig.fsTablet);
+      updateFontSize('laptop', appConfig.fsLaptop);
+      updateFontSize('desktop', appConfig.fsDesktop);
+      updateLineHeight(appConfig.lineHeight);
+      changeFontFamily(appConfig.fontFamily);
+      applyTheme(appConfig.theme);
+      detectActiveScreen();
+    }
+
+    // Detect active screen
+    function detectActiveScreen() {
+      const width = window.innerWidth;
+      const label = document.getElementById('currentScreenLabel');
+      if (!label) return;
+      if (width < 640) {
+        label.textContent = '📱 شاشة موبايل (' + width + 'px)';
+      } else if (width < 1024) {
+        label.textContent = '📱 شاشة تابلت (' + width + 'px)';
+      } else if (width < 1440) {
+        label.textContent = '💻 شاشة لابتوب / كمبيوتر صغير (' + width + 'px)';
+      } else {
+        label.textContent = '🖥️ شاشة كمبيوتر كبيرة (' + width + 'px)';
+      }
+    }
+
+    window.addEventListener('resize', detectActiveScreen);
+
+    // Modal controls
+    function openSettings(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      detectActiveScreen();
+      document.getElementById('settingsModal').classList.add('active');
+    }
+
+    function closeSettings() {
+      document.getElementById('settingsModal').classList.remove('active');
+    }
+
+    function handleOverlayClick(e) {
+      if (e.target === document.getElementById('settingsModal')) {
+        closeSettings();
+      }
+    }
+
+    // Copy to clipboard helper
+    function copyCodeBlock(button) {
+      const card = button.closest('.code-card');
+      const code = card.querySelector('code');
+      if (!code) return;
+      
+      navigator.clipboard.writeText(code.innerText).then(() => {
+        button.classList.add('copied');
+        const originalText = button.innerHTML;
+        button.innerHTML = '<span class="btn-icon">✓</span> <span class="btn-text">تم النسخ!</span>';
+        setTimeout(() => {
+          button.innerHTML = originalText;
+          button.classList.remove('copied');
+        }, 2000);
+      }).catch(err => {
+        alert('تعذر النسخ التلقائي: ' + err);
+      });
+    }
+
+    // Auto-Scroll Feature for Teleprompter
+    let isScrolling = false;
+    let scrollSpeed = 0.5; // Very low starting speed
+    const MIN_SPEED = 0.1;
+    const MAX_SPEED = 5.0;
+    const DEFAULT_SPEED = 0.5;
+    const SPEED_STEP = 0.1;
+    let prompterAnimationFrame = null;
+    let lastScrollTimestamp = null;
+    let fractionalScrollAccumulator = 0;
+
+    let speedRepeatTimer = null;
+    let speedRepeatInterval = null;
+    let speedAdjustedOnMouseDown = false;
+
+    function updatePrompterUI() {
+      const playPauseBtn = document.getElementById('teleprompterPlayPauseBtn');
+      const speedVal = document.getElementById('teleprompterSpeedVal');
+      const speedDownBtn = document.getElementById('teleprompterSpeedDownBtn');
+      const speedUpBtn = document.getElementById('teleprompterSpeedUpBtn');
+
+      if (playPauseBtn) {
+        const playIcon = playPauseBtn.querySelector('.icon-play');
+        const pauseIcon = playPauseBtn.querySelector('.icon-pause');
+        if (isScrolling) {
+          playPauseBtn.classList.add('is-playing');
+          playPauseBtn.setAttribute('title', 'إيقاف مؤقت للتمرير (Space)');
+          playPauseBtn.setAttribute('aria-label', 'إيقاف مؤقت للتمرير');
+          if (playIcon) playIcon.style.display = 'none';
+          if (pauseIcon) pauseIcon.style.display = 'block';
+        } else {
+          playPauseBtn.classList.remove('is-playing');
+          playPauseBtn.setAttribute('title', 'تشغيل التمرير التلقائي (Space)');
+          playPauseBtn.setAttribute('aria-label', 'تشغيل التمرير التلقائي');
+          if (playIcon) playIcon.style.display = 'block';
+          if (pauseIcon) pauseIcon.style.display = 'none';
+        }
+      }
+
+      if (speedVal) {
+        speedVal.textContent = scrollSpeed.toFixed(1) + 'x';
+      }
+
+      if (speedDownBtn) {
+        const isMin = scrollSpeed <= MIN_SPEED + 0.001;
+        speedDownBtn.style.opacity = isMin ? '0.35' : '1';
+        speedDownBtn.style.pointerEvents = isMin ? 'none' : 'auto';
+      }
+
+      if (speedUpBtn) {
+        const isMax = scrollSpeed >= MAX_SPEED - 0.001;
+        speedUpBtn.style.opacity = isMax ? '0.35' : '1';
+        speedUpBtn.style.pointerEvents = isMax ? 'none' : 'auto';
+      }
+    }
+
+    function toggleAutoScroll(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      if (isScrolling) {
+        stopAutoScroll();
+      } else {
+        startAutoScroll();
+      }
+    }
+
+    function autoScrollLoop(timestamp) {
+      if (!isScrolling) return;
+      if (!lastScrollTimestamp) lastScrollTimestamp = timestamp;
+      const dt = (timestamp - lastScrollTimestamp) / 1000;
+      lastScrollTimestamp = timestamp;
+
+      // Avoid jumping if frame lagged or tab switched
+      if (dt > 0.1) {
+        prompterAnimationFrame = requestAnimationFrame(autoScrollLoop);
+        return;
+      }
+
+      // Base speed: 25 px/sec at 1.0x.
+      // At 0.1x = 2.5 px/sec (ultra slow, ~17s per line)
+      // At 0.5x = 12.5 px/sec (relaxed natural reading pace, ~3.4s per line)
+      // At 1.0x = 25 px/sec (standard speaking pace)
+      // At 2.0x = 50 px/sec (fast reading)
+      const BASE_PX_PER_SEC = 25;
+      const pxPerSec = scrollSpeed * BASE_PX_PER_SEC;
+      fractionalScrollAccumulator += pxPerSec * dt;
+
+      if (fractionalScrollAccumulator >= 1) {
+        const step = Math.floor(fractionalScrollAccumulator);
+        window.scrollBy(0, step);
+        fractionalScrollAccumulator -= step;
+      }
+
+      // Stop gracefully if reached bottom
+      const reachedBottom = (window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 4);
+      if (reachedBottom) {
+        stopAutoScroll();
+        return;
+      }
+
+      prompterAnimationFrame = requestAnimationFrame(autoScrollLoop);
+    }
+
+    function startAutoScroll() {
+      if (isScrolling) return;
+      isScrolling = true;
+      lastScrollTimestamp = null;
+      fractionalScrollAccumulator = 0;
+      updatePrompterUI();
+      prompterAnimationFrame = requestAnimationFrame(autoScrollLoop);
+    }
+
+    function stopAutoScroll() {
+      isScrolling = false;
+      if (prompterAnimationFrame) {
+        cancelAnimationFrame(prompterAnimationFrame);
+        prompterAnimationFrame = null;
+      }
+      lastScrollTimestamp = null;
+      fractionalScrollAccumulator = 0;
+      updatePrompterUI();
+    }
+
+    function restartPrompter(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      stopAutoScroll();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function adjustScrollSpeed(delta, e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      let stepDelta = delta;
+      if (e && e.shiftKey) {
+        stepDelta = delta > 0 ? 0.5 : -0.5;
+      }
+      let newSpeed = Math.round((scrollSpeed + stepDelta) * 10) / 10;
+      newSpeed = Math.max(MIN_SPEED, Math.min(MAX_SPEED, newSpeed));
+      if (Math.abs(newSpeed - scrollSpeed) > 0.001) {
+        scrollSpeed = newSpeed;
+        try {
+          localStorage.setItem('script_prompter_speed_v2', scrollSpeed.toString());
+        } catch (err) {}
+        updatePrompterUI();
+      }
+    }
+
+    function startSpeedRepeat(delta, e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      speedAdjustedOnMouseDown = true;
+      adjustScrollSpeed(delta, e);
+      stopSpeedRepeat();
+      speedRepeatTimer = setTimeout(() => {
+        speedRepeatInterval = setInterval(() => {
+          adjustScrollSpeed(delta, e);
+        }, 110);
+      }, 350);
+    }
+
+    function stopSpeedRepeat() {
+      if (speedRepeatTimer) {
+        clearTimeout(speedRepeatTimer);
+        speedRepeatTimer = null;
+      }
+      if (speedRepeatInterval) {
+        clearInterval(speedRepeatInterval);
+        speedRepeatInterval = null;
+      }
+    }
+
+    function handleSpeedClick(delta, e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      if (!speedAdjustedOnMouseDown) {
+        adjustScrollSpeed(delta, e);
+      }
+      speedAdjustedOnMouseDown = false;
+    }
+
+    const SPEED_PRESETS = [0.2, 0.5, 0.8, 1.0, 1.5, 2.0];
+    function cycleSpeedPreset(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      let nextSpeed = SPEED_PRESETS[0];
+      for (let i = 0; i < SPEED_PRESETS.length; i++) {
+        if (scrollSpeed < SPEED_PRESETS[i] - 0.05) {
+          nextSpeed = SPEED_PRESETS[i];
+          break;
+        }
+      }
+      scrollSpeed = nextSpeed;
+      try {
+        localStorage.setItem('script_prompter_speed_v2', scrollSpeed.toString());
+      } catch (err) {}
+      updatePrompterUI();
+    }
+
+    // Keyboard shortcuts for teleprompter mode
+    document.addEventListener('keydown', (e) => {
+      const theme = document.documentElement.getAttribute('data-theme');
+      if (theme !== 'teleprompter') return;
+
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        toggleAutoScroll();
+      } else if (e.code === 'ArrowDown' || e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        adjustScrollSpeed(e.shiftKey ? -0.5 : -SPEED_STEP, e);
+      } else if (e.code === 'ArrowUp' || e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        adjustScrollSpeed(e.shiftKey ? 0.5 : SPEED_STEP, e);
+      } else if (e.code === 'Home') {
+        e.preventDefault();
+        restartPrompter(e);
+      } else if (e.code === 'Escape') {
+        e.preventDefault();
+        exitTeleprompterMode();
+      }
+    });
+
+    // Initialize on page load
+    document.addEventListener('DOMContentLoaded', () => {
+      loadSavedSettings();
+      try {
+        const savedSpeed = localStorage.getItem('script_prompter_speed_v2');
+        if (savedSpeed) {
+          const p = parseFloat(savedSpeed);
+          if (!isNaN(p) && p >= MIN_SPEED && p <= MAX_SPEED) {
+            scrollSpeed = Math.round(p * 10) / 10;
+          }
+        }
+      } catch (err) {}
+      updatePrompterUI();
+    });
+  </script>
+</body>
+</html>

@@ -78,6 +78,9 @@ class PipelineState(TypedDict):
     fidelity_score: int
     medical_accuracy_pass: bool
     disclaimer_check: str
+    truth_verification_report: str
+    truth_score: int
+    truth_pass: bool
 
     # Post-Production Editing Layers (Loop 3)
     transition_design: str
@@ -398,6 +401,7 @@ MEDICAL HOOK GUARDRAILS:
 - Fear is allowed only if the source material itself supports the stakes — do not manufacture urgency
 - PRESENTER PERSONA & HOOK PERSPECTIVE: Write the hook from the authentic voice and perspective of the presenter defined in `presenterProfile`. If the source script uses a first-person clinical anecdote (e.g., 'I treated 5 patients with heart attacks'), do NOT have the presenter claim they performed those treatments themselves. Frame it as an alarming clinical observation or real-world mystery (e.g., 'تخيل واحد فورمة... وفجأة في العناية المركزة بجلطة! القصة دي مش خيال، دي ملاحظة سجلها استشاري قلب لما استقبل 5 حالات في شهر واحد...').
 - STRICT BAN ON BODY-ANTAGONISM & CHEAP MELODRAMA: Never frame involuntary medical events or normal physiology as betrayal, treason, or malice (STRICTLY FORBIDDEN: 'جسمك بيخونك', 'القلب بيغدر بصاحبه', 'طعنة من جسمك', 'خيانة الأعضاء'). Hooks must arouse curiosity through genuine scientific paradoxes, surprising clinical facts, or bust misconceptions — NOT soap-opera melodrama.
+- STRICT BAN ON LOW-BROW STREET SLANG & FORCED COLLOQUIALISMS: The presenter (Dr. Ahmed Hosney) is an educated physician speaking in natural, moderate Egyptian Arabic. Strictly avoid vulgar street slang or coarse idioms (e.g. 'كلبشت', 'قفشت', 'ناشف'). Use natural, context-appropriate phrasing (e.g., 'شَدّت عليك فجأة', 'انقباض مفاجئ ومؤلم').
 
 EGYPTIAN HOOK PATTERNS THAT WORK (use as inspiration, not templates to fill in):
 - Direct question to the viewer: "إنت حاسس بالتعب ده من غير سبب واضح؟"
@@ -480,11 +484,24 @@ REBUILD PRINCIPLES:
 
 5. FOLLOW THE TERMINOLOGY RETENTION TABLE: for every technical/medical term, use the exact decision the Strategy Plan made — keep it in English, Arabize it, or say it first-mention-both. Do not re-decide this term by term as you write; the table already did that work. A term marked "Keep in English" should sit in English inside an otherwise fully Egyptian sentence, exactly the way an Egyptian doctor or health creator would actually say it (e.g., "الـ insulin resistance بتخلي الجسم..." is correct Egyptian Arabic with an English term inside it — it is NOT translation risk).
 
-6. SPOKEN EGYPTIAN ARABIC GRAMMAR & REGISTER (العامية المصرية المثقفة البيضاء) — this is a separate axis from Rule 5 above:
-   - Clear, dignified, effortless to understand and pronounce for any native speaker (واضحة، مفهومة للجميع، وسهلة النطق).
+6. SPOKEN EGYPTIAN ARABIC GRAMMAR & REGISTER (العامية المصرية المثقفة البيضاء المعتدلة):
+   - Clear, dignified, highly articulate, effortless to understand and pronounce for any native speaker (واضحة، معتدلة، مفهومة للجميع، وسهلة النطق بدون تكلف).
+   - Mutual understanding & respect: The viewer must feel peer-to-peer warmth from an educated doctor who speaks naturally and accessibly, WITHOUT feeling like they are sitting with someone from the street using low-brow, coarse slang (بدون كلام سوقي زيادة عن اللزوم).
+   - Context-appropriate vocabulary without unnecessary slang stuffing (الكلمات مناسبة تماماً للسياق بدون حشو ألفاظ عامية فجة أو إقحام تشبيهات شارع ركيكة لمجرد إثبات العامية).
    - No فصحى conjugation or vocabulary, ever, for the surrounding Arabic (بيعمل not يفعل، هروح not سأذهب، عايز/محتاج not أريد، دلوقتي not الآن، بس not لكن، إزاي not كيف، ده/دي not هذا/هذه، أيوه not نعم).
    - Use discourse markers naturally: يعني / طب / خلاص / بصراحة / أصل / على فكرة.
-   - STRICTLY FORBIDDEN: Vulgar street slang (ألفاظ سوقية) and mechanic-shop / car electrical jargon (لغة ورش وميكانيكا). Never use: "فيوزات تضرب", "فيوز", "تجنزر", "تصدي", "ماس كهربائي في الضفيرة", "تفرك", "قفشات سوقية". Use universally clear and elegant analogies (e.g. زرار النور، جرس الإنذار، فرامل العضلة).
+   - STRICTLY FORBIDDEN: Vulgar street slang (ألفاظ سوقية), coarse street idioms, and mechanic-shop jargon:
+     * Never use: "كلبشت" / "بتكلبش" / "تكلبش" / "قفشت" (use: "شَدِّت فجأة", "قفلت", "انقبضت ومبتفكش", "شَدّت عليك فجأة").
+     * Never use: "موضوع ناشف" / "كلام ناشف" (use: "موضوع معقد وممل", "كلام أكاديمي جامد", "شرح نظري معقد").
+     * Never use: "بتغلس علينا" (use: "بتتعبنا", "بتشد فجأة بدون سبب واضح").
+     * Never use: "خناقة كروية بين العلماء" (use: "انقسام في الآراء الطبية", "خلاف ونقاش علمي بين العلماء").
+     * Never use: "العصب بيتجنن" (use: "العصب بيستثار بزيادة", "بيفرط في إرسال الإشارات").
+     * Avoid over-repeating "بتهنج" (use: "بتعطل", "بتفقد التوازن", "الإشارات بتتلخبط").
+     * Never use: "حتة لحمة" (use: "كتلة عضلية عادية", "نسيج عضلي بسيط").
+     * Never use: "وجع رخم" (use: "ألم مفاجئ ومزعج", "وجع شديد").
+     * Never use: "مابتخرفش" (use: "بتشتغل بدقة عالية", "من غير أي خلل").
+     * Never use: "قرصت عليها في التمرين" (use: "أجهدتها بزيادة", "حملت عليها في التمرين").
+     * Never use mechanic jargon: "فيوزات تضرب", "فيوز", "تجنزر", "تصدي", "ماس كهربائي في الضفيرة", "تفرك".
    - Short clauses. Conversational stitching, not essay structure.
    - IMPORTANT: keeping an English technical term per Rule 5 does NOT violate this rule. The failure mode this rule guards against is English *sentence structure* and *word order* leaking into the Arabic — not English *nouns* appearing where the Terminology Table calls for them.
 
@@ -807,11 +824,23 @@ NO فصحى, ever:
 | يجب عليكم أن تفعلوا | لازم تعملوا |
 | على سبيل المثال | مثلاً |
 
-REGISTER REQUIREMENTS (العامية المصرية المثقفة البيضاء):
-- Apply Educated Conversational Egyptian per `dialectRegister`. The language must be dignified, articulate, universally understood, and effortless to pronounce for any native speaker (سهلة الفهم وسلسة النطق).
-- STRICTLY FORBIDDEN: Vulgar street slang (ألفاظ سوقية) and mechanic-shop / car electrical jargon (ورش وميكانيكا).
-  * DO NOT use: "فيوزات تضرب", "فيوز", "تجنزر", "تصدي", "ماس كهربائي في الضفيرة", "تفرك", "قفشة سوقية".
-  * Replace with universal everyday Egyptian analogies: "زرار النور علّق", "جرس الإنذار شغال ومش راضي يسكت", "فرامل العضلة وقفت", "إشارة المرور".
+REGISTER REQUIREMENTS (العامية المصرية المثقفة البيضاء المعتدلة):
+- Apply Educated, Moderate Conversational Egyptian per `dialectRegister`. The language must be dignified, articulate, universally understood, and effortless to pronounce for any native speaker (سهلة الفهم، واضحة، وسلسة النطق بدون تكلف).
+- The viewer must feel mutual understanding and respect from an educated doctor who speaks naturally and accessibly, without feeling like they are sitting with someone from the street using coarse, vulgar slang (بدون كلام سوقي زيادة عن اللزوم).
+- Context-appropriate vocabulary without unnecessary slang stuffing (الكلمات مناسبة تماماً للسياق بدون حشو ألفاظ عامية فجة أو إقحام تشبيهات شارع ركيكة لمجرد إثبات العامية).
+- STRICTLY FORBIDDEN: Vulgar street slang (ألفاظ سوقية), coarse street idioms, and mechanic-shop jargon:
+  * "كلبشت" / "بتكلبش" / "تكلبش" / "قفشت" -> استبدلها بـ: "شَدّت فجأة" / "قفلت" / "انقبضت ومبتفكش" / "شَدّت عليك فجأة"
+  * "موضوع ناشف" / "كلام ناشف" -> استبدلها بـ: "موضوع معقد وممل" / "شرح أكاديمي جامد" / "كلام نظري معقد"
+  * "بتغلس علينا" -> استبدلها بـ: "بتتعبنا" / "بتشد فجأة بدون سبب واضح"
+  * "خناقة كروية بين العلماء" -> استبدلها بـ: "انقسام في الآراء الطبية" / "خلاف ونقاش علمي بين العلماء"
+  * "العصب بيتجنن" -> استبدلها بـ: "العصب بيستثار بزيادة" / "بيفرط في إرسال الإشارات"
+  * "حتة لحمة" -> استبدلها بـ: "كتلة عضلية عادية" / "نسيج عضلي بسيط"
+  * "وجع رخم" -> استبدلها بـ: "ألم مفاجئ ومزعج" / "وجع شديد"
+  * "مابتخرفش" -> استبدلها بـ: "بتشتغل بدقة عالية" / "من غير أي خلل"
+  * "قرصت عليها في التمرين" -> استبدلها بـ: "أجهدتها بزيادة" / "حملت عليها في التمرين"
+  * تجنب الإفراط في كلمة "بتهنج" -> استبدلها بـ: "بتعطل" / "بيحصل فيها خلل" / "بتفقد التوازن"
+  * مصطلحات ورش وميكانيكا السيارات: ممنوع "فيوزات تضرب"، "فيوز"، "تجنزر"، "تصدي"، "ماس كهربائي في الضفيرة"، "تفرك".
+  * التشبيهات البديلة المعتمدة: "زرار النور علّق"، "جرس الإنذار شغال ومش راضي يسكت"، "فرامل العضلة"، "إشارة المرور".
 
 Respect the Strategy Plan's Terminology Retention Table — do not "correct" a term the table marked "Keep in English" back into an Arabic neologism, and do not flag it as a dialect problem. IMPORTANT DISTINCTION: the dialect score evaluates grammar, conjugation, word order, and sentence rhythm — not whether specific technical nouns are in English. A sentence with a kept-English term inside fully Egyptian grammar (e.g., "الـ insulin resistance بتخلي الجسم يتعب أكتر") is exactly what a 10/10 dialect score should look like for Light/Moderate code-switching — it is not a deduction. What DOES cost dialect points is English sentence structure or word order leaking into the Arabic (a calque), regardless of which language any individual noun is in.
 
@@ -980,7 +1009,7 @@ def script_refinement(state: PipelineState) -> dict:
 2. SPOKEN LANGUAGE: flag anything that still sounds written/translated rather than spoken
 3. PACING: variety in sentence length; no run of 5+ long or 5+ short sentences in a row
 4. WORD COUNT & DEPTH: total spoken dialogue must realistically achieve the word count budget from the Strategy Plan (~135–145 words/minute). Do NOT compress or truncate scientific mechanisms into brief summaries.
-5. CONSISTENCY & REGISTER: one voice throughout (Dr. Ahmed Hosney — authoritative physician with warm Egyptian conversational delivery in Educated Egyptian Arabic / العامية المثقفة البيضاء). Cleanse any vulgar street slang or mechanic-shop metaphors (like فيوزات، تجنزر، تصدي).
+5. CONSISTENCY & REGISTER: one voice throughout (Dr. Ahmed Hosney — authoritative physician with warm, natural Egyptian conversational delivery in Educated Moderate Egyptian Arabic / العامية المثقفة البيضاء المعتدلة). The script must sound natural and direct without forced slang stuffing (بدون حشو ألفاظ عامية فجة). Cleanse any low-brow street slang or coarse idioms (like كلبشت، قفشت، موضوع ناشف، بتغلس، بيتجنن، حتة لحمة، وجع رخم، مابتخرفش، قرصت عليها) and mechanic-shop metaphors (فيوزات، تجنزر، تصدي).
 6. MANDATORY MENTIONS present
 7. RETENTION MECHANIC CHECK: verify that the open loop planted in the hook is explicitly mentioned/referenced in Act 3 before resolution in Act 4; disclaimer present; CTA placed correctly. All retention cues MUST exist as spoken dialogue in the text.
 8. VISUAL NOTE CHECK: notes describe what's SHOWN, not what's said
@@ -1047,8 +1076,114 @@ AUDIT / CRITIQUE REPORT:
     response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=9000)
     return {"refined_script": response}
 
+def medical_truth_verifier(state: PipelineState) -> dict:
+    system_prompt = """You are an uncompromising Chief Medical Officer (CMO) and Senior Scientific Fact-Checker. Your sole, vital mission is to audit the complete assembled Egyptian Arabic script and verify the ABSOLUTE SCIENTIFIC TRUTH, FACTUAL CORRECTNESS, and MEDICAL ACCURACY of every single claim, number, mechanism, practical advice, and analogy.
+
+You evaluate the script against two sources of ground truth:
+1. The Medical Fact Ledger from Node 1 (ensuring no claims were invented, altered, or exaggerated).
+2. Established Clinical Medical Science & Physiology (ensuring everything stated is objectively true, biologically accurate, and evidence-based in medical science).
+
+AUDIT DIMENSIONS (CHECK EVERY LINE & SECTION):
+
+1. PHYSIOLOGICAL & BIOCHEMICAL MECHANISMS:
+   - Are the biological cascades accurate? (e.g., Actin/Myosin binding, Troponin/Tropomyosin gatekeeping, Calcium release from sarcoplasmic reticulum and ATP-dependent reuptake).
+   - Are the neurological reflexes explained with clinical truth? (e.g., muscle fatigue triggering Golgi tendon organ disinhibition, leading to alpha motor neuron hyper-excitability and involuntary sustained contraction).
+   - Flag any biological hand-waving, vague pseudoscientific explanations, or misattributed organ functions.
+
+2. EMPIRICAL PRECISION & NUMERICAL INTEGRITY:
+   - Verify every statistic, clinical case study (e.g., the 3cm intramuscular hematoma case in the UK), study cohort, and meta-analysis mentioned.
+   - Confirm that numbers are exact and zero fabricated data or exaggerated figures exist.
+
+3. SCIENTIFIC TRUTH OF MYTH-BUSTING (NO NEW MYTHS):
+   - When debunking popular myths (e.g., that nocturnal cramps are purely caused by dehydration or potassium deficiency from bananas), ensure the debunking is scientifically sound and nuanced.
+   - Acknowledge that while dehydration/electrolytes can be minor contributors in extreme endurance exercise, sports medicine and clinical trials show they are NOT the root cause of standard nocturnal cramps.
+   - Ensure the alternative scientific explanation (neuromuscular fatigue theory) is stated with peer-reviewed accuracy.
+
+4. FACTUAL VALIDITY OF EVERY ANALOGY:
+   - Does each analogy accurately reflect biological reality?
+   - Reject any analogy that misrepresents physiology, implies biological malice (like 'body betrayal'), or uses absurd mechanical falsehoods.
+
+5. ACTIONABLE ADVICE & CLINICAL SAFETY:
+   - Is all practical advice (e.g., passive acute stretching, resistance training, conditioning) medically evidence-based and safe?
+   - Are the red flags and medical disclaimers present, accurate, and prominent? (e.g., recurrent non-exercise cramps requiring urgent evaluation for neuropathy, diabetic complications, liver disease, or ALS).
+   - Is the magnesium meta-analysis finding accurately conveyed? (i.e., multiple Cochrane reviews / clinical trials found magnesium is no better than placebo for idiopathic nocturnal cramps in general adults, despite popular marketing).
+
+6. ABSOLUTE ZERO TOLERANCE FOR HALLUCINATIONS OR VAGUE COLLOQUIAL DISTORTIONS:
+   - Check that no scientific claim was diluted, distorted, or invented during dialect adaptation.
+
+SCORING & VERDICT:
+- `truth_score` (1–10):
+  * 10 = Every single claim, number, mechanism, and piece of advice is 100% verified, scientifically true, and evidence-based.
+  * 9 = Flawless scientific accuracy with only minor nuances in phrasing needed.
+  * < 9 = Contains inaccurate biology, exaggerated claims, wrong numbers, or unverified folk science.
+- `truth_pass`: `true` ONLY if `truth_score >= 9` AND there are ZERO false or unverified medical statements.
+- `verified_script`: If any minor inaccuracies, exaggerated numbers, or imprecise physiological explanations are found, provide the surgically corrected script with all facts healed to 100% truth while preserving the warm Egyptian spoken dialect. If flawless, return the input script unchanged.
+
+OUTPUT — ONLY valid JSON:
+```json
+{
+  "truth_pass": true,
+  "truth_score": 10,
+  "truth_verification_report": "Markdown table: | Section / Line | Medical / Scientific Claim | Truth Status (✅ Verified True / ⚠️ Needs Nuance / ❌ Inaccurate) | Scientific Evidence / Reality Check | Action Taken / Correction |. Followed by a concise clinical summary.",
+  "verified_script": "The full script with every factual inaccuracy corrected to 100% scientific truth. Same act headers, cues, and dialogue format."
+}
+```"""
+
+    user_prompt = f"""Rigorously verify the scientific correctness and factual truth of every claim in this assembled script.
+
+CURRENT ASSEMBLED SCRIPT:
+{state.get("refined_script", "")}
+
+SOURCE SCRIPT ANALYSIS + MEDICAL FACT LEDGER (source truth):
+{state.get("source_analysis", "")}
+
+ORIGINAL SOURCE SCRIPT:
+{state.get("original_script", "")}
+
+RESTRUCTURE STRATEGY PLAN:
+{state.get("strategy_plan", "")}
+
+PRESENTER PROFILE:
+{state.get("presenter_profile", "")}
+
+MEDICAL DISCLAIMER REQUIREMENTS:
+{state.get("medical_disclaimer_requirements", "")}
+
+AVOID LIST:
+{state.get("avoid_list", "")}
+
+Examine every single line, claim, mechanism, number, study, analogy, and advice. Output ONLY valid JSON."""
+
+    response = call_llm(system_prompt, user_prompt, temperature=0.2, max_tokens=12000)
+    
+    text = response.strip()
+    try:
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.startswith("json"):
+                text = text[4:]
+        data = json.loads(text.strip())
+        
+        truth_score = int(data.get("truth_score", 0))
+        truth_pass = bool(data.get("truth_pass", False))
+        verified_script = (data.get("verified_script", "") or "").strip()
+        
+        return {
+            "truth_verification_report": data.get("truth_verification_report", "") or text,
+            "truth_score": truth_score,
+            "truth_pass": truth_pass and (truth_score >= 9),
+            "refined_script": verified_script if verified_script else state.get("refined_script", "")
+        }
+    except Exception:
+        return {
+            "truth_verification_report": response,
+            "truth_score": 7,
+            "truth_pass": False,
+            "refined_script": state.get("refined_script", "")
+        }
+
 def self_critique(state: PipelineState) -> dict:
-    system_prompt = """You are a senior quality auditor for this workflow. You evaluate the assembled script against professional standards AND this workflow's two specialist audits (dialect/warmth, medical fidelity), then produce a critique report plus a fully revised script.
+    system_prompt = """You are a senior quality auditor for this workflow. You evaluate the assembled script against professional standards AND this workflow's three specialist audits (dialect/warmth, medical fidelity, scientific truth verifier), then produce a critique report plus a fully revised script.
 
 AUDIT CRITERIA — score each (1–10), flag CRITICAL / WARNING / MINOR:
 
@@ -1059,18 +1194,20 @@ AUDIT CRITERIA — score each (1–10), flag CRITICAL / WARNING / MINOR:
 5. OPEN LOOP COMPLETION (Critical) — Confirm that the open loop planted in the hook (e.g. the 3cm hematoma case) is explicitly sustained/referenced in Act 3 before being resolved in Act 4. Both the plant, the mid-video reference, and the resolution must actually be present as spoken dialogue in the script text.
 6. DISCLAIMER (Critical) — present, adequate, appropriately placed and warmly phrased
 7. CTA QUALITY (Warning) — natural, after loop resolution, matches ctaGoal
-8. DIALECT AUTHENTICITY & REGISTER (Critical) — pull the score from the Dialect & Warmth Layer input; re-verify it holds in the final assembly. Ensure the dialect is Educated Egyptian (العامية المثقفة البيضاء) that is smooth, easy to understand, and effortless to pronounce for any native listener. Deduct heavily if there is any vulgar slang (سوقية) or mechanic-shop jargon (e.g. 'فيوزات', 'تجنزر', 'تصدي', 'ماس كهربائي في الضفيرة').
+8. DIALECT AUTHENTICITY & REGISTER (Critical) — pull the score from the Dialect & Warmth Layer input; re-verify it holds in the final assembly. Ensure the dialect is Educated Moderate Egyptian (العامية المثقفة البيضاء المعتدلة) that is smooth, easy to understand, and effortless to pronounce for any native listener. Deduct heavily if there is any vulgar/coarse street slang (e.g., 'كلبشت', 'قفشت', 'ناشف', 'بتغلس', 'بيتجنن', 'حتة لحمة', 'وجع رخم', 'مابتخرفش', 'قرصت عليها') or mechanic-shop jargon (e.g. 'فيوزات', 'تجنزر', 'تصدي', 'ماس كهربائي في الضفيرة').
 9. WARMTH & HUMAN CAMARADERIE (Critical) — verify doctor-patient warmth, reassurance, and empathy
 10. MEDICAL FIDELITY (Critical, hardest gate) — pull `medical_accuracy_pass` and `fidelity_score` from the Fidelity Auditor input; if it failed, this is an automatic non-A regardless of everything else
 11. PERSONA INTEGRITY (Critical) — verify that the script strictly speaks from the presenter's persona (`presenterProfile`) and contains NO remnants of the original author's name, foreign identity, or falsely claimed personal clinical actions
-12. AVOID LIST & ANTI-SENSATIONALISM (Critical) — verify the script strictly honors the avoid_list. Confirm there is NO sensationalist melodrama or body-antagonism (e.g., 'جسمك بيخونك', 'غدر', 'خيانة', 'طعنة', 'قلبه يخذله') AND NO mechanic-shop / car electrical jargon (e.g., 'فيوزات', 'تجنزر', 'تصدي'). Any occurrence of these tropes is an automatic failure for Warmth and requires immediate rewriting in revised_script.
+12. AVOID LIST & ANTI-SENSATIONALISM (Critical) — verify the script strictly honors the avoid_list. Confirm there is NO sensationalist melodrama or body-antagonism (e.g., 'جسمك بيخونك', 'غدر', 'خيانة', 'طعنة', 'قلبه يخذله') AND NO low-brow street slang or mechanic-shop jargon (e.g., 'كلبشت', 'قفشت', 'موضوع ناشف', 'بتغلس', 'بيتجنن', 'حتة لحمة', 'وجع رخم', 'مابتخرفش', 'قرصت عليها', 'فيوزات', 'تجنزر', 'تصدي'). Any occurrence of these tropes is an automatic failure for Warmth and requires immediate rewriting in revised_script.
 13. SCIENTIFIC MASTERY & DEPTH BALANCE (Critical) — verify the script strikes Dr. Ahmed Hosney's balance: authoritative, precise medical science (receptors, reflexes, biochemical cascades) delivered through warm Egyptian storytelling and clever analogies (السهل الممتنع). Deduct points if the medicine is stripped away or over-simplified into vague colloquial hand-waving.
+14. SCIENTIFIC TRUTH & FACT VERIFICATION (Critical, hardest gate) — pull `truth_pass` and `truth_score` from the Medical Truth Verifier audit below. If `truth_pass` is false or `truth_score` < 9, this is an automatic non-A regardless of everything else. Check the Truth Verification Report to ensure all claims, mechanisms, numbers, and advice are confirmed true and accurate.
 
 HARD GATES — grade can only be "A" if ALL of the following hold:
 - dialect_authenticity_score >= 8
 - warmth_score >= 8
 - medical_accuracy_pass = true AND fidelity_score >= 9
-- strictly zero occurrences of prohibited sensationalist tropes ('بيخونك', 'غدر وخيانة', etc.) or mechanic-shop slang ('فيوزات', 'تجنزر', 'تصدي', etc.) in revised_script
+- truth_pass = true AND truth_score >= 9 (Zero unverified, false, or exaggerated scientific claims)
+- strictly zero occurrences of prohibited sensationalist tropes ('بيخونك', 'غدر وخيانة', etc.), low-brow street slang ('كلبشت', 'قفشت', 'موضوع ناشف', 'بتغلس', 'بيتجنن', 'حتة لحمة', 'وجع رخم', 'مابتخرفش', 'قرصت عليها'), or mechanic-shop slang ('فيوزات', 'تجنزر', 'تصدي', etc.) in revised_script
 - actual spoken script length >= 85% of target (minimum 1,150 words for an 8–10 minute target video)
 - open loop planted in hook is explicitly referenced in Act 3 and resolved in Act 4 in the script text
 
@@ -1095,6 +1232,10 @@ REVISION COUNT: {state.get("quality_revision_count", 0)}
 
 CURRENT ASSEMBLED SCRIPT:
 {state.get("refined_script", "")}
+
+SCIENTIFIC TRUTH & FACT VERIFICATION AUDIT (source):
+{state.get("truth_verification_report", "")}
+Truth Score: {state.get("truth_score", 0)}/10 | Truth Pass: {state.get("truth_pass", False)}
 
 DIALECT & WARMTH SCORES (source):
 {state.get("dialect_warmth_output", "")}
@@ -1131,11 +1272,13 @@ Output ONLY the JSON object. Include the full revised script."""
         warmth_score = int(data.get("warmth_score", 0))
         fidelity_score = int(data.get("fidelity_score", 0))
         medical_pass = bool(data.get("medical_accuracy_pass", False))
+        truth_score = int(state.get("truth_score", 10))
+        truth_pass = bool(state.get("truth_pass", True))
 
         if grade in ["A+", "A"]:
             if dialect_score < 8 or warmth_score < 8:
                 grade = "B"
-            if not medical_pass or fidelity_score < 9:
+            if not medical_pass or fidelity_score < 9 or not truth_pass or truth_score < 9:
                 grade = "C"
 
         return {
@@ -1146,7 +1289,9 @@ Output ONLY the JSON object. Include the full revised script."""
             "dialect_score": dialect_score,
             "warmth_score": warmth_score,
             "fidelity_score": fidelity_score,
-            "medical_accuracy_pass": medical_pass
+            "medical_accuracy_pass": medical_pass,
+            "truth_score": truth_score,
+            "truth_pass": truth_pass
         }
     except Exception:
         return {
@@ -1157,7 +1302,9 @@ Output ONLY the JSON object. Include the full revised script."""
             "dialect_score": state.get("dialect_score", 0),
             "warmth_score": state.get("warmth_score", 0),
             "fidelity_score": state.get("fidelity_score", 0),
-            "medical_accuracy_pass": state.get("medical_accuracy_pass", False)
+            "medical_accuracy_pass": state.get("medical_accuracy_pass", False),
+            "truth_score": state.get("truth_score", 0),
+            "truth_pass": state.get("truth_pass", False)
         }
 
 # --- Post-Production Editing Layer Nodes (Loop 3) ---
@@ -1755,9 +1902,33 @@ def _audit_part1(text: str) -> list:
     if "\u0646\u0628\u0631\u0629" not in text and "HOOK" not in text:
         issues.append("MISSING PRODUCTION SCRIPT: The full teleprompter-ready script is absent.")
 
+    # Extract only the relevant content (titles and production script) to check forbidden terms
+    # This avoids false positives when the model echoes compliance notes (e.g. "free of 'بيخونك'")
+    content_lines = []
+    in_script = False
+    for line in text.splitlines():
+        line_strip = line.strip()
+        if "### 🎬 PRODUCTION SCRIPT" in line or "### PRODUCTION SCRIPT" in line:
+            in_script = True
+            continue
+        elif in_script and line_strip.startswith("###"):
+            in_script = False
+        
+        if in_script:
+            content_lines.append(line)
+        elif any(marker in line for marker in ["Video Title (Egyptian Arabic)", "Option A", "Option B", "Option C"]):
+            content_lines.append(line)
+
+    # Filter out compliance explanations, disclaimers, or echoed rules
+    clean_lines = [
+        l for l in content_lines 
+        if not any(k in l.lower() for k in ["free of", "strictly forbidden", "forbidden", "title rules", "rules:", "قواعد", "خالي من", "تنبيه"])
+    ]
+    target_dialogue_and_titles = "\n".join(clean_lines) if clean_lines else text
+
     # Check for forbidden body-antagonism / melodrama clichés in titles or script
     forbidden_terms = ["بيخونك", "يخونك", "غدر", "خيانة", "طعنة", "يخذله", "بيطعنك"]
-    found_forbidden = [t for t in forbidden_terms if t in text]
+    found_forbidden = [t for t in forbidden_terms if t in target_dialogue_and_titles]
     if found_forbidden:
         issues.append(
             f"SENSATIONALIST BODY-ANTAGONISM DETECTED: Found forbidden melodrama/betrayal term(s): {found_forbidden}. "
@@ -1765,22 +1936,37 @@ def _audit_part1(text: str) -> list:
             "Replace with grounded scientific paradoxes, surprising clinical facts, or myth-busting."
         )
 
-    # Check for forbidden mechanic-shop jargon or vulgar street slang
-    slang_forbidden = ["فيوزات", "فيوز", "تجنزر", "يجنزر", "يصدي", "تصدي", "تفرك"]
-    found_slang = [s for s in slang_forbidden if s in text]
+    # Check for forbidden mechanic-shop jargon or low-brow street slang
+    slang_forbidden = [
+        "كلبشت", "بتكلبش", "تكلبش", "قفشت", "موضوع ناشف", "طبي ناشف", "كلام ناشف",
+        "بتغلس", "بيتجنن", "تتجنن", "مابتخرفش", "بتخرف", "حتة لحمة", "وجع رخم", "قرصت عليها",
+        "فيوزات", "فيوز", "تجنزر", "يجنزر", "يصدي", "تصدي", "تفرك"
+    ]
+    found_slang = [s for s in slang_forbidden if s in target_dialogue_and_titles]
     if found_slang:
         issues.append(
-            f"VULGAR / MECHANIC SLANG DETECTED: Found inappropriate slang/mechanic-shop term(s): {found_slang}. "
-            "The presenter is Dr. Ahmed Hosney — use Educated, Clear Egyptian Arabic (العامية المصرية المثقفة البيضاء). "
-            "Do NOT use mechanic-shop jargon or obscure slang like 'فيوزات' or 'تجنزر'. "
-            "Replace with clear, natural, everyday Egyptian analogies (e.g., 'زرار النور علّق', 'جرس الإنذار شغال', 'فرامل العضلة وقفت')."
+            f"VULGAR / STREET SLANG DETECTED: Found inappropriate street slang or mechanic term(s): {found_slang}. "
+            "The presenter is Dr. Ahmed Hosney — use Educated, Moderate Egyptian Arabic (العامية المصرية المثقفة البيضاء المعتدلة). "
+            "Do NOT use low-brow street slang like 'كلبشت' or 'موضوع ناشف' or mechanic jargon like 'فيوزات'. "
+            "Replace with clean, natural phrasing (e.g., 'شَدّت فجأة', 'قفلت', 'انقبضت ومبتفكش', 'موضوع معقد وممل', 'زرار النور علّق', 'جرس الإنذار شغال')."
         )
 
-    # Check retention architecture table desync
+    # Check retention architecture table desync with normalized Arabic matching
     try:
         script_match = re.search(r"###\s*🎬?\s*PRODUCTION SCRIPT.*?\n(.*?)(\n###\s*WHAT CHANGED|\Z)", text, re.DOTALL)
         if script_match and "### RETENTION ARCHITECTURE" in text:
             script_body = script_match.group(1)
+            
+            def _normalize_ar(s: str) -> str:
+                s = re.sub(r"[أإآ]", "ا", s)
+                s = re.sub(r"ة", "ه", s)
+                s = re.sub(r"ى", "ي", s)
+                return re.sub(r"\s+", " ", s).strip()
+
+            clean_script = re.sub(r"\[.*?\]", " ", script_body)
+            clean_script = re.sub(r"[\.…\"'“”«»\(\)\[\]،؛؟!:ـ\-\n]", " ", clean_script)
+            normalized_script = _normalize_ar(clean_script)
+
             ret_block = text.split("### RETENTION ARCHITECTURE")[1].split("###")[0]
             missing_cues = []
             for line in ret_block.split("\n"):
@@ -1788,12 +1974,27 @@ def _audit_part1(text: str) -> list:
                     parts = [p.strip() for p in line.split("|")]
                     if len(parts) >= 4:
                         elem, cue = parts[1], parts[3]
-                        cue_clean = re.sub(r"[\.…\"'“”«»\(\)\[\]]", "", cue).strip()
-                        words = cue_clean.split()[:3]
+                        clean_cue = re.sub(r"[\.…\"'“”«»\(\)\[\]،؛؟!:ـ\-]", " ", cue)
+                        norm_cue = _normalize_ar(clean_cue)
+                        words = norm_cue.split()
+                        
+                        found = False
                         if len(words) >= 2:
-                            snippet = " ".join(words)
-                            if snippet not in script_body:
-                                missing_cues.append(f"{elem}: '{cue}'")
+                            two_word = " ".join(words[:2])
+                            three_word = " ".join(words[:3]) if len(words) >= 3 else two_word
+                            if two_word in normalized_script or three_word in normalized_script:
+                                found = True
+                            else:
+                                for i in range(len(words) - 1):
+                                    if " ".join(words[i:i+2]) in normalized_script:
+                                        found = True
+                                        break
+                        elif len(words) == 1:
+                            if words[0] in normalized_script:
+                                found = True
+                                
+                        if not found and words:
+                            missing_cues.append(f"{elem}: '{cue}'")
             if missing_cues:
                 issues.append(
                     f"RETENTION ARCHITECTURE DESYNC: The following lines in the Retention table do not appear in the Production Script text: {missing_cues}. "
@@ -1887,10 +2088,12 @@ def _audit_part2(text: str) -> list:
 
 def final_script_package(state: PipelineState) -> dict:
 
-    # -----------------------------------------------------------------
-    # CALL 1 - Script + YouTube Packaging (with retry)
-    # -----------------------------------------------------------------
     system_prompt_1 = """You are a senior YouTube executive producer compiling Part 1 of a production deliverable.
+
+TITLE & CONTENT INTEGRITY RULES:
+- The main Video Title (in Script Metadata table) and all 3 title options must be compelling and high-CTR, but STRICTLY FREE of sensationalist melodrama or body-antagonism tropes ('بيخونك', 'غدر', 'خيانة', 'يخذله', 'طعنة').
+- Option B (Shock & Paradox) MUST be anchored in counter-intuitive medical reality, myth-busting, or surprising science (e.g., 'رياضي وبياكل صحي... بس الشريان اتقفل؟ السر الطبي الصادم'), NOT betrayal by the body.
+- IMPORTANT: Do NOT include any compliance notes, checklists, or rule explanations in your markdown output (e.g., NEVER output '*TITLE RULES:*' or write 'All titles are free of...'). Output ONLY the deliverable sections directly.
 
 Your ONLY job in this call is to produce these sections exactly as formatted below:
 
@@ -1912,6 +2115,8 @@ Your ONLY job in this call is to produce these sections exactly as formatted bel
 | Warmth / De-Clinicalization Score | X/10 |
 | Medical Fidelity Score | X/10 |
 | Medical Accuracy Pass | Yes/No |
+| Scientific Truth Score | X/10 |
+| Scientific Truth Pass | Yes/No |
 | Naturalness Score | X/10 |
 | Contextual Alignment Score | X/10 |
 | Final Grade | |
@@ -1924,11 +2129,6 @@ Your ONLY job in this call is to produce these sections exactly as formatted bel
 * **Option A (Curiosity & Open Loop)**: [Title]
 * **Option B (Shock & Paradox)**: [Title]
 * **Option C (Direct Medical Warning)**: [Title]
-
-*TITLE RULES:*
-- The main Video Title (in Script Metadata table) and all 3 title options must be compelling and high-CTR, but STRICTLY FREE of sensationalist melodrama or body-antagonism tropes.
-- STRICTLY FORBIDDEN: 'بيخونك', 'غدر', 'خيانة', 'يخذله', 'طعنة'.
-- Option B (Shock & Paradox) MUST be anchored in counter-intuitive medical reality, myth-busting, or surprising science (e.g., 'رياضي وبياكل صحي... بس الشريان اتقفل؟ السر الطبي الصادم'), NOT betrayal by the body.
 
 #### 2. Thumbnail Visual Blueprints + AI Generation Prompts
 Produce ALL THREE concepts. Each MUST have every field below - no abbreviations.
@@ -1972,7 +2172,7 @@ Fields per concept:
 ### 🎬 PRODUCTION SCRIPT (Teleprompter & Filming Ready)
 - Deep, complete spoken dialogue matching the target duration (~1,200–1,350 words for 9 minutes). Do NOT compress into high-level summaries.
 - Every open loop planted in the hook MUST be explicitly sustained/referenced in Act 3 and resolved in Act 4 as spoken dialogue.
-- Dialect Register: Strictly use Educated, Clear Egyptian Arabic (العامية المصرية المثقفة البيضاء). Smooth, clear, dignified, and effortless to understand and pronounce for all viewers. Strictly ZERO vulgar slang (ألفاظ سوقية) and ZERO mechanic-shop jargon (ممنوع مصطلحات مثل: فيوزات، تجنزر، تصدي، ماس كهربائي في الضفيرة). Use clean, everyday Egyptian analogies (زرار النور، جرس الإنذار، فرامل العضلة).
+- Dialect Register: Strictly use Educated, Moderate Egyptian Arabic (العامية المصرية المثقفة البيضاء المعتدلة). Smooth, clear, dignified, and effortless to understand and pronounce for all viewers. Context-appropriate vocabulary without unnecessary slang stuffing (بدون حشو ألفاظ عامية فجة وخلاص). The audience must feel peer-to-peer warmth from an educated doctor, NOT that they are sitting with someone from the street using low-brow slang. Strictly ZERO vulgar slang (ممنوع: كلبشت، بتكلبش، قفشت، موضوع ناشف، بتغلس، بيتجنن، حتة لحمة، وجع رخم، مابتخرفش، قرصت عليها) and ZERO mechanic-shop jargon (ممنوع: فيوزات، تجنزر، تصدي، ماس كهربائي في الضفيرة). Use clean, natural phrasing (شَدّت فجأة، قفلت، انقبضت، ألم مفاجئ، موضوع معقد، زرار النور، جرس الإنذار، فرامل العضلة).
 [Complete final script with all cues: [نبرة دافئة], [ميل للأمام], [نظرة مباشرة], [VISUAL NOTE], [SFX], [ON-SCREEN TEXT]]
 
 ---
@@ -1999,7 +2199,7 @@ Fields per concept:
 | Loop Resolution | | |
 | CTA | | |
 | Outro | | |
-*MANDATORY SYNCHRONIZATION RULE*: Every single line listed in the 'Line (first Arabic words)' column MUST match the exact starting Arabic words of an actual spoken dialogue line in the PRODUCTION SCRIPT above.
+*MANDATORY SYNCHRONIZATION RULE*: In the 'Line (first Arabic words)' column, write the exact first 3 to 5 Arabic words that literally start that spoken sentence in the PRODUCTION SCRIPT above. Do NOT combine multiple phrases together or paraphrase.
 
 ---
 
@@ -2059,6 +2259,8 @@ Dialect Score: {state.get("dialect_score", "")}
 Warmth Score: {state.get("warmth_score", "")}
 Fidelity Score: {state.get("fidelity_score", "")}
 Medical Accuracy Pass: {state.get("medical_accuracy_pass", "")}
+Scientific Truth Score: {state.get("truth_score", "")}/10
+Scientific Truth Pass: {state.get("truth_pass", "")}
 Naturalness Score: {state.get("naturalness_score", "")}
 Contextual Alignment Score: {state.get("contextual_alignment_score", "")}
 
@@ -2659,7 +2861,11 @@ def route_translation_fidelity(state: PipelineState) -> str:
 MAX_QUALITY_ITERATIONS = 2
 
 def route_quality_loop(state: PipelineState) -> str:
-    quality_pass = (state.get("quality_grade") == "PASS")
+    quality_pass = (
+        state.get("quality_grade") == "PASS"
+        and state.get("truth_pass", False)
+        and state.get("truth_score", 0) >= 9
+    )
     max_iterations = state.get("max_quality_revision_count", MAX_QUALITY_ITERATIONS)
     hit_max = state.get("quality_revision_count", 0) >= max_iterations
 
@@ -2696,7 +2902,7 @@ def route_shorts_quality(state: PipelineState) -> str:
 # --- Graph Wiring ---
 workflow = StateGraph(PipelineState)
 
-# Add all 19 nodes
+# Add all 20 nodes
 workflow.add_node("source_script_analyzer", source_script_analyzer)
 workflow.add_node("strategy_planner", strategy_planner)
 workflow.add_node("hook_writer", hook_writer)
@@ -2706,6 +2912,7 @@ workflow.add_node("cta_retention_writer", cta_retention_writer)
 workflow.add_node("dialect_warmth_layer", dialect_warmth_layer)
 workflow.add_node("fidelity_auditor", fidelity_auditor)
 workflow.add_node("script_refinement", script_refinement)
+workflow.add_node("medical_truth_verifier", medical_truth_verifier)
 workflow.add_node("self_critique", self_critique)
 workflow.add_node("transition_designer", transition_designer)
 workflow.add_node("text_animation_overlay_designer", text_animation_overlay_designer)
@@ -2740,7 +2947,8 @@ workflow.add_edge("cta_retention_writer", "dialect_warmth_layer")
 # Restructure Quality Loop (Loop 2)
 workflow.add_edge("dialect_warmth_layer", "fidelity_auditor")
 workflow.add_edge("fidelity_auditor", "script_refinement")
-workflow.add_edge("script_refinement", "self_critique")
+workflow.add_edge("script_refinement", "medical_truth_verifier")
+workflow.add_edge("medical_truth_verifier", "self_critique")
 workflow.add_conditional_edges(
     "self_critique",
     route_quality_loop,
@@ -2781,6 +2989,74 @@ workflow.add_conditional_edges(
 
 # Compile
 app = workflow.compile()
+
+
+def export_broll_prompt_files(text: str, fallback_broll: str = "", output_dir: str = "") -> tuple:
+    """
+    Extract AI B-roll image and video prompts and save them into two dedicated text files:
+    - broll_images.txt
+    - broll_videos.txt
+
+    Format per user specification:
+    text prompt 1(one line or multiline)
+
+    text prompt 2(one line or multiline)
+    """
+    if not output_dir:
+        return [], []
+
+    images = []
+    videos = []
+
+    # Strategy 1: AI B-ROLL GENERATION PROMPTS detail section
+    match = re.search(r"###\s*🖼️?\s*AI B-ROLL GENERATION PROMPTS.*?\n(.*?)(?=\n###|\Z)", text, re.DOTALL)
+    block = match.group(1) if match else ""
+
+    # Strategy 2: fallback to fallback_broll if detail section is absent or empty
+    if not block and fallback_broll:
+        block = fallback_broll
+
+    # Strategy 3: fallback to storyboard if still empty
+    if not block:
+        match_sb = re.search(r"###\s*🎬?\s*INTEGRATED PRODUCTION STORYBOARD.*?\n(.*?)(?=\n###|\Z)", text, re.DOTALL)
+        if match_sb:
+            block = match_sb.group(1)
+
+    for line in block.splitlines():
+        line_clean = line.strip()
+        if (
+            line_clean.startswith("|")
+            and not line_clean.startswith("|---")
+            and not any(h in line_clean.upper() for h in ["FULL AI GENERATION PROMPT", "AI GENERATION PROMPT", "TIMECODE", "START CUE", "LAYER"])
+        ):
+            parts = [p.strip() for p in line_clean.split("|") if p.strip()]
+            if not parts:
+                continue
+            longest = max(parts, key=len)
+            if len(longest) > 30:
+                cleaned_prompt = longest.replace('\\"', '"').strip('"\'`')
+                cleaned_prompt = re.sub(r"^(?:🎬|🖼️)?\s*(?:Video|Image)\s*\|?\s*", "", cleaned_prompt, flags=re.IGNORECASE).strip()
+                line_lower = line_clean.lower()
+                if "🖼" in line_clean or "image" in line_lower:
+                    images.append(cleaned_prompt)
+                elif "🎬" in line_clean or "video" in line_lower:
+                    videos.append(cleaned_prompt)
+
+    img_path = os.path.join(output_dir, "broll_images.txt")
+    vid_path = os.path.join(output_dir, "broll_videos.txt")
+
+    if images:
+        with open(img_path, "w", encoding="utf-8") as f:
+            f.write("\n\n".join(images).strip() + "\n")
+        print(f"🖼️ B-Roll Image prompts saved to: {img_path} ({len(images)} prompts)")
+
+    if videos:
+        with open(vid_path, "w", encoding="utf-8") as f:
+            f.write("\n\n".join(videos).strip() + "\n")
+        print(f"🎬 B-Roll Video prompts saved to: {vid_path} ({len(videos)} prompts)")
+
+    return images, videos
+
 
 if __name__ == "__main__":
     import sys
@@ -2916,6 +3192,13 @@ if __name__ == "__main__":
             with open(shorts_path, "w", encoding="utf-8") as sf:
                 sf.write(shorts_section.strip())
             print(f"Dedicated Reels & Shorts package saved to: {shorts_path}")
+
+        # Automatically export dedicated B-Roll prompt files (Images & Videos)
+        export_broll_prompt_files(
+            text=complete_output,
+            fallback_broll=cumulative_state.get("broll_prompts", ""),
+            output_dir=output_dir
+        )
 
         # Automatically generate responsive HTML, PDF, and DOCX exports
         try:

@@ -19,7 +19,7 @@
 | **Terminology** | Forced Arabic neologisms or unnatural translations | Deliberate **Terminology Retention** (e.g. keeping *insulin resistance*, *MRI*, *TRT* in English per creator register) |
 | **Tone** | Textbook, academic, dry lecture | Warm, familial, de-clinicalized explanation to a worried friend |
 | **Medical Safety** | Hallucinations or softened/strengthened claims | Strict fact-fidelity gate checked against an immutable atomic ledger |
-| **Quality Control** | Single-pass generation | **Dual-Loop Gating**: Inner Translation Fidelity Loop + Outer Dialect/Warmth/Medical Quality Loop |
+| **Quality Control** | Single-pass generation | **Triple-Loop Gating**: Inner Translation Fidelity Loop + Outer Dialect/Warmth/Medical Truth Loop + Production Quality Loop |
 
 ### Structural Calque vs. Vocabulary Code-Switching
 1. **Structural Calque (Strictly Penalized)**: Copying English sentence structure, word order, passive constructions ("يتم القيام بـ"), or essay-like connectors.
@@ -29,7 +29,7 @@
 
 ## 1. 🗺️ Triple-Loop Pipeline Architecture
 
-The workflow is architected as a 19-node StateGraph with four targeted iterative refinement loops:
+The workflow is architected as a 20-node StateGraph with four targeted iterative refinement loops:
 
 ```mermaid
 flowchart TD
@@ -45,34 +45,35 @@ flowchart TD
     
     N5 -- "Naturalness >= 8 & Context >= 8\n(or Max Iterations)" --> N6[6. cta_retention_writer]
     
-    subgraph LOOP2 ["Loop 2: Restructure Quality & Dialect/Warmth Gate"]
+    subgraph LOOP2 ["Loop 2: Restructure Quality, Dialect & Medical Truth Gate"]
         N6 --> N7[7. dialect_warmth_layer]
         N7 --> N8[8. fidelity_auditor]
         N8 --> N9[9. script_refinement]
-        N9 --> N10[10. self_critique]
-        N10 -- "Grade != PASS\n(Dialect/Warmth/Fidelity)" --> N6
+        N9 --> N10[10. medical_truth_verifier]
+        N10 --> N11[11. self_critique]
+        N11 -- "Grade != PASS or Truth != PASS" --> N6
     end
     
-    N10 -- "Grade == PASS\n(or Max Iterations)" --> N11[11. transition_designer]
-    N11 --> N12[12. text_animation_overlay_designer]
-    N12 --> N13[13. broll_prompt_generator]
+    N11 -- "Grade == PASS & Truth == PASS\n(or Max Iterations)" --> N12[12. transition_designer]
+    N12 --> N13[13. text_animation_overlay_designer]
+    N13 --> N14[14. broll_prompt_generator]
 
     subgraph LOOP3 ["Loop 3: Production Quality & Visual Integration Gate"]
-        N13 --> N14[14. production_quality_critique]
-        N14 -- "Grade != PASS\n(Integration/Density/Timing)" --> N11
+        N14 --> N15[15. production_quality_critique]
+        N15 -- "Grade != PASS\n(Integration/Density/Timing)" --> N12
     end
 
-    N14 -- "Grade == PASS\n(or Max Iterations)" --> N15[15. final_script_package]
-    N15 --> N16[16. shorts_moment_identifier]
-    N16 --> N17[17. shorts_script_extractor]
+    N15 -- "Grade == PASS\n(or Max Iterations)" --> N16[16. final_script_package]
+    N16 --> N17[17. shorts_moment_identifier]
+    N17 --> N18[18. shorts_script_extractor]
 
     subgraph LOOP4 ["Loop 4: Shorts Quality Gate"]
-        N17 --> N18[18. shorts_caption_packager]
-        N18 --> N19[19. shorts_quality_gate]
-        N19 -- "Grade != PASS\n(Impact/Curiosity/Captions)" --> N17
+        N18 --> N19[19. shorts_caption_packager]
+        N19 --> N20[20. shorts_quality_gate]
+        N20 -- "Grade != PASS\n(Impact/Curiosity/Captions)" --> N18
     end
 
-    N19 -- "Grade == PASS\n(or Max Iterations)" --> END([End Node])
+    N20 -- "Grade == PASS\n(or Max Iterations)" --> END([End Node])
 ```
 
 ### Why Four Separate Loops?
@@ -621,7 +622,11 @@ NO فصحى, ever:
 | يجب عليكم أن تفعلوا | لازم تعملوا |
 | على سبيل المثال | مثلاً |
 
-Apply the register specified: Cairene media-standard / Educated professional / Warm & familial / Street & youth slang, per dialectRegister.
+REGISTER REQUIREMENTS (العامية المصرية المثقفة البيضاء المعتدلة):
+- Apply Educated, Moderate Conversational Egyptian per `dialectRegister`. The language must be dignified, articulate, universally understood, and effortless to pronounce for any native speaker (سهلة الفهم، واضحة، وسلسة النطق بدون تكلف).
+- The viewer must feel mutual understanding and respect from an educated doctor who speaks naturally, without feeling like they are sitting with someone from the street using coarse, vulgar slang (بدون كلام سوقي زيادة عن اللزوم).
+- Context-appropriate vocabulary without unnecessary slang stuffing (الكلمات مناسبة تماماً للسياق بدون حشو ألفاظ عامية فجة أو إقحام تشبيهات شارع ركيكة لمجرد إثبات العامية).
+- STRICTLY FORBIDDEN: Vulgar street slang (ألفاظ سوقية), coarse street idioms (مثل: كلبشت، قفشت، موضوع ناشف، بتغلس، بيتجنن، حتة لحمة، وجع رخم، مابتخرفش، قرصت عليها), and mechanic-shop jargon (فيوزات، تجنزر، تصدي).
 
 Respect the Strategy Plan's Terminology Retention Table — do not "correct" a term the table marked "Keep in English" back into an Arabic neologism, and do not flag it as a dialect problem. IMPORTANT DISTINCTION: the dialect score evaluates grammar, conjugation, word order, and sentence rhythm — not whether specific technical nouns are in English. A sentence with a kept-English term inside fully Egyptian grammar (e.g., "الـ insulin resistance بتخلي الجسم يتعب أكتر") is exactly what a 10/10 dialect score should look like for Light/Moderate code-switching — it is not a deduction. What DOES cost dialect points is English sentence structure or word order leaking into the Arabic (a calque), regardless of which language any individual noun is in.
 
@@ -761,14 +766,25 @@ POLISH SUMMARY:
 
 ---
 
-### Node 10: `self_critique` (Loop 2 Sub-Node 5)
-* **Purpose**: Senior quality auditor evaluating across 10 professional criteria. Parses scores, applies hard gates, overrides grades, and maps to `"PASS"` for graph routing.
-* **Model Configuration**: Temperature `0.6`
-* **Inputs**: `quality_revision_count`, `refined_script`, `dialect_warmth_output`, `fidelity_audit_output`, `strategy_plan`, `source_analysis`
-* **Outputs**: `quality_grade`, `self_critique_output`, `refined_script`, `quality_revision_count`, `dialect_score`, `warmth_score`, `fidelity_score`, `medical_accuracy_pass`
+### Node 10: `medical_truth_verifier` (Loop 2 Sub-Node 5)
+* **Purpose**: Uncompromising Chief Medical Officer (CMO) and scientific fact-checker. Audits the complete assembled script against both the locked Fact Ledger and established physiological/clinical science. Validates mechanisms, numbers, myth-busting truth, and safe practical advice.
+* **Model Configuration**: Temperature `0.2`, Max Tokens `12000`
+* **Inputs**: `refined_script`, `source_analysis`, `original_script`, `strategy_plan`, `presenter_profile`, `medical_disclaimer_requirements`, `avoid_list`
+* **Outputs**: `truth_verification_report`, `truth_score`, `truth_pass`, `refined_script` (surgically healed if minor errors are detected)
 
 #### Hard Gate Rules
-$$\text{Grade} = \text{"PASS"} \iff \begin{cases} \text{dialect\_score} \ge 8 \\ \text{warmth\_score} \ge 8 \\ \text{medical\_accuracy\_pass} = \text{true} \land \text{fidelity\_score} \ge 9 \end{cases}$$
+$$\text{Truth Pass} = \text{true} \iff \text{truth\_score} \ge 9 \land \text{zero false or unverified claims}$$
+
+---
+
+### Node 11: `self_critique` (Loop 2 Sub-Node 6)
+* **Purpose**: Senior quality auditor evaluating across 14 professional criteria (including dialect, warmth, fidelity, and scientific truth). Parses scores, applies hard gates, overrides grades, and maps to `"PASS"` for graph routing.
+* **Model Configuration**: Temperature `0.6`
+* **Inputs**: `quality_revision_count`, `refined_script`, `truth_verification_report`, `truth_score`, `truth_pass`, `dialect_warmth_output`, `fidelity_audit_output`, `strategy_plan`, `source_analysis`
+* **Outputs**: `quality_grade`, `self_critique_output`, `refined_script`, `quality_revision_count`, `dialect_score`, `warmth_score`, `fidelity_score`, `medical_accuracy_pass`, `truth_score`, `truth_pass`
+
+#### Hard Gate Rules
+$$\text{Grade} = \text{"PASS"} \iff \begin{cases} \text{dialect\_score} \ge 8 \\ \text{warmth\_score} \ge 8 \\ \text{medical\_accuracy\_pass} = \text{true} \land \text{fidelity\_score} \ge 9 \\ \text{truth\_pass} = \text{true} \land \text{truth\_score} \ge 9 \end{cases}$$
 
 #### System Prompt
 ```text
@@ -1580,7 +1596,14 @@ python3 main.py "/path/to/your/English_Script.txt"
 ### Output File Structure
 ```
 output/
-└── 20260901_164939/
+└── <session_id>/
     ├── session_log.jsonl     # Complete node-by-node execution telemetry and intermediate JSON states
-    └── final_script.md       # Production-ready deliverable with script, shot list, QA scores, and logs
+    ├── checkpoint.json       # Resumable pipeline state checkpoint
+    ├── final_script.md       # Production-ready deliverable with script, storyboard, and QA
+    ├── final_script.html     # Responsive multi-device viewer & teleprompter mode
+    ├── final_script.pdf      # High-fidelity PDF export via headless Chromium
+    ├── final_script.docx     # RTL-formatted Microsoft Word deliverable
+    ├── shorts_package.md     # Dedicated Reels & YouTube Shorts scripts and overlays
+    ├── broll_images.txt      # Copy-paste AI Image generation prompts (separated by empty line)
+    └── broll_videos.txt      # Copy-paste AI Video generation prompts (separated by empty line)
 ```
