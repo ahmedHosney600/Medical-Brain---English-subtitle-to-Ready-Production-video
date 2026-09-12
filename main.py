@@ -328,6 +328,10 @@ OUTPUT FORMAT:
 **Title Angles**: [Curiosity / Paradox / Warning]
 **Thumbnail Directions**: [3 visual concepts with 3-4 word text overlays]
 **Pacing & Pattern Interrupt Plan**: [Every 30–45s visual/audio shift schedule]
+**YouTube Chapters Plan**: Each chapter timestamp MUST align with a real content start cue / main point from the script (will be used for YouTube segments). Plan chapter names and approximate timestamps that correspond to the actual narrative beats and section transitions:
+| Chapter # | Approx. Timestamp | Chapter Name (Arabic) | Main Cue / Point from Script |
+|---|---|---|---|
+| 1 | 0:00 | [chapter name] | [the start cue or main point this chapter marks] |
 
 ### Disclaimer Plan
 **Placement**: [where in the script]
@@ -509,7 +513,16 @@ REBUILD PRINCIPLES:
    Every scene/section must contain rich multimedia markers:
    - `[VISUAL NOTE: ...]` Describe exact on-screen visual, camera angle (Close-up, Medium shot), B-roll footage, or custom animation/diagram.
    - `[SFX: ...]` Sound design cue (e.g. `[SFX: Heartbeat accelerates]`, `[SFX: Deep cinematic Whoosh]`, `[SFX: Pop sound for text]`, `[SFX: Glitch effect]`).
-   - `[ON-SCREEN TEXT: ...]` Kinetic typography and bold on-screen callouts for statistics, key terms, or warnings (e.g. `[ON-SCREEN TEXT: STEMI = انسداد كامل للشريان]`).
+
+   TEXT OVERLAY MARKERS — use these 5 specific types (the text animation designer and editor depend on them):
+   - `[TOP-RIGHT POPUP: English Term → Arabic translation or clarification]` — appears as a small designed popup in the top-right corner. Use for EVERY English technical/medical term the first time it appears in each section, showing the English word with its Arabic translation or brief clarification. Also use for notes or clarifications. Example: `[TOP-RIGHT POPUP: Cramp → شد عضلي / تقلص لا إرادي]`, `[TOP-RIGHT POPUP: ATP → أدينوسين ثلاثي الفوسفات (وقود الخلية)]`.
+   - `[TEXT OVERLAY TITLE: Arabic headline text]` — full-width title in center of screen with a dark semi-transparent overlay behind it over the video. Use for important section headlines and chapter transitions. Must be in Arabic. Example: `[TEXT OVERLAY TITLE: غرفة المحركات: إزاي العضلة بتنقبض؟]`.
+   - `[WARNING BOX: Arabic warning text]` — designed warning/alert box with ⚠️ icon, appears at center-bottom of screen. Use for medical disclaimers, red-flag symptoms, and safety warnings. Example: `[WARNING BOX: ⚠️ لو الشد العضلي بيتكرر بشكل غير طبيعي — لازم تزور دكتور متخصص]`.
+   - `[QUOTE BOX: Arabic quote text]` — designed elegant quote callout box at center-bottom. Use sparingly for the most impactful, memorable sentences — the lines a viewer would screenshot. Example: `[QUOTE BOX: "جسمك محتاج طاقة عشان يرتاح... بنفس القدر اللي محتاجه عشان يتحرك"]`.
+   - `[KINETIC TEXT: text]` — animated kinetic typography for key terms, statistics, equations, and emphasis phrases. Example: `[KINETIC TEXT: Risk Factors ≠ Direct Cause]`, `[KINETIC TEXT: ATP = كارت الشحن]`.
+
+   MANDATORY: Go through the Terminology Retention Table and ensure EVERY English term that appears in each section gets a `[TOP-RIGHT POPUP]` marker the FIRST time it appears in that section. This is how the viewer learns what each English term means.
+
    Respect `brollAvailability` — ground analogies in real Egyptian scenes (gyms, pharmacies, ahwa, local traffic) and practical diagrams.
 
 8. RICH PERFORMANCE & VOCAL CUES (FOR THE PRESENTER):
@@ -1434,23 +1447,51 @@ def text_animation_overlay_designer(state: PipelineState) -> dict:
 
 YOUR ROLE: The script is locked. The transition map is locked. You add the text overlay and animation layer — the elements that appear ON TOP of the video (talking head or B-roll) to anchor key information, reinforce medical terms, visualize statistics, and guide the viewer's comprehension.
 
-ELEMENT TYPES YOU DESIGN:
+THE 5 PRIMARY OVERLAY TYPES — every text element you design MUST be classified as one of these:
 
-1. **Kinetic Typography**: Key medical terms, Arabic text reveals, and emphasized phrases that animate on-screen to reinforce the spoken word. Describe the text, font weight/style, animation type (pop, typewriter, slide-in, scale-up), and color.
+1. **TOP-RIGHT POPUP** (English Term Translation / Clarification / Notes):
+   - A compact, designed popup box in the TOP-RIGHT corner of the screen.
+   - Purpose: Show English technical/medical terms alongside their Arabic translation, or provide brief clarifications and notes.
+   - Visual treatment: Rounded rect with semi-transparent dark background, white text, accent-colored English term, smaller Arabic translation/note below.
+   - MANDATORY RULE: Every English technical term that appears in the script MUST get a TOP-RIGHT POPUP the first time it appears in each section. Pull terms from the Terminology Retention Table in the Strategy Plan. This is how the audience learns what each English term means.
+   - Example: English term "Cramp" → popup shows: "Cramp" (bold, accent color) / "شد عضلي / تقلص لا إرادي" (Arabic explanation).
+   - Example: English term "ATP" → popup shows: "ATP" / "أدينوسين ثلاثي الفوسفات (وقود الخلية)".
 
-2. **Popup Callout Boxes**: Larger information panels that highlight a statistic, a medical term definition, a key medical value range, or a key takeaway. Describe content, visual treatment (background shape, opacity, border), screen position, and entry/exit animations.
+2. **TEXT OVERLAY TITLE** (Section Headlines / Chapter Markers):
+   - Full-width title in CENTER of screen with a dark semi-transparent overlay behind it covering the video.
+   - Purpose: Mark important sections, chapters, and narrative transitions. Must be in Arabic.
+   - Visual treatment: Large bold Arabic text, centered, with dark overlay (70-80% opacity) spanning the full width behind the text. Clean, cinematic feel.
+   - Use at the start of each major script section/chapter.
+   - Example: "غرفة المحركات: إزاي العضلة بتنقبض؟"
 
-3. **Lower-Thirds**: Section labels, topic markers, speaker credentials, chapter identifiers that appear in the lower portion of the frame. Describe text content (in Egyptian Arabic), background shape, position.
+3. **WARNING / ALERT BOX** (Medical Warnings / Disclaimers / Red Flags):
+   - Designed warning box at CENTER-BOTTOM of screen with ⚠️ icon.
+   - Purpose: Medical disclaimers, red-flag symptom alerts, safety warnings, contraindications.
+   - Visual treatment: Rounded rect with amber/red accent border, ⚠️ icon on the left, Arabic warning text. Semi-transparent dark background.
+   - Example: "⚠️ لو الشد العضلي بيتكرر بشكل غير طبيعي — لازم تزور دكتور متخصص"
 
-4. **Text Overlays**: Key takeaway phrases, medical warnings, or reinforcement text that appears alongside the presenter to visually echo what's being said. Describe text, size, position, timing.
+4. **QUOTE BOX** (Impactful Sentences / Key Takeaways):
+   - Designed elegant quote callout box at CENTER-BOTTOM of screen.
+   - Purpose: Highlight the most memorable, screenshot-worthy sentences — the lines that capture the video's key insight.
+   - Visual treatment: Rounded rect with quotation mark accent (「」or "), subtle accent-colored left border, Arabic quote text in slightly larger font. Elegant, not loud.
+   - Use SPARINGLY — maximum 2-3 per video. Only for genuinely impactful lines.
+   - Example: "جسمك محتاج طاقة عشان يرتاح... بنفس القدر اللي محتاجه عشان يتحرك"
 
-5. **Animated List Reveals**: Step-by-step medical processes, symptom lists, or treatment options that appear one item at a time in sync with the narration. Describe each item, its entry animation, and the sequence timing.
+5. **KINETIC TEXT** (Animated Terms / Stats / Equations / Emphasis):
+   - Animated kinetic typography that appears on-screen to reinforce spoken words.
+   - Purpose: Visually anchor key statistics, medical equations, term definitions, and emphasis phrases.
+   - Visual treatment: Bold text with dynamic entry animation (pop, typewriter, scale-up), accent color for key terms, complementary color for supporting text.
+   - Example: "Risk Factors ≠ Direct Cause", "ATP = كارت الشحن", "3 سنتيمتر نزيف داخلي"
 
-6. **Highlight/Underline Animations**: Key phrases or terms that get highlighted, underlined, or circled for emphasis — either on existing on-screen text or as standalone emphasis markers. Describe style, color, animation.
+ADDITIONAL ELEMENT TYPES (use alongside the 5 primary types):
 
-7. **Arrows & Connectors**: Directional elements showing cause→effect relationships, medical process flows, or pointing to a specific visual. Describe style, direction, animation path.
+6. **Lower-Thirds**: Speaker credentials, section labels. Bottom-left or bottom-right.
 
-8. **Progress Indicators**: Section markers, chapter indicators, or "X of Y" counters. Describe style, position, update frequency.
+7. **Animated List Reveals**: Step-by-step processes appearing one item at a time.
+
+8. **Arrows & Connectors**: Cause→effect flow indicators.
+
+9. **Progress Indicators**: Section markers, chapter counters.
 
 9. **Drawing Animations (CONDITIONAL — only when needed)**: Whiteboard-style sketch reveals, progressive diagram builds, sketch overlay annotations, animated handwriting. Use these ONLY when the medical mechanism being explained is genuinely difficult to follow verbally — when "making the invisible visible" meaningfully aids comprehension. NOT every script needs drawing animations.
 
@@ -1515,9 +1556,10 @@ OUTPUT FORMAT:
 **Animation family**: [the "feel" — e.g., "smooth and minimal with ease-out-quad entries and fade exits"]
 
 ### Text Element Table
-| # | Timestamp | Element Type | Visual Description | Content (text) | Screen Position | Entry Animation | Hold (s) | Exit Animation | Linked to Transition # | Purpose |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | 0:15 | Lower-third | Rounded rect, #1A1A2E fill, 80% opacity, white text | "د. أحمد حسني" | Bottom-left, 8% margin | slide-in-left, 400ms, ease-out-cubic, out | 4s | fade-out, 300ms, ease-in-sine, in | After T#3 | Presenter intro |
+| # | Timestamp | Element Type | Content (text) | ▶️ START CUE (Arabic) | ⏹️ END CUE (Arabic) | Screen Position | Entry Animation | Hold (s) | Exit Animation | Linked to Transition # | Purpose |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 0:48 | Lower-third | "د. أحمد حسني" | أهلاً بيكم، أنا دكتور | أنا دكتور أحمد حسني | Bottom-left, 8% margin | slide-in-left, 400ms, ease-out-cubic | 4s | fade-out, 300ms | After T#3 | Presenter intro |
+| 2 | 0:55 | TOP-RIGHT POPUP | "Cramp → شد عضلي / تقلص لا إرادي" | الشد العضلي أو الـ Cramp | مَسِلِمش منه | Top-right, 5% margin | slide-in-right, 300ms, ease-out-cubic | 3s | fade-out, 200ms | — | English term translation |
 
 ### Drawing Animations (if applicable)
 [For each drawing animation, provide the full detailed spec as described above. If no drawing animations are needed for this script, state: "No drawing animations needed — the medical concepts in this script are adequately served by text overlays and B-roll."]
@@ -1547,7 +1589,7 @@ RESTRUCTURE STRATEGY PLAN (terminology retention, act breakdown):
 B-ROLL AVAILABILITY: {state.get("broll_availability", "")}
 TARGET PLATFORM: {state.get("target_platform", "")}
 
-Read the script and transition map together. For every key term, statistic, concept label, section header, and visual anchor point — design the text element and its animation. For complex medical mechanisms that are hard to follow verbally, consider whether a drawing animation would genuinely help comprehension."""
+Read the script and transition map together. Classify every element as one of the 5 primary types: TOP-RIGHT POPUP, TEXT OVERLAY TITLE, WARNING/ALERT BOX, QUOTE BOX, or KINETIC TEXT. For every English technical term in the script, generate a TOP-RIGHT POPUP with its Arabic translation. For every section/chapter transition, generate a TEXT OVERLAY TITLE. For medical disclaimers and warnings, use WARNING/ALERT BOX. For the most impactful sentences, use QUOTE BOX. For statistics and key terms, use KINETIC TEXT. Include START CUE and END CUE (exact first/last Arabic words from the script that trigger each element). For complex medical mechanisms that are hard to follow verbally, consider whether a drawing animation would genuinely help comprehension."""
 
     # Only include revision mode block when we're actually revising
     if state.get("production_revision_count", 0) > 0:
@@ -1648,8 +1690,8 @@ OUTPUT FORMAT:
 **Anti-AI baseline**: [Standard suffix appended to all prompts for photorealism]
 
 ### B-Roll Prompt Table
-| # | Timestamp | Script Context (what's being said) | Type | AI Generation Prompt | Composition Notes | Linked to Transition # | Linked to Icon # | Duration (s) |
-|---|---|---|---|---|---|---|---|---|
+| # | Timestamp | Script Context (what's being said) | Type | Main Cue (most important visual element that MUST be present) | AI Generation Prompt | Composition Notes | Linked to Transition # | Linked to Overlay # | Duration (s) |
+|---|---|---|---|---|---|---|---|---|---|
 | 1 | 0:08 | Hook — dramatic medical scenario | 🎬 Video | "Cinematic close-up of a young athletic man's chest with ECG electrode patches attached, hospital emergency room setting, cool-tinted overhead fluorescent lighting, shallow depth of field at f/2.0, heart monitor in soft-focus background, slight camera dolly forward, tense atmosphere. Shot on 50mm cinema lens, natural film grain, realistic skin texture and electrode adhesive detail. Avoid: plastic skin, AI artifacts, hyper-symmetry, unnatural lighting." | Focal point center-left (callout box upper-right at this timestamp) | After T#2 (zoom-in) | Before I#1 | 4s |
 
 ### B-Roll Density Summary
@@ -2157,7 +2199,7 @@ Fields per concept:
 - \u0627\u0644\u0643\u0644\u0627\u0645 \u0641\u064a \u0647\u0630\u0627 \u0627\u0644\u0641\u064a\u062f\u064a\u0648 \u0644\u0623\u063a\u0631\u0627\u0636 \u0627\u0644\u062a\u0648\u0639\u064a\u0629 \u0648\u0627\u0644\u062a\u062b\u0642\u064a\u0641 \u0627\u0644\u0637\u0628\u064a \u0627\u0644\u0639\u0627\u0645 \u0648\u0644\u0627 \u064a\u063a\u0646\u064a \u0639\u0646 \u0627\u0633\u062a\u0634\u0627\u0631\u0629 \u0637\u0628\u064a\u0628\u0643 \u0627\u0644\u0645\u062e\u062a\u0635.
 
 \u23f1\ufe0f \u0627\u0644\u0641\u0635\u0648\u0644 (Chapters):
-[Complete chapter list with accurate timecodes]
+[Complete chapter list with accurate timecodes. CRITICAL: Each chapter MUST align with the START CUE / main point of a real content section in the production script. Chapters mark narrative beats, not arbitrary time intervals. Use the YouTube Chapters Plan from the Strategy Plan as the reference.]
 
 [Arabic hashtags]
 ```
@@ -2300,7 +2342,7 @@ Your ONLY job is to produce the following sections:
 ### \U0001f3ac INTEGRATED PRODUCTION STORYBOARD
 Frame-accurate guide for the video editor. Every row = ONE atomic event. Simultaneous events get their OWN rows sharing the same timecode and cues.
 
-Layer types: TRANSITION | ZOOM/REFRAME | B-ROLL | TEXT OVERLAY | KINETIC TEXT | DRAWING ANIM | SFX
+Layer types: TRANSITION | ZOOM/REFRAME | B-ROLL | TOP-RIGHT POPUP | TEXT OVERLAY TITLE | WARNING/ALERT BOX | QUOTE BOX | KINETIC TEXT | LOWER-THIRD | DRAWING ANIM | SFX
 
 | # | Act | \u23f1\ufe0f Timecode | \u25b6\ufe0f START CUE (exact first Arabic words from script) | \u23f9\ufe0f END CUE (exact last Arabic words) | Layer | Detail |
 |---|---|---|---|---|---|---|
@@ -2309,8 +2351,12 @@ MANDATORY DETAIL FORMAT (no abbreviations):
 - TRANSITION: `[Type] | Dir: [direction or None] | Easing: [e.g. ease-in-expo] | Dur: [Xms]`
 - ZOOM/REFRAME: `Scale [X%->Y%] | Anchor: [center/face/object] | Easing: [e.g. ease-out-back] | Dur: [Xms]`
 - B-ROLL: `[\U0001f3ac Video / \U0001f5bc\ufe0f Image] | [FULL AI GENERATION PROMPT - subject, setting, lighting, lens, composition, color grade, negative prompts. NEVER write shortcut cross-references. Write the complete prompt here - at least 3 sentences.] | Dur: [Xs]`
-- TEXT OVERLAY: `[Element name] | Entry: [anim, Xms, easing] | Hold: [Xs] | Exit: [anim, Xms] | Pos: [position]`
+- TOP-RIGHT POPUP: `"[English Term → Arabic translation]" | Entry: [anim, Xms, easing] | Hold: [Xs] | Exit: [anim, Xms] | Pos: Top-right`
+- TEXT OVERLAY TITLE: `"[Arabic headline]" | Entry: [anim, Xms, easing] | Hold: [Xs] | Exit: [anim, Xms] | Pos: Center-frame (dark overlay)`
+- WARNING/ALERT BOX: `"⚠️ [Arabic warning text]" | Entry: [anim, Xms, easing] | Hold: [Xs] | Exit: [anim, Xms] | Pos: Center-bottom`
+- QUOTE BOX: `"[Arabic quote text]" | Entry: [anim, Xms, easing] | Hold: [Xs] | Exit: [anim, Xms] | Pos: Center-bottom`
 - KINETIC TEXT: `"[Arabic text]" | Entry: [anim, Xms, easing] | Hold: [Xs] | Exit: [anim, Xms] | Pos: [position]`
+- LOWER-THIRD: `"[text]" | Entry: [anim, Xms, easing] | Hold: [Xs] | Exit: [anim, Xms] | Pos: Bottom-left/right`
 - SFX: `[Sound name] | Trigger: [on cut/on word/on motion] | Vol: [low/med/punch]`
 
 COVERAGE: Full video 0:00 to outro. 25-40 rows minimum. EVERY event from Transition Map, Text Animation & Overlay Guide, and B-Roll Prompts MUST appear.
@@ -2323,12 +2369,14 @@ Reproduce the full Transition Map. Include: philosophy statement + complete tabl
 ---
 
 ### \U0001f3a8 TEXT ANIMATION & OVERLAY GUIDE (Detail Reference)
-Reproduce the full Text Animation & Overlay Guide. Include: visual design system + complete element table (kinetic text, callout boxes, text overlays, drawing animations) + density map per act.
+Reproduce the full Text Animation & Overlay Guide. Include: visual design system + complete element table with columns: #, Timestamp, Element Type (one of: TOP-RIGHT POPUP / TEXT OVERLAY TITLE / WARNING/ALERT BOX / QUOTE BOX / KINETIC TEXT / Lower-third), Content (text), ▶️ START CUE (Arabic), ⏹️ END CUE (Arabic), Screen Position, Entry Animation, Hold, Exit Animation, SB#. Include drawing animations specs + density map per act.
+
+MANDATORY: Every English technical term in the script MUST have a TOP-RIGHT POPUP entry with its Arabic translation. Every section headline should have a TEXT OVERLAY TITLE. Medical disclaimers use WARNING/ALERT BOX. Very impactful sentences use QUOTE BOX (max 2-3 per video). Stats and key terms use KINETIC TEXT.
 
 ---
 
 ### \U0001f5bc\ufe0f AI B-ROLL GENERATION PROMPTS (Detail Reference)
-Reproduce the full B-Roll prompt table. Include: generation settings + complete table with FULL AI prompts + density summary.
+Reproduce the full B-Roll prompt table. Include: generation settings + complete table with columns: #, Timestamp, Type, Main Cue (the single most important visual element that MUST be present), FULL AI Generation Prompt, SB# + density summary.
 
 ZERO TOLERANCE: The "FULL AI Prompt" column MUST have the complete prompt for EVERY row. NEVER write "[Full Prompt in SB]", "[See SB#X]", "[Same as above]", "..." or any cross-reference. This table must work standalone without reading the storyboard.
 
