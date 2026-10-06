@@ -10,7 +10,9 @@ OpenCode Go. API keys are saved in llm_keys.env (kept out of git); model
 choices are saved in llm_variables.json.
 """
 
+import importlib.util
 import os
+import subprocess
 import sys
 
 import llm_providers as lp
@@ -30,6 +32,34 @@ def ask(prompt: str, default: str = "") -> str:
     except EOFError:
         answer = ""
     return answer or default
+
+
+# import name -> pip package
+REQUIRED = {"openai": "openai", "anthropic": "anthropic", "dotenv": "python-dotenv",
+            "langgraph": "langgraph", "langchain_openai": "langchain-openai", "langchain_core": "langchain-core"}
+
+
+def missing_packages() -> list:
+    return [pkg for mod, pkg in REQUIRED.items() if importlib.util.find_spec(mod) is None]
+
+
+def check_packages():
+    """Tells you which Python packages are missing and offers to install them."""
+    missing = missing_packages()
+    if not missing:
+        return
+    cmd = [sys.executable, "-m", "pip", "install", *missing]
+    print("\nMissing Python packages: " + ", ".join(missing))
+    print("  Install with:  " + " ".join(["python3", "-m", "pip", "install", *missing]))
+    print("  (Homebrew Python may need: python3 -m pip install --user --break-system-packages " + " ".join(missing) + ")")
+    if ask("Install now? [Y/n] ", "y").lower() != "y":
+        return
+    if subprocess.run(cmd).returncode != 0:
+        print("  Retrying with --user --break-system-packages (Homebrew Python)...")
+        subprocess.run(cmd[:4] + ["--user", "--break-system-packages"] + missing)
+    importlib.invalidate_caches()
+    still = missing_packages()
+    print("  ✅ Installed." if not still else f"  ❌ Still missing: {', '.join(still)}")
 
 
 def save_key(env_name: str, value: str):
@@ -124,9 +154,26 @@ def label(spec: str, config: dict) -> str:
     cfg = config["providers"].get(provider, {})
     if cfg.get("type") == "opencode_go":
         endpoint = lp.opencode_endpoint(model, cfg)
+        if endpoint == "messages" and importlib.util.find_spec("anthropic") is None:
+            return f"{spec} (messages: needs the anthropic package)"
         if endpoint != "chat":
             return f"{spec} ({endpoint})"
     return spec
+
+
+def warn_same_model(config: dict):
+    """Hybrid only helps if the judges aren't the writer grading itself."""
+    main = config["main_model"]
+    judges = set(config["hybrid_routes"].values())
+    if judges == {main}:
+        print(f"\n⚠️  Every Hybrid judge is the main model ({main}): the writer would grade its own work,")
+        print("   which is why scores were always 10/10 before. Pick judges from another family,")
+        print("   e.g. writer opencode:qwen3.8-max with judges on deepseek:deepseek-v4-pro or opencode:kimi-k3.")
+    elif main in judges:
+        same = [n for n, m in config["hybrid_routes"].items() if m == main]
+        print(f"\nNote: {', '.join(same)} use the main model, so those steps grade their own writing.")
+    if config.get("backup_model") and config["backup_model"] == main:
+        print(f"Note: the backup model is the same as the main model, so it adds nothing. Pick another or 0 for none.")
 
 
 def print_models(specs: list, config: dict):
@@ -162,10 +209,13 @@ def choose_and_test(config: dict, specs: list):
     for role in ("main_model", "single_model"):
         config[role] = pick(ROLE_HELP[role], config[role], specs)
     config["backup_model"] = pick(ROLE_HELP["backup_model"], config.get("backup_model", ""), specs, allow_none=True)
+    if config["backup_model"] == config["main_model"]:
+        print("   (Same as the main model, so it can't help when the main model fails. Consider another provider.)")
     print("\nHYBRID judges (option 3 in main.py): each of these steps runs on its own model:")
     for node, spec in list(config["hybrid_routes"].items()):
         config["hybrid_routes"][node] = pick(f" • {node}", spec, specs)
 
+    warn_same_model(config)
     while True:
         chosen = sorted({config["main_model"], config["single_model"], *config["hybrid_routes"].values(),
                          *([config["backup_model"]] if config.get("backup_model") else [])})
@@ -192,6 +242,7 @@ def choose_and_test(config: dict, specs: list):
 
 
 def main():
+    check_packages()
     config = lp.load_llm_config()
     status = show_status(config)
     if "--check" in sys.argv:

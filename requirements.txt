@@ -1,0 +1,8 @@
+# Install with: python3 -m pip install -r requirements.txt
+# (Homebrew Python may need: python3 -m pip install --user --break-system-packages -r requirements.txt)
+langgraph
+langchain-openai
+langchain-core
+openai
+anthropic        # Claude by API key, and OpenCode Go's Qwen / MiniMax models
+python-dotenv

@@ -1,5 +1,15 @@
 # Medical-Brain---English-subtitle-to-Ready-Production-video
 
+## Install
+
+```bash
+python3 -m pip install -r requirements.txt
+# Homebrew Python may refuse ("externally-managed-environment"); then:
+python3 -m pip install --user --break-system-packages -r requirements.txt
+```
+`setup_models.py` also checks this and offers to install anything missing.
+`anthropic` is needed for Claude by API key and for OpenCode Go's Qwen and MiniMax models.
+
 ## Choosing the models
 
 ### 1. Set up once (and whenever you change models): `python3 setup_models.py`
