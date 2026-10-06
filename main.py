@@ -2,8 +2,7 @@ import os
 import re
 from typing import TypedDict, Optional
 from langgraph.graph import StateGraph, START, END
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
+from llm_providers import LLMRouter, load_llm_config
 import json
 import urllib.request
 import urllib.parse
@@ -12,19 +11,10 @@ from dotenv import load_dotenv
 # Load environment variables (e.g. OPENAI_API_KEY)
 load_dotenv()
 
-# Load LLM settings from json
-try:
-    with open("llm_variables.json", "r") as f:
-        llm_config = json.load(f)
-except Exception:
-    llm_config = {}
-
-# Initialize LLM
-llm = ChatOpenAI(
-    model=llm_config.get("model", "gpt-4o"),
-    api_key=llm_config.get("api_key") or os.environ.get("OPENAI_API_KEY"),
-    base_url=llm_config.get("base_url")
-)
+# LLM settings: Gemini Canvas proxy or Claude Opus 5.5 (see llm_providers.py).
+# The backend is chosen once, at the start of the run, by llm_router.select().
+llm_config = load_llm_config("llm_variables.json")
+llm_router = LLMRouter(llm_config)
 
 # --- State Definition ---
 class PipelineState(TypedDict):
@@ -120,17 +110,7 @@ class PipelineState(TypedDict):
 
 # --- Node Implementation Helpers ---
 def call_llm(system_prompt: str, user_prompt: str, temperature: Optional[float] = None, max_tokens: Optional[int] = None) -> str:
-    messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=user_prompt)
-    ]
-    kwargs = {}
-    if temperature is not None:
-        kwargs["temperature"] = temperature
-    if max_tokens is not None:
-        kwargs["max_tokens"] = max_tokens
-    response = llm.invoke(messages, **kwargs)
-    return response.content
+    return llm_router.call(system_prompt, user_prompt, temperature=temperature, max_tokens=max_tokens)
 
 def fetch_youtube_autocomplete(query: str, hl: str = "ar", gl: str = "EG") -> list:
     """
@@ -3563,8 +3543,20 @@ if __name__ == "__main__":
     import sys
     import datetime
     
+    # Optional: --provider auto|claude|gemini (overrides llm_variables.json / LLM_PROVIDER)
+    cli_provider = None
+    if "--provider" in sys.argv:
+        i = sys.argv.index("--provider")
+        if i + 1 >= len(sys.argv):
+            print("--provider needs a value: auto, claude or gemini")
+            sys.exit(1)
+        cli_provider = sys.argv[i + 1]
+        del sys.argv[i:i + 2]
+    if cli_provider:
+        llm_router = LLMRouter(llm_config, provider=cli_provider)
+
     if len(sys.argv) < 2:
-        print("Usage: python3 main.py <path_to_original_script> [path_to_video_analysis]")
+        print("Usage: python3 main.py <path_to_original_script> [path_to_video_analysis] [--provider auto|claude|gemini]")
         sys.exit(1)
         
     script_file = sys.argv[1]
@@ -3643,6 +3635,9 @@ if __name__ == "__main__":
     final_script_path = os.path.join(output_dir, "final_script.md")
     checkpoint_path = os.path.join(output_dir, "checkpoint.json")
     
+    # Choose Claude or Gemini Canvas for this run (auto mode tests Claude first)
+    llm_router.select()
+
     print(f"Starting workflow... Session ID: {session_id}")
     print(f"Logs: {output_dir}")
     print(f"Checkpoint: {checkpoint_path}")
@@ -3679,6 +3674,12 @@ if __name__ == "__main__":
                         json.dump(cumulative_state, cp, ensure_ascii=False, indent=2)
                 except Exception as e:
                     print(f"  [warning] Could not save checkpoint: {e}")
+
+    # Record which model(s) actually produced this run
+    provider_report = llm_router.report()
+    with open(os.path.join(output_dir, "llm_provider.json"), "w", encoding="utf-8") as pf:
+        json.dump(provider_report, pf, ensure_ascii=False, indent=2)
+    print(f"\n🔀 LLM calls this run: {provider_report['calls']} (final backend: {provider_report['final_backend']})")
 
     # Save the final deliverables
     longform_deliverable = cumulative_state.get("final_package", "")

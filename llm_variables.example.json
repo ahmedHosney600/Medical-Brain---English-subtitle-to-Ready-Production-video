@@ -1,0 +1,17 @@
+{
+    "provider": "auto",
+    "fallback_to_gemini": true,
+
+    "claude": {
+        "model": "claude-opus-5-5",
+        "transport": "claude_code",
+        "effort": "high",
+        "timeout_seconds": 900
+    },
+
+    "gemini": {
+        "model": "gemini-3-flash-preview",
+        "api_key": "<your Gemini Canvas proxy token>",
+        "base_url": "http://localhost:8765/v1"
+    }
+}
