@@ -291,7 +291,49 @@ def provider_key(cfg: dict) -> Optional[str]:
 # --------------------------------------------------------------------------
 # Backends
 # --------------------------------------------------------------------------
-class OpenAICompatibleBackend:
+class _LimitTooHigh(Exception):
+    """The model refused the requested output limit."""
+
+
+def _limit_refused(err) -> bool:
+    m = str(err).lower()
+    return ("max_tokens" in m or "max_output_tokens" in m or "maximum" in m) and "temperature" not in m
+
+
+class _OutputLimits:
+    """Output-length handling shared by the API backends (not the Gemini proxy,
+    which has its own):
+      - reasoning models (Qwen, DeepSeek, Kimi...) think before answering and
+        those tokens count against max_tokens, so the step's limit (tuned for
+        Gemini) is raised to at least `min_max_tokens` (default 16000). It is a
+        ceiling, not a target: you only pay for tokens actually produced;
+      - an answer that still stops at the limit is re-sent once with double the
+        limit, up to `max_output_cap` (default 32000);
+      - a model that refuses a limit that high is retried with 8192."""
+
+    def call(self, system_prompt: str, user_prompt: str,
+             temperature: Optional[float], max_tokens: Optional[int]) -> str:
+        floor = int(self.cfg.get("min_max_tokens", 16000) or 0)
+        cap = int(self.cfg.get("max_output_cap", 32000) or 0)
+        limit = max(max_tokens or 0, floor) or None
+        try:
+            text, cut = self._once(system_prompt, user_prompt, temperature, limit)
+        except _LimitTooHigh:
+            limit = 8192
+            text, cut = self._once(system_prompt, user_prompt, temperature, limit)
+        if cut and limit and limit < cap:
+            limit = min(limit * 2, cap)
+            try:
+                text, cut = self._once(system_prompt, user_prompt, temperature, limit)
+            except _LimitTooHigh:
+                pass  # keep the first (cut) answer
+        if cut:
+            node = current_node.get() or "this step"
+            print(f"  ⚠️ {node}: {self.provider}:{self.model} hit max_tokens ({limit}); the text may be cut off")
+        return text
+
+
+class OpenAICompatibleBackend(_OutputLimits):
     """DeepSeek, OpenCode Go, or any OpenAI-compatible API: called normally,
     with the SDK's standard retries and a long timeout. No proxy limits."""
 
@@ -330,17 +372,21 @@ class OpenAICompatibleBackend:
             raise
 
     def _text(self, resp) -> str:
+        """Used by the Gemini proxy backend."""
         choice = resp.choices[0]
         if getattr(choice, "finish_reason", None) == "length":
-            print(f"  [warning] {self.provider}:{self.model} hit max_tokens; the text may be cut off")
+            node = current_node.get() or "this step"
+            print(f"  ⚠️ {node}: {self.provider}:{self.model} hit max_tokens; the text may be cut off")
         return choice.message.content or ""
 
-    def call(self, system_prompt: str, user_prompt: str,
-             temperature: Optional[float], max_tokens: Optional[int]) -> str:
+    def _map_errors(self, fn):
         import openai
-        params = self._params(system_prompt, user_prompt, temperature, max_tokens)
         try:
-            return self._text(self._create(params))
+            return fn()
+        except openai.BadRequestError as e:
+            if _limit_refused(e):
+                raise _LimitTooHigh(str(e))
+            raise
         except (openai.AuthenticationError, openai.PermissionDeniedError, openai.RateLimitError) as e:
             raise ProviderUnavailable(str(e))
         except openai.APIStatusError as e:
@@ -349,6 +395,12 @@ class OpenAICompatibleBackend:
             raise
         except openai.APIConnectionError as e:
             raise ProviderUnavailable(f"cannot reach {self.cfg['base_url']}: {e}")
+
+    def _once(self, system_prompt, user_prompt, temperature, limit) -> tuple:
+        params = self._params(system_prompt, user_prompt, temperature, limit)
+        resp = self._map_errors(lambda: self._create(params))
+        choice = resp.choices[0]
+        return choice.message.content or "", getattr(choice, "finish_reason", None) == "length"
 
 
 _WANTS_JSON = re.compile(r"(only\s+(valid\s+)?json|only\s+the\s+json|only\s+a\s+json|output\s+json)", re.IGNORECASE)
@@ -403,38 +455,28 @@ class CanvasProxyBackend(OpenAICompatibleBackend):
 class OpenAIResponsesBackend(OpenAICompatibleBackend):
     """OpenAI Responses API (/responses): OpenCode Go's Grok, GPT Luna and Muse Spark models."""
 
-    def call(self, system_prompt: str, user_prompt: str,
-             temperature: Optional[float], max_tokens: Optional[int]) -> str:
+    def _once(self, system_prompt, user_prompt, temperature, limit) -> tuple:
         import openai
         params = dict(model=self.model, instructions=system_prompt, input=user_prompt)
-        if max_tokens is not None:
-            params["max_output_tokens"] = max_tokens
+        if limit is not None:
+            params["max_output_tokens"] = limit
         if temperature is not None and not self.no_temperature:
             params["temperature"] = temperature
-        try:
+
+        def create():
             try:
-                resp = self.client.responses.create(**params)
+                return self.client.responses.create(**params)
             except openai.BadRequestError as e:
                 if "temperature" in params and "temperature" in str(e).lower():
                     self.no_temperature = True
                     params.pop("temperature")
-                    resp = self.client.responses.create(**params)
-                else:
-                    raise
-        except (openai.AuthenticationError, openai.PermissionDeniedError, openai.RateLimitError) as e:
-            raise ProviderUnavailable(str(e))
-        except openai.APIStatusError as e:
-            if e.status_code in (402, 429, 529) or _looks_unavailable(str(e)):
-                raise ProviderUnavailable(str(e))
-            raise
-        except openai.APIConnectionError as e:
-            raise ProviderUnavailable(f"cannot reach {self.cfg['base_url']}: {e}")
-        if getattr(resp, "status", None) == "incomplete":
-            print(f"  [warning] {self.provider}:{self.model} stopped early (incomplete); the text may be cut off")
-        return resp.output_text or ""
+                    return self.client.responses.create(**params)
+                raise
+        resp = self._map_errors(create)
+        return resp.output_text or "", getattr(resp, "status", None) == "incomplete"
 
 
-class AnthropicCompatibleBackend:
+class AnthropicCompatibleBackend(_OutputLimits):
     """Anthropic-compatible /v1/messages API of a third-party service
     (OpenCode Go's MiniMax and Qwen models). Not used for Claude itself."""
 
@@ -454,10 +496,9 @@ class AnthropicCompatibleBackend:
                                           timeout=cfg.get("timeout_seconds", 900), max_retries=2)
         self.no_temperature = False
 
-    def call(self, system_prompt: str, user_prompt: str,
-             temperature: Optional[float], max_tokens: Optional[int]) -> str:
+    def _once(self, system_prompt, user_prompt, temperature, limit) -> tuple:
         a = self.anthropic
-        params = dict(model=self.model, max_tokens=max_tokens or 16000, system=system_prompt,
+        params = dict(model=self.model, max_tokens=limit or 16000, system=system_prompt,
                       messages=[{"role": "user", "content": user_prompt}])
         if temperature is not None and not self.no_temperature:
             # anthropic SDK 1.x has no temperature argument (current Claude models
@@ -478,6 +519,10 @@ class AnthropicCompatibleBackend:
                     message = run()
                 else:
                     raise
+        except a.BadRequestError as e:
+            if _limit_refused(e):
+                raise _LimitTooHigh(str(e))
+            raise
         except (a.AuthenticationError, a.PermissionDeniedError, a.RateLimitError) as e:
             raise ProviderUnavailable(str(e))
         except a.APIStatusError as e:
@@ -486,9 +531,8 @@ class AnthropicCompatibleBackend:
             raise
         except a.APIConnectionError as e:
             raise ProviderUnavailable(f"cannot reach {self.cfg['base_url']}: {e}")
-        if message.stop_reason == "max_tokens":
-            print(f"  [warning] {self.provider}:{self.model} hit max_tokens; the text may be cut off")
-        return "".join(getattr(b, "text", "") for b in message.content if b.type == "text")
+        text = "".join(getattr(b, "text", "") for b in message.content if b.type == "text")
+        return text, message.stop_reason == "max_tokens"
 
 
 class ClaudeCodeBackend:

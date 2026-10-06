@@ -53,6 +53,13 @@ Models are written `provider:model`:
 - To send a new model to another API, add `"endpoints": {"<model-id>": "chat|responses|messages"}` under `providers.opencode`.
 - If `/models` can't be read, the documented model list is shown instead, and the key is checked with a real call.
 
+**Answer length for API models.** Reasoning models (Qwen, DeepSeek, Kimi…) think before answering, and that thinking counts against each step's `max_tokens`. Those limits were tuned for Gemini, so for API providers:
+- every step gets at least `min_max_tokens` (16,000; a ceiling, not a target);
+- an answer that still stops at the limit is re-sent once with double the limit, up to `max_output_cap` (32,000);
+- a model that refuses a limit that high is retried with 8,192.
+
+Both numbers can be changed per provider in `llm_variables.json`.
+
 Any other OpenAI-compatible service can be added under `providers` with `"type": "openai"`, a `base_url` and an `api_key_env`.
 
 ### Gemini Canvas proxy: special handling (this provider only)
