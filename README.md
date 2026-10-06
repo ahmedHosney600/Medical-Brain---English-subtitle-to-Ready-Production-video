@@ -1,5 +1,18 @@
 # Medical-Brain---English-subtitle-to-Ready-Production-video
 
+## Titles and thumbnails
+
+The packaging steps produce, per video:
+- **8-10 finalist titles** from different hook types (question, common mistake, myth-bust, specific number, everyday Egyptian situation, "X ولا Y؟"…), written in educated Egyptian colloquial with the words people actually search. No Fusha ("لماذا"), and the hook lands in the first ~45 characters.
+- **5 thumbnail concepts**, each with a 2-4 word Arabic text that adds to its title rather than repeating it, plus a full AI image prompt.
+- **A ranked A/B test set:** 3 titles + 3 thumbnails for YouTube's "Test & compare".
+
+**Honesty:** every title and thumbnail must quote the script line that pays it off. The auditor fails anything the video doesn't deliver.
+
+**Your face in thumbnails:** prompts tell the image tool to use your reference photo, keep your identity, and keep a **natural, subtle expression** (slight smile, focused look, mild concern). No shocked open mouth, wide eyes or cartoonish emotion, and those words are added to every negative prompt. A code check fails any thumbnail that asks for an extreme face.
+
+To change these rules, add `"thumbnail_face_rules": "…your own rules…"` to `input_fields.json`.
+
 ## Install
 
 ```bash

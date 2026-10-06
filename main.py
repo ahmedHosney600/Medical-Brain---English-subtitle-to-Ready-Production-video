@@ -61,6 +61,9 @@ class PipelineState(TypedDict):
     title_options: str
     thumbnail_concepts: str
     packaging_critique_output: str
+    recommended_title: str
+    packaging_ab_test_set: str
+    thumbnail_face_rules: str
     packaging_grade: str
     packaging_revision_count: int
     max_packaging_revision_count: int
@@ -1519,41 +1522,94 @@ Output ONLY the JSON object. Include the full revised script."""
 # Runs AFTER the script is locked (self_critique PASS), so packaging is built
 # against what the video actually delivers, not guessed at before it exists.
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Packaging rules shared by the brainstorm, generator and auditor
+# ─────────────────────────────────────────────────────────────────────────────
+EGYPTIAN_CTR_RULES = """EGYPTIAN-AUDIENCE CTR CRAFT (apply to every title and thumbnail text):
+- LANGUAGE: educated Egyptian colloquial (عامية مصرية مثقفة) as people actually say and search it, e.g. "ليه"، "إزاي"، "إمتى"، "يعني إيه"، "لازم تعرف"، "غلطة"، "متعملش". NOT formal Fusha (avoid "لماذا"، "كيف"، "هل يجب"، "ما هو"), and never street slang.
+- SEARCH WORDS: use the words Egyptians type, including common English medical terms when that's how they search ("رسم القلب ECG"، "الكوليسترول"، "الـ Smart Watch"). Use the SEO keywords and the real YouTube autocomplete phrases where they fit naturally.
+- LENGTH: the hook must land in the first ~45 characters (mobile shows ~50-70). Aim for 40-60 characters total.
+- PROVEN PATTERNS for this audience: a direct question the viewer already asks themselves ("ليه ... رغم إن ...؟"); a common mistake ("غلطة بيعملها ناس كتير في ..."); the doctor's honest insider view ("اللي الدكاترة مبيقولوهوش عن ..." only if the script truly gives it); a specific number from the script ("3 علامات"، "10 دقايق"); an everyday Egyptian situation (الحر، رمضان، الأكل المصري، الموبايل، الشغل، الماتشات) when it really fits; "X ولا Y؟" comparisons; second person ("لو انت بتـ ...").
+- TONE: confident, warm, credible doctor — curiosity and usefulness, not fear. No clickbait words that the video doesn't earn ("صدمة"، "كارثة"، "هتموت"، "فضيحة"), no ALL-CAPS-style shouting, at most one "؟" or "!", no emoji in titles.
+- THUMBNAIL TEXT: 2-4 Egyptian words, huge and readable on a phone, carrying a DIFFERENT piece of the curiosity than the title (title asks, thumbnail teases the answer or the stakes — never the same words)."""
+
+DEFAULT_THUMBNAIL_FACE_RULES = """PRESENTER FACE RULES (the presenter's own photo is used in the thumbnail):
+- Use the presenter's uploaded reference photo. Keep his identity exactly: same face shape, features, skin tone, beard/hair, glasses if any. No beautifying, slimming, skin smoothing or age change.
+- Expression stays NATURAL and HUMAN — the way a calm, credible doctor looks on camera. Allowed: a slight confident smile, a thoughtful/focused look, a gently raised eyebrow, mild concern, a calm look straight into the camera. Change his real expression only a little, if at all.
+- NOT allowed: exaggerated "YouTube face" — shocked open mouth, gasping, jaw drop, wide bulging eyes, screaming, horrified/terrified look, hands on cheeks, extreme frown, cartoonish emotion.
+- Gesture: natural and small (pointing toward the focal element, holding a relevant object, arms relaxed). Natural skin texture and real lighting on the face.
+- In every AI Image Generation Prompt include this sentence: "Use the presenter's reference photo; preserve his identity and natural facial expression — only a subtle, calm, human expression (slight smile / focused look), no exaggeration."
+- Every negative prompt includes: "exaggerated facial expression, shocked face, open mouth, wide eyes, cartoonish emotion, distorted or altered face, plastic skin"."""
+
+# Words that mean the thumbnail asks for an extreme face (checked in code).
+EXTREME_FACE_WORDS = [
+    "shocked", "shock face", "gasp", "jaw drop", "jaw-drop", "mouth open", "open mouth", "open-mouthed",
+    "wide-eyed", "wide eyes", "eyes wide", "bulging", "screaming", "scream", "horrified", "terrified",
+    "panicked", "hands on cheeks", "hands on face", "exaggerated expression", "extreme expression",
+    "mrbeast", "صدمة على وشه", "مخضوض", "مفزوع",
+]
+
+
+def thumbnail_face_rules(state) -> str:
+    return (state.get("thumbnail_face_rules") or "").strip() or DEFAULT_THUMBNAIL_FACE_RULES
+
+
+def check_thumbnail_faces(thumbnail_text: str) -> list:
+    """Code check: extreme-expression wording in the thumbnail concepts, outside
+    the negative prompts (where those words are supposed to appear)."""
+    problems = []
+    for line in (thumbnail_text or "").splitlines():
+        low = line.lower()
+        positive = re.split(r"negative prompt|negatives?:|avoid:|no exaggerat|not allowed", low)[0]
+        hits = [w for w in EXTREME_FACE_WORDS if w in positive and not re.search(r"\b(no|not|avoid|without)\b[^.]{0,40}" + re.escape(w), positive)]
+        if hits:
+            problems.append(f"extreme expression requested ({', '.join(hits)}): \"{line.strip()[:140]}\"")
+    return problems
+
+
 def packaging_creative_director(state: PipelineState) -> dict:
-    system_prompt = """You are a YouTube packaging creative director for a starting Egyptian Arabic medical channel. The script for this video is finished and locked — your job is to brainstorm WIDE before anything gets narrowed down to finalists.
+    system_prompt = """You are a YouTube packaging creative director for a growing Egyptian Arabic medical channel. The script for this video is finished and locked — your job is to brainstorm WIDE before anything gets narrowed down to finalists.
 
-WHY THIS STEP EXISTS: the old process defaulted to the same 3 title flavors (Curiosity / Shock-Paradox / Warning) on every single video, which caps creativity and makes the channel feel formulaic. Your job is to break that by pulling from a much wider set of proven hook mechanisms and grounding every one of them in something the finished script actually contains.
+WHY THIS STEP EXISTS: more, more varied candidates give the channel real choices and a real A/B test, instead of 3 variations of one idea. Breadth here, strict honesty everywhere.
 
-BRAINSTORM 6-8 CONCEPTS, each pulling from a DIFFERENT mechanism. Do not default to the same 2-3 mechanisms every time — rotate across this bank based on what actually fits this video's content:
-- Curiosity gap / open loop ("what happens when...")
-- Hyper-specificity (exact numbers, exact timeframes — "3 علامات... خلال 10 دقايق")
-- Second-person direct address ("لو بتعمل كذا... وقف")
-- Contrarian / myth-bust ("اللي فاكره... غلط")
-- Transformation / before-after
-- Insider-info framing (what doctors know that patients don't)
-- Relatable story open (a patient scenario from the script)
-- Bold, medically-honest claim/warning
+BRAINSTORM 12-15 CONCEPTS. Use at least 8 DIFFERENT mechanisms from this bank, choosing what genuinely fits this script:
+- Curiosity gap / open loop ("ليه ... رغم إن ...؟")
+- Hyper-specificity (an exact number, timeframe or threshold from the script)
+- Second-person direct address ("لو انت بتـ ...")
+- Contrarian / myth-bust ("اللي فاكره ... مش صح")
+- Common mistake ("غلطة بيعملها ناس كتير ...")
+- Doctor's insider view (what the evidence says vs what people assume)
+- Relatable Egyptian story / everyday situation from the script
+- "X ولا Y؟" comparison or decision
+- Before / after or cause → consequence
+- The viewer's own question, word for word as they'd type it
+- Honest warning with a clear way out (stakes + reassurance)
+- Surprising mechanism (how the body actually does it)
 
-THE ONE RULE THAT OVERRIDES EVERYTHING: every single concept must cite the EXACT fact, moment, or line from the finished script that it is honestly built on, plus a one-line "promise" of what the viewer will actually learn or see resolved. A concept that can't point to a real anchor in the script gets discarded here, before it ever reaches a title. This is what keeps creative expansion from turning into overpromising.
+THE ONE RULE THAT OVERRIDES EVERYTHING: every concept must cite the EXACT fact, moment, or line from the finished script it is built on, plus a one-line promise of what the viewer will actually learn. A concept that can't point to a real anchor in the script is discarded here. Creativity in the angle, never in the facts.
 
-For each concept also give: the mechanism it uses, and a rough visual idea for how it could look as a thumbnail (not a full prompt yet — just the core image idea).
+""" + EGYPTIAN_CTR_RULES + """
+
+For each concept give: the mechanism, the anchor, the promise, 2 rough title directions in Egyptian Arabic, and a rough thumbnail idea (scene + 2-4 word text + the presenter's NATURAL expression — see the presenter face rules below).
+
+""" + thumbnail_face_rules(state) + """
 
 OUTPUT FORMAT:
 
 ---
 
-## PACKAGING BRAINSTORM (6-8 concepts)
+## PACKAGING BRAINSTORM (12-15 concepts)
 
 ### Concept 1 — [Mechanism name]
-**Anchor in the script**: [exact fact/line/moment this is built on]
-**Promise to the viewer**: [one sentence — what they'll actually learn/see]
-**Rough title direction**: [a working phrase, not final]
-**Rough visual idea**: [core thumbnail image idea, 1-2 sentences]
+**Anchor in the script**: [exact fact/line/moment]
+**Promise to the viewer**: [one sentence]
+**Rough title directions**: [two Egyptian Arabic phrasings]
+**Rough thumbnail idea**: [scene, 2-4 word text, natural expression]
 
-[Repeat for all 6-8 concepts, each a genuinely different mechanism]
+[Repeat for all 12-15 concepts]
 
-### Strongest 3-5 for the Generator
-[List which concepts should move forward and a one-line reason each — prioritize a mix of mechanisms, not 3 variations on the same one]"""
+### Strongest 8-10 for the Generator
+[Which concepts move forward and a one-line reason each — a mix of mechanisms, not variations on one]"""
 
     user_prompt = f"""Brainstorm packaging concepts for this finished video.
 
@@ -1562,33 +1618,44 @@ FINAL LOCKED SCRIPT:
 
 MEDICAL TOPIC: {state.get("medical_topic", "")}
 SEO PRIMARY KEYWORD: {state.get("seo_primary_keyword", "")}
+SEO SECONDARY KEYWORDS: {state.get("seo_secondary_keywords", "")}
 SEO SEARCH INTENT: {state.get("seo_search_intent", "")}
+
+REAL SEARCH DATA (YouTube autocomplete + keyword research):
+{state.get("seo_research_output", "")}
 
 RESTRUCTURE STRATEGY PLAN (for tone/audience context):
 {state.get("strategy_plan", "")}
 
+PRESENTER: {state.get("presenter_profile", "")}
+
 AVOID LIST:
 {state.get("avoid_list", "")}
 
-Brainstorm 6-8 concepts across distinct mechanisms, each anchored to something real in the script above. Recommend the strongest 3-5 to carry forward."""
+Brainstorm 12-15 concepts across at least 8 mechanisms, each anchored to something real in the script above. Recommend the strongest 8-10."""
 
-    response = call_llm(system_prompt, user_prompt, temperature=0.9, max_tokens=3000)
+    response = call_llm(system_prompt, user_prompt, temperature=0.9, max_tokens=7000)
     return {"packaging_brainstorm_output": response}
 
 
 def packaging_generator(state: PipelineState) -> dict:
-    system_prompt = """You are a senior YouTube packaging producer. You take a wide creative brainstorm and narrow it into 3-5 finalist titles plus 3 fully-specified thumbnail concepts, ready for production.
+    system_prompt = """You are a senior YouTube packaging producer for an Egyptian Arabic medical channel. You take a wide brainstorm and turn it into 8-10 finalist titles and 5 fully-specified thumbnail concepts, ready for production and for YouTube's title/thumbnail A/B test.
 
 TITLE CONSTRAINTS (non-negotiable):
-- Put the payoff and, where it fits naturally, the SEO primary keyword within the first ~60 characters. YouTube's hard cap is 100 characters, but search results and suggested-video tiles typically only display 50-70 characters before truncating (mobile is the tighter end of that range), so anything after that point is often invisible at the moment someone decides whether to click.
-- STRICTLY FREE of sensationalist body-antagonism or melodrama tropes ('بيخونك', 'غدر', 'خيانة', 'يخذله', 'طعنة'). If a "shock/paradox" mechanism is used, it must be a genuine counter-intuitive medical reality or myth-bust — never betrayal-by-the-body framing.
-- Each finalist title must be traceable to a DIFFERENT concept from the brainstorm — do not submit 3-5 minor rewordings of the same idea.
+- 8-10 finalists, each from a DIFFERENT brainstorm concept/mechanism — not rewordings of one idea.
+- Every title is anchored to a specific fact/line in the script and its promise is fully paid off by the script.
+- STRICTLY FREE of body-antagonism/melodrama tropes ('بيخونك', 'غدر', 'خيانة', 'يخذله', 'طعنة'). A "shock/paradox" must be a genuine counter-intuitive medical reality or myth-bust.
+
+""" + EGYPTIAN_CTR_RULES + """
 
 THUMBNAIL CONSTRAINTS (non-negotiable):
-- Produce exactly 3 thumbnail concepts, each fully specified — no abbreviations, no "same as concept 1", no placeholder fields.
-- Each thumbnail's text overlay must carry DIFFERENT information from its paired title, not repeat it. Redundant text/title pairs waste the curiosity-gap mechanism — the two should combine to create curiosity, not duplicate each other.
-- Actively AVOID the standard medical-channel visual clichés unless a specific concept is genuinely the strongest option for that idea: glowing red heart, hand clutching chest, doctor pointing at an X-ray/scan, red arrows overlaid on a body part, generic DNA helix, stethoscope close-up. If you do use one of these, justify explicitly why it's the strongest choice here, not just the default.
-- Every thumbnail must include a legibility note: confirm the text overlay and focal element are readable at small size (mobile feed thumbnail size), not just at full resolution.
+- Exactly 5 thumbnail concepts, each fully specified — no abbreviations, no "same as concept 1", no placeholder fields.
+- Each pairs with one finalist title; its text overlay carries DIFFERENT information from that title.
+- One clear focal idea, at most 3 visual elements, strong contrast, readable at phone size.
+- Avoid medical-channel clichés (glowing red heart, hand clutching chest, doctor pointing at an X-ray, red arrows on a body, DNA helix, stethoscope close-up) unless you justify it as the strongest choice.
+- The thumbnail must show something the video really contains — no imagery implying claims the script doesn't make.
+
+""" + thumbnail_face_rules(state) + """
 
 OUTPUT FORMAT:
 
@@ -1596,31 +1663,35 @@ OUTPUT FORMAT:
 
 ## PACKAGING FINALISTS
 
-### Title Options (3-5, each from a different brainstorm concept)
-| # | Title | Character Count | Mechanism | Anchored fact from script |
+### Title Options (8-10, each from a different concept)
+| # | Title (Egyptian Arabic) | Characters | Mechanism | Anchored fact/line from script |
 |---|---|---|---|---|
 | 1 | | | | |
 
-### Thumbnail Concepts (exactly 3)
+### Thumbnail Concepts (exactly 5)
 Each MUST have every field below — no abbreviations, no cross-references to another concept.
 
-- **Visual Scene**: Detailed background, setting, props, lighting.
-- **Presenter Expression / Gesture**: Exact face, hands, gaze.
-- **Bold Arabic Text Overlay (3-4 words)**: `"[TEXT]"` — must carry different information from the paired title.
-- **Focal Element / Prop**: Primary visual hook.
-- **Color Palette**: Primary + accent colors.
-- **Cliché Check**: [Which standard medical-thumbnail trope, if any, was considered and avoided/justified]
-- **Legibility at Small Size**: [Confirm text and focal element remain clear at mobile thumbnail size]
-- **🤖 AI Image Generation Prompt** *(Google Flow / Nano Banana / Gemini)*:
-  One full paragraph covering: subject (pose, expression, clothing, prop), background (setting, depth), lighting (source, direction, color temp), camera (lens mm, f-stop, angle), composition (rule of thirds, which quadrant is clear for Arabic text overlay), color grading, style (photorealistic cinematic YouTube thumbnail), negative prompts (no AI artifacts, no uncanny valley, no extra fingers, no text in image). End: Aspect ratio: 16:9.
+- **Pairs with title #**: [number]
+- **Visual Scene**: background, setting, props, lighting.
+- **Presenter Expression / Gesture**: natural, subtle, human (per the face rules) — exact look, gaze and small gesture.
+- **Bold Arabic Text Overlay (2-4 words)**: `"[TEXT]"` — different information from the paired title.
+- **Focal Element / Prop**: the primary visual hook.
+- **Color Palette**: primary + accent colors.
+- **Anchored in script**: [the line/fact this thumbnail shows]
+- **Cliché Check**: [trope considered and avoided/justified]
+- **Legibility at Small Size**: [text and focal element clear at phone size]
+- **🤖 AI Image Generation Prompt** *(Google Flow / Nano Banana / Gemini, with the presenter's reference photo)*:
+  One full paragraph: the reference-photo / identity / natural-expression sentence from the face rules, subject (pose, subtle expression, clothing, prop), background, lighting, camera (lens mm, f-stop, angle), composition (which side is kept clear for the Arabic text), color grading, style (photorealistic YouTube thumbnail), negative prompts (no AI artifacts, no extra fingers, no text in image, plus the face-rule negatives). End: Aspect ratio: 16:9.
 
-* **Concept 1**: [Which title # it pairs with] — [all fields in full]
-* **Concept 2**: [Which title # it pairs with] — [all fields in full]
-* **Concept 3**: [Which title # it pairs with] — [all fields in full]"""
+* **Concept 1**: [all fields in full]
+* **Concept 2**: [all fields in full]
+* **Concept 3**: [all fields in full]
+* **Concept 4**: [all fields in full]
+* **Concept 5**: [all fields in full]"""
 
     correction_note = state.get("packaging_critique_output", "") if state.get("packaging_revision_count", 0) > 0 else ""
 
-    user_prompt = f"""Narrow this brainstorm into finalists.
+    user_prompt = f"""Turn this brainstorm into finalists.
 
 PACKAGING BRAINSTORM:
 {state.get("packaging_brainstorm_output", "")}
@@ -1634,9 +1705,9 @@ SEO SECONDARY KEYWORDS: {state.get("seo_secondary_keywords", "")}
 REVISION COUNT: {state.get("packaging_revision_count", 0)}
 {"PREVIOUS CRITIQUE — YOU MUST RESOLVE THESE SPECIFIC ISSUES:" + chr(10) + correction_note if correction_note else ""}
 
-Produce 3-5 finalist titles and exactly 3 fully-specified thumbnail concepts."""
+Produce 8-10 finalist titles and exactly 5 fully-specified thumbnail concepts."""
 
-    response = call_llm(system_prompt, user_prompt, temperature=0.7, max_tokens=4000)
+    response = call_llm(system_prompt, user_prompt, temperature=0.7, max_tokens=10000)
     # Split the two sections out for downstream nodes that only need one or the other.
     title_section, _, thumb_section = response.partition("### Thumbnail Concepts")
     return {
@@ -1646,22 +1717,29 @@ Produce 3-5 finalist titles and exactly 3 fully-specified thumbnail concepts."""
 
 
 def packaging_honesty_ctr_auditor(state: PipelineState) -> dict:
-    system_prompt = """You are the honesty and CTR quality gate for YouTube packaging on a medical channel. Your job is the mechanical, evidence-based version of "don't fake it" — not a banned-word list, but a hard check on whether each title's implied promise is actually paid off by the finished script.
+    system_prompt = """You are the honesty and CTR quality gate for YouTube packaging on an Egyptian Arabic medical channel. You check, with evidence from the script, that every title and thumbnail would earn its click honestly, and you pick the A/B test set.
 
 SCORE EACH FINALIST TITLE 1-10 ON:
-1. CURIOSITY STRENGTH — does it create a real open loop or specific enough claim that the brain wants closed?
+1. CURIOSITY STRENGTH — a real open loop or a specific claim the brain wants closed
 2. SPECIFICITY — numbers, timeframes, named mechanisms beat vague claims
-3. SEO KEYWORD PRESENCE — is the primary keyword (or a close natural variant) present, ideally in the first ~60 characters?
-4. TITLE/THUMBNAIL COMPLEMENTARITY — for the paired thumbnail, does the overlay text add NEW information rather than repeat the title?
-5. VISUAL DIFFERENTIATION — does the paired thumbnail avoid generic medical-channel clichés, or justify using one?
-6. PROMISE-DELIVERY MATCH (hard gate) — read the finished script. Does it actually contain, and pay off by roughly when implied, whatever the title claims? A title promising "3 signs" needs 3 signs in the script. A title implying a surprising twist needs that twist to actually land. This is the core anti-overpromising check — score it strictly.
+3. EGYPTIAN LANGUAGE FIT — natural educated Egyptian colloquial the audience uses and searches (not Fusha, not street slang)
+4. SEO KEYWORD PRESENCE — primary keyword (or close natural variant), ideally in the first ~45-60 characters
+5. TITLE/THUMBNAIL COMPLEMENTARITY — the paired thumbnail text adds NEW information
+6. PROMISE-DELIVERY MATCH (hard gate) — quote the script line that pays the promise off. A title promising "3 signs" needs 3 signs; an implied twist must actually land.
 
-HARD GATE: if PROMISE-DELIVERY MATCH < 9 for ANY finalist that would otherwise be your top pick, the packaging is NEEDS_REVISION regardless of every other score. An overpromising title/thumbnail combination gets the click but tanks average view duration and triggers "not interested" signals — for a channel still building algorithmic trust, that costs more than a weaker but honest title.
+SCORE EACH THUMBNAIL 1-10 ON: clarity at phone size, curiosity with its paired title, honesty (shows only what the video contains), and PRESENTER FACE: natural, subtle, human expression per the face rules. An exaggerated face (shock, open mouth, wide eyes, panic, cartoonish emotion) or altered identity FAILS that thumbnail.
 
-ALSO CHECK (fail if violated):
-- Any finalist title contains sensationalist body-antagonism/melodrama tropes ('بيخونك', 'غدر', 'خيانة', 'يخذله', 'طعنة') → NEEDS_REVISION
-- No finalist title exceeds ~100 characters, and at least the top recommended title fits its payoff within ~60 characters
-- All 3 thumbnail concepts are fully specified (no abbreviations, no cross-references)
+""" + EGYPTIAN_CTR_RULES + """
+
+""" + thumbnail_face_rules(state) + """
+
+HARD GATES → NEEDS_REVISION:
+- PROMISE-DELIVERY MATCH < 9 for any title in your A/B test set
+- any finalist with body-antagonism/melodrama tropes ('بيخونك', 'غدر', 'خيانة', 'يخذله', 'طعنة') or unearned fear words
+- any thumbnail with an exaggerated presenter expression, or an AI prompt missing the reference-photo / natural-expression instruction
+- fewer than 8 finalist titles or fewer than 5 fully specified thumbnails
+
+A/B TEST SET: choose the best 3 titles (different mechanisms) and the best 3 thumbnails — YouTube's "Test & compare" takes up to 3 of each. Rank them.
 
 REVISION MODE: if packaging_revision_count > 0, verify the SPECIFIC issues from your previous critique were actually fixed, not superficially reworded.
 
@@ -1669,8 +1747,10 @@ OUTPUT — ONLY valid JSON:
 ```json
 {
   "packaging_grade": "PASS",
-  "packaging_critique_report": "Full audit in markdown: per-title score table (all 6 criteria), the Promise-Delivery Match reasoning for the top title against the actual script, thumbnail complementarity/cliché notes, and a specific fix list for anything below threshold",
-  "recommended_title": "The single strongest finalist title, to carry forward as the primary Video Title",
+  "packaging_critique_report": "Full audit in markdown: title score table (6 criteria + total), thumbnail score table, the script line that pays off each A/B title, face-rule check per thumbnail, and a specific fix list",
+  "recommended_title": "The single strongest title",
+  "ab_test_titles": ["title 1", "title 2", "title 3"],
+  "ab_test_thumbnails": ["Concept N — one-line reason", "Concept N — ...", "Concept N — ..."],
   "top_promise_delivery_score": 0
 }
 ```"""
@@ -1691,9 +1771,25 @@ FINAL LOCKED SCRIPT (the ground truth for Promise-Delivery Match):
 SEO PRIMARY KEYWORD: {state.get("seo_primary_keyword", "")}
 {correction_note}
 
-Score every finalist. Apply the hard gates. Output ONLY the JSON object."""
+Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B test set. Output ONLY the JSON object."""
 
-    response = call_llm(system_prompt, user_prompt, temperature=0.3, max_tokens=3000)
+    response = call_llm(system_prompt, user_prompt, temperature=0.3, max_tokens=6000)
+    revision = state.get("packaging_revision_count", 0) + 1
+
+    # Code checks that can't be talked past: enough candidates, natural faces.
+    code_issues = []
+    n_titles = len([l for l in state.get("title_options", "").splitlines()
+                    if re.match(r"^\|\s*\d+\s*\|", l.strip())])
+    if n_titles < 8:
+        code_issues.append(f"Only {n_titles} finalist titles in the table; produce 8-10 from different concepts.")
+    n_thumbs = len(re.findall(r"AI Image Generation Prompt", state.get("thumbnail_concepts", "")))
+    if n_thumbs < 5:
+        code_issues.append(f"Only {n_thumbs} fully specified thumbnails; produce exactly 5.")
+    for problem in check_thumbnail_faces(state.get("thumbnail_concepts", "")):
+        code_issues.append("PRESENTER FACE: " + problem + " — keep a natural, subtle, human expression.")
+    if n_thumbs and "reference photo" not in state.get("thumbnail_concepts", "").lower():
+        code_issues.append("The AI Image Generation Prompts must tell the image tool to use the presenter's reference photo and keep his natural expression.")
+
     text = response.strip()
     try:
         if text.startswith("```"):
@@ -1704,23 +1800,33 @@ Score every finalist. Apply the hard gates. Output ONLY the JSON object."""
 
         grade = str(data.get("packaging_grade", "")).strip().upper()
         top_pd_score = int(data.get("top_promise_delivery_score", 0))
+        if top_pd_score < 9 or grade != "PASS" or code_issues:
+            grade = "NEEDS_REVISION"
 
-        # Hard gate: Promise-Delivery Match must be >= 9 regardless of the LLM's self-reported grade
-        if top_pd_score < 9:
-            grade = "NEEDS_REVISION"
-        if grade != "PASS":
-            grade = "NEEDS_REVISION"
+        report = data.get("packaging_critique_report", "") or text
+        if code_issues:
+            report += "\n\n### Code checks (must fix)\n" + "\n".join(f"- {i}" for i in code_issues)
+
+        ab_titles = [str(t) for t in (data.get("ab_test_titles") or []) if str(t).strip()]
+        ab_thumbs = [str(t) for t in (data.get("ab_test_thumbnails") or []) if str(t).strip()]
+        ab_set = ""
+        if ab_titles or ab_thumbs:
+            ab_set = "**Titles to A/B test (ranked):**\n" + "\n".join(f"{i}. {t}" for i, t in enumerate(ab_titles, 1))
+            ab_set += "\n\n**Thumbnails to A/B test (ranked):**\n" + "\n".join(f"{i}. {t}" for i, t in enumerate(ab_thumbs, 1))
 
         return {
             "packaging_grade": grade,
-            "packaging_critique_output": data.get("packaging_critique_report", "") or text,
-            "packaging_revision_count": state.get("packaging_revision_count", 0) + 1,
+            "packaging_critique_output": report,
+            "recommended_title": str(data.get("recommended_title", "")).strip(),
+            "packaging_ab_test_set": ab_set,
+            "packaging_revision_count": revision,
         }
     except Exception:
+        report = response + ("\n\n### Code checks (must fix)\n" + "\n".join(f"- {i}" for i in code_issues) if code_issues else "")
         return {
             "packaging_grade": "NEEDS_REVISION",
-            "packaging_critique_output": response,
-            "packaging_revision_count": state.get("packaging_revision_count", 0) + 1,
+            "packaging_critique_output": report,
+            "packaging_revision_count": revision,
         }
 
 
@@ -2614,7 +2720,7 @@ Your ONLY job in this call is to produce these sections exactly as formatted bel
 Copy the approved finalist titles through exactly as provided in TITLE OPTIONS below (reformat into a simple list, do not reword). Mark the approved recommended title clearly as the primary one.
 
 #### 2. Thumbnail Visual Blueprints + AI Generation Prompts
-Copy the approved thumbnail concepts through exactly as provided in THUMBNAIL CONCEPTS below, for all 3 concepts, with every field intact — do not shorten, reword, or drop any field (especially the full AI Image Generation Prompt paragraphs).
+Copy the approved thumbnail concepts through exactly as provided in THUMBNAIL CONCEPTS below, for ALL concepts (5), with every field intact — do not shorten, reword, or drop any field (especially the full AI Image Generation Prompt paragraphs).
 
 #### 3. YouTube SEO Description & Timestamps (Copy-Paste Ready)
 ```text
@@ -2738,7 +2844,12 @@ APPROVED TITLE OPTIONS (from the packaging loop — copy through, do not rewrite
 APPROVED THUMBNAIL CONCEPTS (from the packaging loop — copy through, do not rewrite):
 {state.get("thumbnail_concepts", "")}
 
-PACKAGING AUDIT (contains the recommended_title to use as the primary Video Title):
+RECOMMENDED TITLE (use as the primary Video Title): {state.get("recommended_title", "") or "(see packaging audit)"}
+
+A/B TEST SET (YouTube "Test & compare" — copy this list under the title options as "#### A/B Test Set"):
+{state.get("packaging_ab_test_set", "") or "(see packaging audit)"}
+
+PACKAGING AUDIT:
 {state.get("packaging_critique_output", "")}
 
 SEO PRIMARY KEYWORD: {state.get("seo_primary_keyword", "")}
@@ -3714,6 +3825,7 @@ if __name__ == "__main__":
         "seo_primary_keyword", "seo_secondary_keywords", "seo_search_intent", "seo_research_output",
         "packaging_brainstorm_output", "title_options", "thumbnail_concepts",
         "packaging_critique_output", "packaging_grade",
+        "recommended_title", "packaging_ab_test_set", "thumbnail_face_rules",
     ]
     for field in default_string_fields:
         if field not in initial_state:
