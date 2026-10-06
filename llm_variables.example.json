@@ -1,25 +1,33 @@
 {
     "provider": "hybrid",
-    "fallback_to_gemini": true,
+    "main_model": "gemini:gemini-3-flash-preview",
+    "single_model": "claude:claude-opus-5-5",
     "hybrid_routes": {
-        "medical_truth_verifier": "claude-opus-5-5",
-        "fidelity_auditor": "claude-opus-5-5",
-        "self_critique": "claude-sonnet-5-5",
-        "packaging_honesty_ctr_auditor": "claude-sonnet-5-5",
-        "production_quality_critique": "claude-sonnet-5-5"
+        "medical_truth_verifier": "claude:claude-opus-5-5",
+        "fidelity_auditor": "claude:claude-opus-5-5",
+        "self_critique": "claude:claude-sonnet-5-5",
+        "packaging_honesty_ctr_auditor": "claude:claude-sonnet-5-5",
+        "production_quality_critique": "claude:claude-sonnet-5-5"
     },
-    "claude": {
-        "model": "claude-opus-5-5",
-        "transport": "claude_code",
-        "effort": "high",
-        "efforts": {
-            "claude-sonnet-5-5": "high"
+    "providers": {
+        "gemini": {
+            "base_url": "http://localhost:8765/v1",
+            "api_key": "<your Gemini Canvas proxy token>"
         },
-        "timeout_seconds": 900
-    },
-    "gemini": {
-        "model": "gemini-3-flash-preview",
-        "api_key": "<your Gemini Canvas proxy token>",
-        "base_url": "http://localhost:8765/v1"
+        "claude": {
+            "transport": "claude_code",
+            "effort": "high",
+            "efforts": {
+                "claude-sonnet-5-5": "high"
+            }
+        },
+        "deepseek": {
+            "base_url": "https://api.deepseek.com",
+            "api_key_env": "DEEPSEEK_API_KEY"
+        },
+        "opencode": {
+            "base_url": "https://opencode.ai/zen/go/v1",
+            "api_key_env": "OPENCODE_API_KEY"
+        }
     }
 }

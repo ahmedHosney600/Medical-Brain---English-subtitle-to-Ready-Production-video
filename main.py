@@ -12,8 +12,8 @@ from dotenv import load_dotenv
 # Load environment variables (e.g. OPENAI_API_KEY)
 load_dotenv()
 
-# LLM settings: Gemini, Claude, or hybrid (Gemini writes, Claude judges); see
-# llm_providers.py. The mode is chosen at startup (menu or --provider).
+# LLM settings (see llm_providers.py and setup_models.py): main model, one
+# strong model, or hybrid. The mode is chosen at startup (menu or --provider).
 llm_config = load_llm_config("llm_variables.json")
 llm_router = LLMRouter(llm_config)
 
@@ -3644,40 +3644,37 @@ if __name__ == "__main__":
     import sys
     import datetime
     
-    # Optional: --provider gemini|claude|hybrid skips the startup menu
+    # Optional: --provider main|single|hybrid skips the startup menu
+    # (old names: gemini = main, claude = single)
     cli_provider = None
     if "--provider" in sys.argv:
         i = sys.argv.index("--provider")
         if i + 1 >= len(sys.argv):
-            print("--provider needs a value: gemini, claude or hybrid")
+            print("--provider needs a value: main, single or hybrid")
             sys.exit(1)
         cli_provider = sys.argv[i + 1]
         del sys.argv[i:i + 2]
 
     if len(sys.argv) < 2:
-        print("Usage: python3 main.py <path_to_original_script> [path_to_video_analysis] [--provider gemini|claude|hybrid]")
+        print("Usage: python3 main.py <path_to_original_script> [path_to_video_analysis] [--provider main|single|hybrid]")
+        print("Choose models first with: python3 setup_models.py")
         sys.exit(1)
-
-    def _ask_yes(question: str) -> bool:
-        if not sys.stdin.isatty():
-            return False
-        return input(question).strip().lower() in ("", "y", "yes")
 
     # Model setup for this run: menu when interactive, otherwise flag / env / config
     if not cli_provider and not os.environ.get("LLM_PROVIDER") and sys.stdin.isatty():
-        _routes = llm_config["hybrid_routes"]
-        print("\nWhich model setup for this run?")
-        print(f"  1) Gemini for the whole workflow ({llm_config['gemini']['model']}, free)")
-        print(f"  2) Claude for the whole workflow ({llm_config['claude']['model']})")
-        print("  3) Hybrid (recommended): Gemini writes, Claude checks:")
-        for _node, _model in _routes.items():
+        print("\nWhich model setup for this run?  (change the models with: python3 setup_models.py)")
+        print(f"  1) Main model for the whole workflow ({llm_config['main_model']})")
+        print(f"  2) One strong model for the whole workflow ({llm_config['single_model']})")
+        print(f"  3) Hybrid (recommended): {llm_config['main_model']} writes, judges check:")
+        for _node, _model in llm_config["hybrid_routes"].items():
             print(f"       {_node} → {_model}")
+        print("     Any step whose model fails runs on the main model instead.")
         while True:
             _choice = input("Choose 1-3 [3]: ").strip() or "3"
             if _choice in ("1", "2", "3"):
                 break
             print("Please type 1, 2 or 3.")
-        cli_provider = {"1": "gemini", "2": "claude", "3": "hybrid"}[_choice]
+        cli_provider = {"1": "main", "2": "single", "3": "hybrid"}[_choice]
     llm_router = LLMRouter(llm_config, provider=cli_provider)
         
     script_file = sys.argv[1]
@@ -3756,8 +3753,8 @@ if __name__ == "__main__":
     final_script_path = os.path.join(output_dir, "final_script.md")
     checkpoint_path = os.path.join(output_dir, "checkpoint.json")
     
-    # Check Claude once before starting (claude and hybrid modes)
-    llm_router.select(ask=_ask_yes)
+    # Quick check of every model this run uses (never blocks; failures fall back)
+    llm_router.select()
 
     print(f"Starting workflow... Session ID: {session_id}")
     print(f"Logs: {output_dir}")

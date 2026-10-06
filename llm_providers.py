@@ -1,55 +1,70 @@
 """
-LLM provider layer: one call_llm() for the whole pipeline, two paths behind it.
+LLM provider layer: one call_llm() for the whole pipeline, any mix of models behind it.
 
-  gemini  - Gemini through the local Gemini Canvas proxy (OpenAI-compatible,
-            http://localhost:8765/v1). Free, always available while the Canvas
-            tab is open.
-  claude  - Claude Opus 5.5. Two ways to reach it:
-              * "claude_code"   - your Claude subscription, through the `claude`
-                                  CLI in headless mode (`claude -p`). Needs
-                                  Claude Code installed and logged in.
-              * "anthropic_api" - pay-per-token Anthropic API key
-                                  (ANTHROPIC_API_KEY).
+A model is written "provider:model", e.g.
+    gemini:gemini-3-flash-preview     Gemini through the local Gemini Canvas proxy (free)
+    claude:claude-opus-5-5            Claude (subscription via the `claude` CLI, or an API key)
+    deepseek:deepseek-v4-pro          DeepSeek API (OpenAI-compatible)
+    opencode:glm-5.1                  OpenCode Go subscription (OpenAI-compatible)
+Any other OpenAI-compatible service can be added under "providers" in
+llm_variables.json with "type": "openai". API keys live in llm_keys.env (not in git).
 
-Three modes, picked from a menu when main.py starts (or with --provider,
-the LLM_PROVIDER env var, or "provider" in llm_variables.json):
+Three modes, picked from a menu when main.py starts (or --provider):
+  main    - every node on main_model.
+  single  - every node on single_model (a strong model for the whole run).
+  hybrid  - (recommended) main_model writes; the nodes in hybrid_routes run on
+            the judge model named there.
 
-  gemini  - every node on Gemini Canvas (free).
-  claude  - every node on Claude (claude.model, Opus 5.5 by default).
-  hybrid  - (recommended) Gemini writes; the nodes listed in "hybrid_routes"
-            run on the Claude model named there (medical truth and fidelity on
-            Opus 5.5, the critiques on Sonnet 5.5). Claude judges what Gemini
-            wrote, so the judge is not grading its own writing.
+Every call first tries its model. If that fails for any reason, the same call
+is re-run on main_model, so a Claude limit or a DeepSeek outage never stops a
+run. If the failure means the provider is down (usage limit, auth, billing),
+that provider is skipped for the rest of the run. Only a failure of the main
+model itself stops the run.
 
-Which node is calling is known through current_node, set by track_node()
-around every graph node in main.py.
-
-If Claude is unavailable, or stops working in the middle of a run (usage limit
-hit, subscription lapsed) and "fallback_to_gemini" is true (the default), those
-calls go to Gemini so the run still finishes. Every switch is printed and
-recorded in report().
+Run `python3 setup_models.py` to see which providers are active, list their
+models, and choose the models for each role.
 """
 
 import contextvars
 import functools
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
+import urllib.request
 from typing import Optional
 
-CLAUDE_DEFAULT_MODEL = "claude-opus-5-5"
-MODES = ("gemini", "claude", "hybrid")
+CONFIG_PATH = "llm_variables.json"
+KEYS_PATH = "llm_keys.env"
+
+MODES = ("main", "single", "hybrid")
+MODE_ALIASES = {"gemini": "main", "claude": "single", "auto": "hybrid"}
+
+DEFAULT_PROVIDERS = {
+    "gemini": {"type": "openai", "label": "Gemini Canvas proxy", "base_url": "http://localhost:8765/v1",
+               "api_key_env": "OPENAI_API_KEY", "free": True},
+    "claude": {"type": "claude", "label": "Claude", "transport": "claude_code", "effort": "high",
+               "efforts": {}, "timeout_seconds": 900},
+    "deepseek": {"type": "openai", "label": "DeepSeek", "base_url": "https://api.deepseek.com",
+                 "api_key_env": "DEEPSEEK_API_KEY", "balance_path": "/user/balance"},
+    "opencode": {"type": "openai", "label": "OpenCode Go", "base_url": "https://opencode.ai/zen/go/v1",
+                 "api_key_env": "OPENCODE_API_KEY"},
+}
+DEFAULT_MAIN = "gemini:gemini-3-flash-preview"
+DEFAULT_SINGLE = "claude:claude-opus-5-5"
 DEFAULT_HYBRID_ROUTES = {
     # High-stakes medical checks: deepest reasoning.
-    "medical_truth_verifier": "claude-opus-5-5",
-    "fidelity_auditor": "claude-opus-5-5",
+    "medical_truth_verifier": "claude:claude-opus-5-5",
+    "fidelity_auditor": "claude:claude-opus-5-5",
     # Critiques: strong, cheaper, a different model family from the writer.
-    "self_critique": "claude-sonnet-5-5",
-    "packaging_honesty_ctr_auditor": "claude-sonnet-5-5",
-    "production_quality_critique": "claude-sonnet-5-5",
+    "self_critique": "claude:claude-sonnet-5-5",
+    "packaging_honesty_ctr_auditor": "claude:claude-sonnet-5-5",
+    "production_quality_critique": "claude:claude-sonnet-5-5",
 }
+# The `claude` CLI has no "list models" command.
+CLAUDE_SUBSCRIPTION_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5", "claude-fable-5-1"]
 
 # Name of the graph node currently running (set by track_node).
 current_node = contextvars.ContextVar("current_node", default=None)
@@ -65,112 +80,194 @@ def track_node(name: str, fn):
         finally:
             current_node.reset(token)
     return wrapper
-GEMINI_DEFAULT_MODEL = "gemini-3-flash-preview"
-GEMINI_DEFAULT_BASE_URL = "http://localhost:8765/v1"
-
-# Words in an error message that mean "Claude is not usable right now" rather
-# than "this one request was bad". On these we fall back to Gemini.
-_UNAVAILABLE_MARKERS = (
-    "usage limit", "limit reached", "rate limit", "rate_limit", "overloaded",
-    "credit balance", "billing", "subscription", "not logged in", "please run /login",
-    "invalid api key", "authentication", "unauthorized", "permission", "forbidden",
-    "401", "403", "429", "529", "quota",
-)
 
 
+# --------------------------------------------------------------------------
+# Errors
+# --------------------------------------------------------------------------
 class ProviderUnavailable(Exception):
-    """Raised when a provider can't serve requests at all (auth, limits, missing tool)."""
+    """The provider can't serve requests at all right now (limit, auth, billing, missing tool)."""
+
+
+_UNAVAILABLE_MARKERS = (
+    "usage limit", "limit reached", "weekly limit", "daily limit", "session limit", "hit your",
+    "resets ", "out of extra usage", "rate limit", "rate_limit", "overloaded", "insufficient",
+    "credit balance", "balance", "billing", "subscription", "not logged in", "please run /login",
+    "invalid api key", "api key", "authentication", "unauthorized", "permission", "forbidden",
+    "401", "402", "403", "429", "529", "quota",
+)
 
 
 def _looks_unavailable(message: str) -> bool:
     m = (message or "").lower()
-    return any(marker in m for marker in _UNAVAILABLE_MARKERS)
+    return any(marker in m for marker in _UNAVAILABLE_MARKERS) or bool(re.search(r"\blimit\b", m))
 
 
 # --------------------------------------------------------------------------
 # Config
 # --------------------------------------------------------------------------
-def load_llm_config(path: str = "llm_variables.json") -> dict:
-    """Reads llm_variables.json. The old flat format ({model, api_key, base_url,
-    ...}) is still accepted and treated as the Gemini settings."""
+def parse_spec(spec: str, default_provider: str = "gemini") -> tuple:
+    """'deepseek:deepseek-v4-pro' -> ('deepseek', 'deepseek-v4-pro'). A bare model
+    name gets 'claude' if it starts with claude-, otherwise default_provider."""
+    spec = (spec or "").strip()
+    if ":" in spec:
+        p, m = spec.split(":", 1)
+        return p.strip(), m.strip()
+    return ("claude" if spec.startswith("claude") else default_provider), spec
+
+
+def load_keys(path: str = KEYS_PATH):
+    """Loads API keys from llm_keys.env into the environment (without overriding)."""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(path, override=False)
+    except Exception:
+        pass
+
+
+def load_llm_config(path: str = CONFIG_PATH) -> dict:
+    """Reads llm_variables.json. Older formats still work: the flat
+    {model, api_key, base_url} file and the {gemini, claude, hybrid_routes} one."""
+    load_keys()
     try:
         with open(path, "r", encoding="utf-8") as f:
             raw = json.load(f)
     except Exception:
         raw = {}
 
-    gemini = dict(raw.get("gemini") or {})
+    providers = {name: dict(cfg) for name, cfg in DEFAULT_PROVIDERS.items()}
+    for name, cfg in (raw.get("providers") or {}).items():
+        providers.setdefault(name, {"type": "openai", "label": name}).update(cfg)
+
+    # Older formats
+    legacy_gemini = dict(raw.get("gemini") or {})
     for key in ("model", "api_key", "base_url"):
-        if key in raw and key not in gemini:
-            gemini[key] = raw[key]
-    gemini.setdefault("model", GEMINI_DEFAULT_MODEL)
-    gemini.setdefault("base_url", GEMINI_DEFAULT_BASE_URL)
+        if key in raw and key not in legacy_gemini:
+            legacy_gemini[key] = raw[key]
+    for key in ("api_key", "base_url"):
+        if legacy_gemini.get(key):
+            providers["gemini"].setdefault(key, legacy_gemini[key])
+            if key == "base_url":
+                providers["gemini"]["base_url"] = legacy_gemini[key]
+    legacy_claude = dict(raw.get("claude") or {})
+    for key in ("transport", "effort", "efforts", "timeout_seconds", "cli_path", "api_key"):
+        if key in legacy_claude:
+            providers["claude"][key] = legacy_claude[key]
 
-    claude = dict(raw.get("claude") or {})
-    claude.setdefault("model", CLAUDE_DEFAULT_MODEL)
-    claude.setdefault("transport", "claude_code")   # claude_code | anthropic_api
-    claude.setdefault("effort", "high")             # low | medium | high | xhigh | max
-    claude.setdefault("timeout_seconds", 900)
-    # Optional per-model effort, e.g. {"claude-sonnet-5-5": "medium"}
-    claude.setdefault("efforts", {})
+    main_model = raw.get("main_model") or (
+        f"gemini:{legacy_gemini['model']}" if legacy_gemini.get("model") else DEFAULT_MAIN)
+    single_model = raw.get("single_model") or (
+        f"claude:{legacy_claude['model']}" if legacy_claude.get("model") else DEFAULT_SINGLE)
+    main_provider = parse_spec(main_model)[0]
+    routes = {}
+    for node, spec in (raw.get("hybrid_routes") or DEFAULT_HYBRID_ROUTES).items():
+        p, m = parse_spec(spec, main_provider)
+        routes[node] = f"{p}:{m}"
 
+    mode = (raw.get("provider") or "hybrid").lower()
     return {
-        "provider": raw.get("provider", "hybrid"),
-        "hybrid_routes": raw.get("hybrid_routes") or dict(DEFAULT_HYBRID_ROUTES),
-        "fallback_to_gemini": raw.get("fallback_to_gemini", True),
-        "gemini": gemini,
-        "claude": claude,
+        "provider": MODE_ALIASES.get(mode, mode),
+        "main_model": main_model,
+        "single_model": single_model,
+        "hybrid_routes": routes,
+        "providers": providers,
     }
+
+
+def save_llm_config(config: dict, path: str = CONFIG_PATH):
+    """Writes the new format, keeping any fields already in the file that we don't manage."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+    except Exception:
+        raw = {}
+    for legacy in ("model", "api_key", "base_url", "temperature", "gemini", "claude", "fallback_to_gemini"):
+        raw.pop(legacy, None)
+    providers_out = {}
+    for name, cfg in config["providers"].items():
+        default = DEFAULT_PROVIDERS.get(name, {})
+        diff = {k: v for k, v in cfg.items() if default.get(k) != v}
+        if diff or name not in DEFAULT_PROVIDERS:
+            providers_out[name] = diff
+    raw.update({
+        "provider": config["provider"],
+        "main_model": config["main_model"],
+        "single_model": config["single_model"],
+        "hybrid_routes": config["hybrid_routes"],
+        "providers": providers_out,
+    })
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(raw, f, ensure_ascii=False, indent=4)
+        f.write("\n")
+
+
+def provider_key(cfg: dict) -> Optional[str]:
+    return cfg.get("api_key") or (os.environ.get(cfg["api_key_env"]) if cfg.get("api_key_env") else None)
 
 
 # --------------------------------------------------------------------------
 # Backends
 # --------------------------------------------------------------------------
-class GeminiCanvasBackend:
-    name = "gemini"
+class OpenAICompatibleBackend:
+    """Gemini Canvas proxy, DeepSeek, OpenCode Go, or any OpenAI-compatible API."""
 
-    def __init__(self, cfg: dict):
-        from langchain_openai import ChatOpenAI
-        self.model = cfg["model"]
-        self.llm = ChatOpenAI(
-            model=cfg["model"],
-            api_key=cfg.get("api_key") or os.environ.get("OPENAI_API_KEY") or "not-needed",
-            base_url=cfg.get("base_url"),
-        )
-
-    def label(self) -> str:
-        return f"Gemini Canvas proxy ({self.model})"
+    def __init__(self, provider: str, cfg: dict, model: str):
+        from openai import OpenAI
+        self.provider, self.cfg, self.model = provider, cfg, model
+        key = provider_key(cfg)
+        if not key and not cfg.get("free"):
+            raise ProviderUnavailable(f"no API key: set {cfg.get('api_key_env')} in {KEYS_PATH} (run setup_models.py)")
+        self.client = OpenAI(api_key=key or "not-needed", base_url=cfg["base_url"],
+                             timeout=cfg.get("timeout_seconds", 600), max_retries=1)
+        self.no_temperature = False
 
     def call(self, system_prompt: str, user_prompt: str,
              temperature: Optional[float], max_tokens: Optional[int]) -> str:
-        from langchain_core.messages import SystemMessage, HumanMessage
-        kwargs = {}
-        if temperature is not None:
-            kwargs["temperature"] = temperature
+        import openai
+        params = dict(model=self.model, messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ])
         if max_tokens is not None:
-            kwargs["max_tokens"] = max_tokens
-        response = self.llm.invoke(
-            [SystemMessage(content=system_prompt), HumanMessage(content=user_prompt)],
-            **kwargs,
-        )
-        return response.content
+            params["max_tokens"] = max_tokens
+        if temperature is not None and not self.no_temperature:
+            params["temperature"] = temperature
+        try:
+            try:
+                resp = self.client.chat.completions.create(**params)
+            except openai.BadRequestError as e:
+                # Some reasoning models reject temperature: retry once without it.
+                if "temperature" in params and "temperature" in str(e).lower():
+                    self.no_temperature = True
+                    params.pop("temperature")
+                    resp = self.client.chat.completions.create(**params)
+                else:
+                    raise
+        except (openai.AuthenticationError, openai.PermissionDeniedError, openai.RateLimitError) as e:
+            raise ProviderUnavailable(str(e))
+        except openai.APIStatusError as e:
+            if e.status_code in (402, 429, 529) or _looks_unavailable(str(e)):
+                raise ProviderUnavailable(str(e))
+            raise
+        except openai.APIConnectionError as e:
+            raise ProviderUnavailable(f"cannot reach {self.cfg['base_url']}: {e}")
+        choice = resp.choices[0]
+        if getattr(choice, "finish_reason", None) == "length":
+            print(f"  [warning] {self.provider}:{self.model} hit max_tokens; the text may be cut off")
+        return choice.message.content or ""
 
 
 class ClaudeCodeBackend:
     """Claude through the Claude subscription: runs `claude -p` with all tools
     disabled, so it behaves like a plain text completion."""
-    name = "claude"
 
-    def __init__(self, cfg: dict):
-        self.model = cfg["model"]
-        self.effort = cfg.get("effort")
+    def __init__(self, cfg: dict, model: str):
+        self.model = model
+        self.effort = (cfg.get("efforts") or {}).get(model, cfg.get("effort"))
         self.timeout = cfg.get("timeout_seconds", 900)
         self.cli = cfg.get("cli_path") or shutil.which("claude")
         if not self.cli:
             raise ProviderUnavailable("the `claude` command was not found (install Claude Code and log in)")
-
-    def label(self) -> str:
-        return f"Claude {self.model} via Claude subscription (claude CLI)"
 
     def call(self, system_prompt: str, user_prompt: str,
              temperature: Optional[float], max_tokens: Optional[int]) -> str:
@@ -223,21 +320,17 @@ class ClaudeCodeBackend:
 
 class AnthropicAPIBackend:
     """Claude through a pay-per-token Anthropic API key."""
-    name = "claude"
 
-    def __init__(self, cfg: dict):
+    def __init__(self, cfg: dict, model: str):
         try:
             import anthropic
         except ImportError:
             raise ProviderUnavailable("the `anthropic` package is not installed (pip install anthropic)")
         self.anthropic = anthropic
-        self.model = cfg["model"]
-        self.effort = cfg.get("effort")
+        self.model = model
+        self.effort = (cfg.get("efforts") or {}).get(model, cfg.get("effort"))
         api_key = cfg.get("api_key") or os.environ.get("ANTHROPIC_API_KEY")
         self.client = anthropic.Anthropic(api_key=api_key) if api_key else anthropic.Anthropic()
-
-    def label(self) -> str:
-        return f"Claude {self.model} via Anthropic API"
 
     def call(self, system_prompt: str, user_prompt: str,
              temperature: Optional[float], max_tokens: Optional[int]) -> str:
@@ -267,6 +360,8 @@ class AnthropicAPIBackend:
             if e.status_code in (402, 529) or _looks_unavailable(str(e)):
                 raise ProviderUnavailable(str(e))
             raise
+        except a.APIConnectionError as e:
+            raise ProviderUnavailable(str(e))
 
         if message.stop_reason == "refusal":
             raise RuntimeError("Claude declined this request (refusal) and no fallback model accepted it")
@@ -276,13 +371,83 @@ class AnthropicAPIBackend:
         return text
 
 
-def _make_claude_backend(cfg: dict):
-    transport = cfg.get("transport", "claude_code")
-    if transport == "anthropic_api":
-        return AnthropicAPIBackend(cfg)
-    if transport == "claude_code":
-        return ClaudeCodeBackend(cfg)
-    raise ValueError(f"Unknown claude transport '{transport}' (use claude_code or anthropic_api)")
+def make_backend(spec: str, providers: dict):
+    provider, model = parse_spec(spec)
+    cfg = providers.get(provider)
+    if cfg is None:
+        raise ProviderUnavailable(f"unknown provider '{provider}' (add it under providers in {CONFIG_PATH})")
+    if cfg.get("type") == "claude":
+        if cfg.get("transport") == "anthropic_api":
+            return AnthropicAPIBackend(cfg, model)
+        return ClaudeCodeBackend(cfg, model)
+    return OpenAICompatibleBackend(provider, cfg, model)
+
+
+# --------------------------------------------------------------------------
+# Provider checks (used by setup_models.py and the startup check)
+# --------------------------------------------------------------------------
+def _http_json(url: str, key: Optional[str], timeout: int = 15):
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {key or 'not-needed'}",
+                                               "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def list_models(provider: str, cfg: dict) -> list:
+    """Model ids this provider offers (raises on failure)."""
+    if cfg.get("type") == "claude":
+        if cfg.get("transport") == "anthropic_api":
+            import anthropic
+            key = cfg.get("api_key") or os.environ.get("ANTHROPIC_API_KEY")
+            client = anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
+            return [m.id for m in client.models.list()]
+        return list(CLAUDE_SUBSCRIPTION_MODELS)
+    data = _http_json(cfg["base_url"].rstrip("/") + "/models", provider_key(cfg))
+    items = data.get("data", data) if isinstance(data, dict) else data
+    ids = [m.get("id") if isinstance(m, dict) else str(m) for m in items or []]
+    return sorted(i for i in ids if i)
+
+
+def provider_status(provider: str, cfg: dict) -> tuple:
+    """(state, detail) with state 'active', 'off' (not set up) or 'error'."""
+    if cfg.get("type") == "claude":
+        if cfg.get("transport") == "anthropic_api":
+            if not (cfg.get("api_key") or os.environ.get("ANTHROPIC_API_KEY")):
+                return "off", "no ANTHROPIC_API_KEY"
+        elif not (cfg.get("cli_path") or shutil.which("claude")):
+            return "off", "`claude` command not installed"
+        ok, detail = test_model(f"{provider}:{CLAUDE_SUBSCRIPTION_MODELS[1]}", {provider: cfg})
+        return ("active", "subscription answers") if ok else ("error", detail)
+    if not provider_key(cfg) and not cfg.get("free"):
+        return "off", f"no API key ({cfg.get('api_key_env')})"
+    detail = ""
+    if cfg.get("balance_path"):
+        try:
+            b = _http_json(cfg["base_url"].rstrip("/") + cfg["balance_path"], provider_key(cfg))
+            infos = b.get("balance_infos") or []
+            detail = ", ".join(f"{i.get('total_balance')} {i.get('currency')}" for i in infos)
+            if b.get("is_available") is False:
+                return "error", f"balance too low ({detail or 'no balance'})"
+        except Exception as e:
+            return "error", _short(e)
+    try:
+        n = len(list_models(provider, cfg))
+        return "active", (f"{n} models" + (f" · balance {detail}" if detail else ""))
+    except Exception as e:
+        return "error", _short(e)
+
+
+def test_model(spec: str, providers: dict) -> tuple:
+    """One tiny real call. (ok, detail)."""
+    try:
+        reply = make_backend(spec, providers).call("Reply with the single word: OK", "ping", None, 16)
+        return (True, "answers") if reply.strip() else (False, "empty reply")
+    except Exception as e:
+        return False, _short(e)
+
+
+def _short(e) -> str:
+    return re.sub(r"\s+", " ", str(e))[:160]
 
 
 # --------------------------------------------------------------------------
@@ -292,105 +457,90 @@ class LLMRouter:
     def __init__(self, config: dict, provider: Optional[str] = None):
         self.config = config
         mode = (provider or os.environ.get("LLM_PROVIDER") or config["provider"]).lower()
-        if mode == "auto":  # older setting name
-            mode = "hybrid"
+        mode = MODE_ALIASES.get(mode, mode)
         if mode not in MODES:
-            raise ValueError(f"Unknown provider '{mode}' (use gemini, claude or hybrid)")
+            raise ValueError(f"Unknown mode '{mode}' (use main, single or hybrid)")
         self.mode = mode
-        self.routes = dict(config.get("hybrid_routes") or DEFAULT_HYBRID_ROUTES)
-        self.allow_fallback = bool(config.get("fallback_to_gemini", True))
-        self.claude_ok = mode != "gemini"
+        self.main = config["main_model"]
+        self.routes = dict(config["hybrid_routes"])
+        self.down = {}          # provider -> reason, for the rest of the run
         self.events = []
         self.calls = {}
         self.node_models = {}
-        self._gemini = None
-        self._claude = {}
+        self._backends = {}
 
-    # -- backends ---------------------------------------------------------
-    def _gemini_backend(self):
-        if self._gemini is None:
-            self._gemini = GeminiCanvasBackend(self.config["gemini"])
-        return self._gemini
-
-    def _claude_backend(self, model: str):
-        if model not in self._claude:
-            cfg = dict(self.config["claude"], model=model)
-            cfg["effort"] = cfg.get("efforts", {}).get(model, cfg.get("effort"))
-            self._claude[model] = _make_claude_backend(cfg)
-        return self._claude[model]
-
-    def claude_model_for(self, node: Optional[str]) -> Optional[str]:
-        """The Claude model this node should use, or None for Gemini."""
-        if not self.claude_ok:
-            return None
-        if self.mode == "claude":
-            return self.config["claude"]["model"]
+    def model_for(self, node: Optional[str]) -> str:
+        if self.mode == "single":
+            return self.config["single_model"]
         if self.mode == "hybrid":
-            return self.routes.get(node)
-        return None
+            return self.routes.get(node, self.main)
+        return self.main
+
+    def models_in_use(self) -> list:
+        if self.mode == "single":
+            return [self.config["single_model"], self.main]
+        if self.mode == "hybrid":
+            return [self.main] + sorted(set(self.routes.values()) - {self.main})
+        return [self.main]
+
+    def describe(self) -> str:
+        if self.mode == "main":
+            return f"all nodes on {self.main}"
+        if self.mode == "single":
+            return f"all nodes on {self.config['single_model']} (falls back to {self.main})"
+        routed = ", ".join(f"{n} → {m}" for n, m in self.routes.items())
+        return f"{self.main} writes; {routed}"
+
+    def _backend(self, spec: str):
+        if spec not in self._backends:
+            self._backends[spec] = make_backend(spec, self.config["providers"])
+        return self._backends[spec]
 
     def _log(self, msg: str):
         print(f"🔀 [LLM] {msg}")
         self.events.append(msg)
 
-    def describe(self) -> str:
-        gem = self.config["gemini"]["model"]
-        if self.mode == "gemini" or not self.claude_ok:
-            return f"all nodes on Gemini ({gem})"
-        if self.mode == "claude":
-            return f"all nodes on {self.config['claude']['model']}"
-        routed = ", ".join(f"{n} → {m}" for n, m in self.routes.items())
-        return f"Gemini ({gem}) writes; {routed}"
-
-    # -- startup ----------------------------------------------------------
     def select(self, ask=None):
-        """Checks Claude once before the graph starts. `ask(question) -> bool`
-        is used in claude mode when Claude is unavailable; without it the run stops."""
-        if self.mode == "gemini":
-            self._log(f"Mode: gemini · {self.describe()}")
-            return
-        models = {self.config["claude"]["model"]} if self.mode == "claude" else set(self.routes.values())
-        try:
-            for model in sorted(models):
-                reply = self._claude_backend(model).call("Reply with the single word: OK", "ping", None, 16)
-                if not reply.strip():
-                    raise ProviderUnavailable(f"empty reply from {model}")
-        except Exception as e:
-            reason = str(e)[:200]
-            if self.mode == "claude":
-                if ask and ask(f"Claude is unavailable ({reason}). Continue with Gemini for the whole run? [Y/n] "):
-                    self.mode = "gemini"
-                else:
-                    raise RuntimeError(f"Claude was requested but is unavailable: {reason}")
-            else:
-                self._log(f"⚠️ Claude unavailable ({reason}). The Claude nodes will run on Gemini this time.")
-            self.claude_ok = False
+        """Quick check of every model this run will use. Never blocks: a model
+        that fails here is simply skipped and its steps run on the main model."""
         self._log(f"Mode: {self.mode} · {self.describe()}")
+        for spec in self.models_in_use():
+            provider = parse_spec(spec)[0]
+            if provider in self.down:
+                continue
+            ok, detail = test_model(spec, self.config["providers"])
+            if ok:
+                self._log(f"✅ {spec}")
+            elif spec == self.main:
+                self._log(f"⚠️ main model {spec} did not answer ({detail}). The run will stop at the first step if it stays down.")
+            else:
+                self.down[provider] = detail
+                self._log(f"⚠️ {spec} unavailable ({detail}). Its steps will run on {self.main}.")
 
-    # -- calls ------------------------------------------------------------
-    def _count(self, node, model):
-        self.calls[model] = self.calls.get(model, 0) + 1
+    def _count(self, node, spec):
+        self.calls[spec] = self.calls.get(spec, 0) + 1
         if node:
-            self.node_models[node] = model
+            self.node_models[node] = spec
 
     def call(self, system_prompt: str, user_prompt: str,
              temperature: Optional[float] = None, max_tokens: Optional[int] = None) -> str:
         node = current_node.get()
-        model = self.claude_model_for(node)
-        if model:
-            try:
-                result = self._claude_backend(model).call(system_prompt, user_prompt, temperature, max_tokens)
-                self._count(node, model)
-                return result
-            except ProviderUnavailable as e:
-                if not self.allow_fallback:
-                    raise
-                self.claude_ok = False
-                self._log(f"Claude stopped working mid-run ({str(e)[:200]}). "
-                          f"Switching the remaining Claude steps to Gemini Canvas.")
-        gemini = self._gemini_backend()
-        result = gemini.call(system_prompt, user_prompt, temperature, max_tokens)
-        self._count(node, gemini.model)
+        spec = self.model_for(node)
+        if spec != self.main:
+            provider = parse_spec(spec)[0]
+            if provider not in self.down:
+                try:
+                    result = self._backend(spec).call(system_prompt, user_prompt, temperature, max_tokens)
+                    self._count(node, spec)
+                    return result
+                except ProviderUnavailable as e:
+                    self.down[provider] = _short(e)
+                    self._log(f"⚠️ {node}: {spec} unavailable ({_short(e)}). "
+                              f"This and later {provider} steps run on {self.main}.")
+                except Exception as e:
+                    self._log(f"⚠️ {node}: {spec} failed ({_short(e)}). Running this step on {self.main}.")
+        result = self._backend(self.main).call(system_prompt, user_prompt, temperature, max_tokens)
+        self._count(node, self.main)
         return result
 
     def model_for_node(self, node: str) -> Optional[str]:
@@ -402,5 +552,6 @@ class LLMRouter:
             "setup": self.describe(),
             "calls": dict(self.calls),
             "node_models": dict(self.node_models),
+            "unavailable": dict(self.down),
             "events": list(self.events),
         }

@@ -1,43 +1,52 @@
 # Medical-Brain---English-subtitle-to-Ready-Production-video
 
-## Choosing the model: Gemini, Claude, or Hybrid
+## Choosing the models
 
-When you run `python3 main.py script.txt`, it asks:
+### 1. Set up once (and whenever you change models): `python3 setup_models.py`
+The script works in four steps:
 
+1. **Status check.** It shows which providers are active:
+   ```
+     ✅ gemini    Gemini Canvas proxy: 1 models
+     ✅ claude    Claude via claude_code: subscription answers
+     ✅ deepseek  DeepSeek: 2 models · balance 4.20 USD
+     ⚪ opencode  OpenCode Go: no API key (OPENCODE_API_KEY)
+   ```
+2. **Keys.** For a provider without a key, it asks you to paste one. Keys are saved in `llm_keys.env`, which is kept out of git.
+3. **Model choice.** It lists every model your active providers offer, and you choose:
+   - the **main model**: writes the script, and runs any step whose own model fails;
+   - **one strong model**: for option 2;
+   - a model for each **hybrid judge** step.
+4. **Test and save.** It test-calls every chosen model (✅/❌), lets you re-pick the failed ones, and saves to `llm_variables.json`.
+
+`python3 setup_models.py --check` only shows the status.
+
+Models are written `provider:model`:
+
+| Provider | Example | Needs |
+|---|---|---|
+| `gemini` | `gemini:gemini-3-flash-preview` | the Gemini Canvas proxy on `localhost:8765` (Canvas tab open) |
+| `claude` | `claude:claude-opus-5-5` | Claude Code installed and logged in (subscription). Or set `"transport": "anthropic_api"` and `ANTHROPIC_API_KEY` |
+| `deepseek` | `deepseek:deepseek-v4-pro` | `DEEPSEEK_API_KEY` (api.deepseek.com) |
+| `opencode` | `opencode:glm-5.1` | `OPENCODE_API_KEY` (OpenCode Go, opencode.ai/zen/go/v1) |
+
+Any other OpenAI-compatible service can be added under `providers` with `"type": "openai"`, a `base_url` and an `api_key_env`.
+
+### 2. Every run: `python3 main.py script.txt` asks
 ```
-Which model setup for this run?
-  1) Gemini for the whole workflow (gemini-3-flash-preview, free)
-  2) Claude for the whole workflow (claude-opus-5-5)
-  3) Hybrid (recommended): Gemini writes, Claude checks:
-       medical_truth_verifier → claude-opus-5-5
-       fidelity_auditor → claude-opus-5-5
-       self_critique → claude-sonnet-5-5
-       packaging_honesty_ctr_auditor → claude-sonnet-5-5
-       production_quality_critique → claude-sonnet-5-5
+  1) Main model for the whole workflow (gemini:gemini-3-flash-preview)
+  2) One strong model for the whole workflow (claude:claude-opus-5-5)
+  3) Hybrid (recommended): gemini:gemini-3-flash-preview writes, judges check:
+       medical_truth_verifier → claude:claude-opus-5-5
+       ...
 Choose 1-3 [3]:
 ```
-
-Press Enter for Hybrid. Hybrid is recommended because the writing stays on free Gemini while a different model family judges it, so the judge isn't grading its own writing.
-- Opus 5.5 handles the two checks with real medical stakes.
-- Sonnet 5.5 handles the critiques.
-
-| Option | Needs |
-|---|---|
-| 1 Gemini | the Gemini Canvas proxy on `localhost:8765` with the Canvas tab open |
-| 2 Claude | Claude Code installed and logged in (`claude` command), or `ANTHROPIC_API_KEY` with `"transport": "anthropic_api"` |
-| 3 Hybrid | both |
-
-To skip the menu, use `--provider gemini|claude|hybrid` or the `LLM_PROVIDER` environment variable.
-When there's no terminal to answer the menu, `"provider"` in `llm_variables.json` is used.
-
-Settings (see `llm_variables.example.json`):
-- `hybrid_routes`: which nodes run on which Claude model in Hybrid. Add or remove nodes here.
-- `claude.transport`: `claude_code` uses your Claude subscription through the `claude` CLI; `anthropic_api` uses a pay-per-token API key.
-- `claude.effort` / `claude.efforts`: how hard Claude thinks (`low` … `max`). The default is `high`.
-- `fallback_to_gemini`: if Claude is unavailable at the start of a Hybrid run, or hits a usage limit mid-run, those steps run on Gemini so the run still finishes. In option 2 you are asked first.
-
-The terminal shows the model and time for each node.
-`output/<session>/llm_provider.json` records the mode, calls per model, and which model ran each node.
+- **Every step tries its own model first.** If that model fails for any reason (usage limit, weekly limit, outage, bad key), the step is re-run on the main model and the run continues.
+  - When the failure means the provider is down, its later steps go straight to the main model.
+  - Only a failure of the main model itself stops the run.
+- `--provider main|single|hybrid` skips the menu.
+- The terminal shows each step's model and time.
+- `output/<session>/llm_provider.json` records which model ran each step and any fallbacks.
 
 ## The final document: ordered like the editing workflow
 

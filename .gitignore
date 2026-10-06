@@ -1,0 +1,3 @@
+llm_keys.env
+__pycache__/
+.DS_Store
