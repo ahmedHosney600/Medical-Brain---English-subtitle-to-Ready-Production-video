@@ -33,6 +33,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import urllib.error
 import urllib.request
 from typing import Optional
 
@@ -52,9 +53,35 @@ DEFAULT_PROVIDERS = {
                "efforts": {}, "timeout_seconds": 900},
     "deepseek": {"type": "openai", "label": "DeepSeek", "base_url": "https://api.deepseek.com",
                  "api_key_env": "DEEPSEEK_API_KEY", "balance_path": "/user/balance"},
-    "opencode": {"type": "openai", "label": "OpenCode Go", "base_url": "https://opencode.ai/zen/go/v1",
-                 "api_key_env": "OPENCODE_API_KEY"},
+    # OpenCode Go serves models through three different APIs (see opencode_endpoint).
+    "opencode": {"type": "opencode_go", "label": "OpenCode Go", "base_url": "https://opencode.ai/zen/go/v1",
+                 "api_key_env": "OPENCODE_API_KEY", "endpoints": {}},
 }
+
+# OpenCode Go model ids from https://opencode.ai/docs/go/ (used when /models can't be read).
+OPENCODE_GO_DOC_MODELS = [
+    "grok-4.7", "grok-4.6", "gpt-6-luna", "gpt-5.6-luna", "glm-5.3-flash", "glm-5.3", "glm-5.2",
+    "kimi-k3", "kimi-k2.7-code", "kimi-k2.6", "longcat-2.0", "longcat-2.5-preview-free",
+    "deepseek-v4.1-flash", "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp",
+    "mimo-v2.6-flash", "mimo-v2.6-pro", "mimo-v2.5", "mimo-v2.5-pro", "minimax-m3", "minimax-m2.7",
+    "muse-spark-1.3-contributor", "muse-spark-1.2-contributor", "qwen3.8-max", "qwen3.8-flash",
+    "qwen3.7-plus", "hy4-preview", "hy3", "space-bunny",
+]
+
+
+def opencode_endpoint(model: str, cfg: Optional[dict] = None) -> str:
+    """Which API an OpenCode Go model uses: 'chat' (/chat/completions),
+    'responses' (OpenAI Responses) or 'messages' (Anthropic-compatible).
+    Per-model overrides go in providers.opencode.endpoints."""
+    override = ((cfg or {}).get("endpoints") or {}).get(model)
+    if override:
+        return override
+    m = model.lower()
+    if m.startswith(("grok-", "gpt-", "muse-spark")):
+        return "responses"
+    if m.startswith(("minimax-", "qwen")):
+        return "messages"
+    return "chat"
 DEFAULT_MAIN = "gemini:gemini-3-flash-preview"
 DEFAULT_BACKUP = ""   # e.g. "deepseek:deepseek-v4-flash": runs a step when the main model fails
 DEFAULT_SINGLE = "claude:claude-opus-5-5"
@@ -209,7 +236,7 @@ def save_llm_config(config: dict, path: str = CONFIG_PATH):
 
 def provider_key(cfg: dict) -> Optional[str]:
     if cfg.get("api_key"):
-        return cfg["api_key"]
+        return str(cfg["api_key"]).strip()
     if cfg.get("token_file"):
         try:
             with open(os.path.expanduser(cfg["token_file"]), encoding="utf-8") as f:
@@ -218,7 +245,8 @@ def provider_key(cfg: dict) -> Optional[str]:
                 return token
         except OSError:
             pass
-    return os.environ.get(cfg["api_key_env"]) if cfg.get("api_key_env") else None
+    value = os.environ.get(cfg["api_key_env"]) if cfg.get("api_key_env") else None
+    return value.strip() if value else value
 
 
 # --------------------------------------------------------------------------
@@ -330,6 +358,97 @@ class CanvasProxyBackend(OpenAICompatibleBackend):
                     time.sleep(wait)
                     continue
                 raise ProviderUnavailable(f"cannot reach the Gemini Canvas proxy at {self.cfg['base_url']}: {e}")
+
+
+class OpenAIResponsesBackend(OpenAICompatibleBackend):
+    """OpenAI Responses API (/responses): OpenCode Go's Grok, GPT Luna and Muse Spark models."""
+
+    def call(self, system_prompt: str, user_prompt: str,
+             temperature: Optional[float], max_tokens: Optional[int]) -> str:
+        import openai
+        params = dict(model=self.model, instructions=system_prompt, input=user_prompt)
+        if max_tokens is not None:
+            params["max_output_tokens"] = max_tokens
+        if temperature is not None and not self.no_temperature:
+            params["temperature"] = temperature
+        try:
+            try:
+                resp = self.client.responses.create(**params)
+            except openai.BadRequestError as e:
+                if "temperature" in params and "temperature" in str(e).lower():
+                    self.no_temperature = True
+                    params.pop("temperature")
+                    resp = self.client.responses.create(**params)
+                else:
+                    raise
+        except (openai.AuthenticationError, openai.PermissionDeniedError, openai.RateLimitError) as e:
+            raise ProviderUnavailable(str(e))
+        except openai.APIStatusError as e:
+            if e.status_code in (402, 429, 529) or _looks_unavailable(str(e)):
+                raise ProviderUnavailable(str(e))
+            raise
+        except openai.APIConnectionError as e:
+            raise ProviderUnavailable(f"cannot reach {self.cfg['base_url']}: {e}")
+        if getattr(resp, "status", None) == "incomplete":
+            print(f"  [warning] {self.provider}:{self.model} stopped early (incomplete); the text may be cut off")
+        return resp.output_text or ""
+
+
+class AnthropicCompatibleBackend:
+    """Anthropic-compatible /v1/messages API of a third-party service
+    (OpenCode Go's MiniMax and Qwen models). Not used for Claude itself."""
+
+    def __init__(self, provider: str, cfg: dict, model: str):
+        try:
+            import anthropic
+        except ImportError:
+            raise ProviderUnavailable("the `anthropic` package is not installed (pip install anthropic)")
+        self.anthropic, self.provider, self.cfg, self.model = anthropic, provider, cfg, model
+        key = provider_key(cfg)
+        if not key:
+            raise ProviderUnavailable(f"no API key: set {cfg.get('api_key_env')} in {KEYS_PATH} (run setup_models.py)")
+        # The SDK appends /v1/messages, so drop a trailing /v1 from the base URL.
+        base = re.sub(r"/v1/?$", "", cfg["base_url"].rstrip("/"))
+        self.client = anthropic.Anthropic(api_key=key, base_url=base,
+                                          default_headers={"Authorization": f"Bearer {key}"},
+                                          timeout=cfg.get("timeout_seconds", 900), max_retries=2)
+        self.no_temperature = False
+
+    def call(self, system_prompt: str, user_prompt: str,
+             temperature: Optional[float], max_tokens: Optional[int]) -> str:
+        a = self.anthropic
+        params = dict(model=self.model, max_tokens=max_tokens or 16000, system=system_prompt,
+                      messages=[{"role": "user", "content": user_prompt}])
+        if temperature is not None and not self.no_temperature:
+            # anthropic SDK 1.x has no temperature argument (current Claude models
+            # reject it); third-party Anthropic-compatible APIs still accept it.
+            params["extra_body"] = {"temperature": temperature}
+
+        def run():
+            # Streamed so long outputs don't hit HTTP time-outs.
+            with self.client.messages.stream(**params) as stream:
+                return stream.get_final_message()
+        try:
+            try:
+                message = run()
+            except a.BadRequestError as e:
+                if "extra_body" in params and "temperature" in str(e).lower():
+                    self.no_temperature = True
+                    params.pop("extra_body")
+                    message = run()
+                else:
+                    raise
+        except (a.AuthenticationError, a.PermissionDeniedError, a.RateLimitError) as e:
+            raise ProviderUnavailable(str(e))
+        except a.APIStatusError as e:
+            if e.status_code in (402, 429, 529) or _looks_unavailable(str(e)):
+                raise ProviderUnavailable(str(e))
+            raise
+        except a.APIConnectionError as e:
+            raise ProviderUnavailable(f"cannot reach {self.cfg['base_url']}: {e}")
+        if message.stop_reason == "max_tokens":
+            print(f"  [warning] {self.provider}:{self.model} hit max_tokens; the text may be cut off")
+        return "".join(getattr(b, "text", "") for b in message.content if b.type == "text")
 
 
 class ClaudeCodeBackend:
@@ -457,17 +576,45 @@ def make_backend(spec: str, providers: dict):
         return ClaudeCodeBackend(cfg, model)
     if cfg.get("type") == "canvas_proxy":
         return CanvasProxyBackend(provider, cfg, model)
+    if cfg.get("type") == "opencode_go":
+        endpoint = opencode_endpoint(model, cfg)
+        if endpoint == "responses":
+            return OpenAIResponsesBackend(provider, cfg, model)
+        if endpoint == "messages":
+            return AnthropicCompatibleBackend(provider, cfg, model)
     return OpenAICompatibleBackend(provider, cfg, model)
 
 
 # --------------------------------------------------------------------------
 # Provider checks (used by setup_models.py and the startup check)
 # --------------------------------------------------------------------------
+class HTTPProblem(Exception):
+    pass
+
+
 def _http_json(url: str, key: Optional[str], timeout: int = 15):
+    # A normal User-Agent: some services (e.g. opencode.ai behind Cloudflare)
+    # answer 403 to Python's default "Python-urllib/3.x".
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {key or 'not-needed'}",
-                                               "Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+                                               "Accept": "application/json",
+                                               "User-Agent": "medical-brain-workflow/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        # Show the server's own explanation, not just "Forbidden".
+        try:
+            body = e.read().decode("utf-8", "ignore")
+            try:
+                data = json.loads(body)
+                err = data.get("error", data) if isinstance(data, dict) else data
+                body = err.get("message", err) if isinstance(err, dict) else err
+            except ValueError:
+                body = re.sub(r"<[^>]+>", " ", body)
+        except Exception:
+            body = ""
+        body = re.sub(r"\s+", " ", str(body)).strip()[:200]
+        raise HTTPProblem(f"HTTP {e.code} {e.reason}" + (f": {body}" if body else ""))
 
 
 def list_models(provider: str, cfg: dict) -> list:
@@ -479,7 +626,12 @@ def list_models(provider: str, cfg: dict) -> list:
             client = anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
             return [m.id for m in client.models.list()]
         return list(CLAUDE_SUBSCRIPTION_MODELS)
-    data = _http_json(cfg["base_url"].rstrip("/") + "/models", provider_key(cfg))
+    try:
+        data = _http_json(cfg["base_url"].rstrip("/") + "/models", provider_key(cfg))
+    except Exception:
+        if cfg.get("type") == "opencode_go" and provider_key(cfg):
+            return list(OPENCODE_GO_DOC_MODELS)   # documented list; each pick is test-called
+        raise
     items = data.get("data", data) if isinstance(data, dict) else data
     ids = [m.get("id") if isinstance(m, dict) else str(m) for m in items or []]
     if cfg.get("type") == "canvas_proxy":
@@ -509,6 +661,18 @@ def provider_status(provider: str, cfg: dict) -> tuple:
                 return "error", f"balance too low ({detail or 'no balance'})"
         except Exception as e:
             return "error", _short(e)
+    if cfg.get("type") == "opencode_go":
+        # Read /models; if that's refused, check the key with a real call instead.
+        try:
+            data = _http_json(cfg["base_url"].rstrip("/") + "/models", provider_key(cfg))
+            items = data.get("data", data) if isinstance(data, dict) else data
+            return "active", f"{len(items or [])} models"
+        except Exception as e:
+            listing_error = _short(e)
+        ok, why = test_model(f"{provider}:glm-5.3-flash", {provider: cfg})
+        if ok:
+            return "active", f"key works; model list from the docs (/models said: {listing_error})"
+        return "error", f"{why} (/models said: {listing_error})"
     try:
         n = len(list_models(provider, cfg))
         return "active", (f"{n} models" + (f" · balance {detail}" if detail else ""))
@@ -519,7 +683,8 @@ def provider_status(provider: str, cfg: dict) -> tuple:
 def test_model(spec: str, providers: dict) -> tuple:
     """One tiny real call. (ok, detail)."""
     try:
-        reply = make_backend(spec, providers).call("Reply with the single word: OK", "ping", None, 16)
+        # 512 tokens: reasoning models spend some on thinking before answering.
+        reply = make_backend(spec, providers).call("Reply with the single word: OK", "ping", None, 512)
         return (True, "answers") if reply.strip() else (False, "empty reply")
     except Exception as e:
         return False, _short(e)

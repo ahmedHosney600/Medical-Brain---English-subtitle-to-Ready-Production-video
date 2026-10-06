@@ -38,6 +38,7 @@ def save_key(env_name: str, value: str):
     if os.path.exists(lp.KEYS_PATH):
         with open(lp.KEYS_PATH, encoding="utf-8") as f:
             lines = [l for l in f.read().splitlines() if not l.startswith(env_name + "=")]
+    value = value.strip()
     lines.append(f"{env_name}={value}")
     with open(lp.KEYS_PATH, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
@@ -117,9 +118,21 @@ def collect_models(config: dict, status: dict) -> list:
     return specs
 
 
-def print_models(specs: list):
+def label(spec: str, config: dict) -> str:
+    """'opencode:qwen3.8-max (messages)': OpenCode Go models show which API they use."""
+    provider, model = lp.parse_spec(spec)
+    cfg = config["providers"].get(provider, {})
+    if cfg.get("type") == "opencode_go":
+        endpoint = lp.opencode_endpoint(model, cfg)
+        if endpoint != "chat":
+            return f"{spec} ({endpoint})"
+    return spec
+
+
+def print_models(specs: list, config: dict):
     print("\nAvailable models")
     print("----------------")
+    specs = [label(s, config) for s in specs]
     width = max(len(s) for s in specs) + 6
     cols = max(1, min(3, 110 // width))
     rows = (len(specs) + cols - 1) // cols
@@ -187,7 +200,7 @@ def main():
         status = show_status(config)
 
     specs = collect_models(config, status)
-    print_models(specs)
+    print_models(specs, config)
     choose_and_test(config, specs)
 
     mode = ask("\nDefault option when main.py can't show its menu: 1) main  2) single  3) hybrid  [3]: ", "3")

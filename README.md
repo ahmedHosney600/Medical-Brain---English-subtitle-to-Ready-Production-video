@@ -29,7 +29,19 @@ Models are written `provider:model`:
 | `gemini` | `gemini:gemini-3-flash-preview` | the Gemini Canvas proxy on `localhost:8765` (Canvas tab open) |
 | `claude` | `claude:claude-opus-5-5` | Claude Code installed and logged in (subscription). Or set `"transport": "anthropic_api"` and `ANTHROPIC_API_KEY` |
 | `deepseek` | `deepseek:deepseek-v4-pro` | `DEEPSEEK_API_KEY` (api.deepseek.com) |
-| `opencode` | `opencode:glm-5.1` | `OPENCODE_API_KEY` (OpenCode Go, opencode.ai/zen/go/v1) |
+| `opencode` | `opencode:glm-5.3` | `OPENCODE_API_KEY` (OpenCode Go, opencode.ai/zen/go/v1) |
+
+**OpenCode Go uses three different APIs** ([docs](https://opencode.ai/docs/go/)). The workflow picks the right one per model:
+
+| API | Models |
+|---|---|
+| OpenAI `/chat/completions` | GLM, Kimi, LongCat, DeepSeek, MiMo, Hy, Space Bunny |
+| OpenAI `/responses` | Grok, GPT Luna, Muse Spark |
+| Anthropic-compatible `/messages` | MiniMax, Qwen |
+
+`setup_models.py` shows the API next to each model that doesn't use chat, e.g. `opencode:qwen3.8-max (messages)`.
+- To send a new model to another API, add `"endpoints": {"<model-id>": "chat|responses|messages"}` under `providers.opencode`.
+- If `/models` can't be read, the documented model list is shown instead, and the key is checked with a real call.
 
 Any other OpenAI-compatible service can be added under `providers` with `"type": "openai"`, a `base_url` and an `api_key_env`.
 
