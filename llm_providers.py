@@ -26,6 +26,7 @@ models, and choose the models for each role.
 """
 
 import contextvars
+import fnmatch
 import functools
 import sys
 import time
@@ -58,7 +59,9 @@ DEFAULT_PROVIDERS = {
                  "api_key_env": "DEEPSEEK_API_KEY", "balance_path": "/user/balance"},
     # OpenCode Go serves models through three different APIs (see opencode_endpoint).
     "opencode": {"type": "opencode_go", "label": "OpenCode Go", "base_url": "https://opencode.ai/zen/go/v1",
-                 "api_key_env": "OPENCODE_API_KEY", "endpoints": {}},
+                 "api_key_env": "OPENCODE_API_KEY", "endpoints": {},
+                 # Qwen 3.8 Max spent its whole 16k budget thinking on step 1; write without it.
+                 "thinking": {"qwen*": "off"}},
 }
 
 # OpenCode Go model ids from https://opencode.ai/docs/go/ (used when /models can't be read).
@@ -306,6 +309,29 @@ def _limit_refused(err) -> bool:
     return ("max_tokens" in m or "max_output_tokens" in m or "maximum" in m) and "temperature" not in m
 
 
+class AnswerCutOff(RuntimeError):
+    """The answer still stopped at max_tokens. Carries the cut text so the router
+    can use it as a last resort when no other model can answer."""
+
+    def __init__(self, message: str, text: str):
+        super().__init__(message)
+        self.text = text
+
+
+def thinking_mode(cfg: dict, model: str) -> Optional[str]:
+    """'off' / 'low' / None from the provider's "thinking" setting,
+    e.g. {"qwen*": "off", "deepseek-v4-pro": "low"} (wildcards allowed)."""
+    for pattern, mode in (cfg.get("thinking") or {}).items():
+        if fnmatch.fnmatch(model.lower(), pattern.lower()):
+            return None if str(mode).lower() in ("", "default", "on") else str(mode).lower()
+    return None
+
+
+def _thinking_refused(err) -> bool:
+    m = str(err).lower()
+    return any(k in m for k in ("thinking", "enable_thinking", "reasoning"))
+
+
 class StepTimeout(RuntimeError):
     """A call took longer than step_timeout_seconds and was abandoned."""
 
@@ -391,8 +417,9 @@ class _OutputLimits:
             except _LimitTooHigh:
                 pass  # keep the first (cut) answer
         if cut:
-            node = current_node.get() or "this step"
-            print(f"  ⚠️ {node}: {self.provider}:{self.model} hit max_tokens ({limit}); the text may be cut off")
+            # A cut answer is usually broken (half a JSON object, half a script):
+            # let the router try the main/backup model instead.
+            raise AnswerCutOff(f"{self.provider}:{self.model} hit max_tokens ({limit}); the answer was cut off", text)
         return text
 
 
@@ -420,6 +447,11 @@ class OpenAICompatibleBackend(_OutputLimits):
             params["max_tokens"] = max_tokens
         if temperature is not None and not self.no_temperature:
             params["temperature"] = temperature
+        mode = None if getattr(self, "no_thinking", False) else thinking_mode(self.cfg, self.model)
+        if mode == "off":
+            params["extra_body"] = {"enable_thinking": False}      # Qwen-style switch
+        elif mode == "low":
+            params["reasoning_effort"] = "low"
         return params
 
     def _create(self, params: dict):
@@ -431,6 +463,12 @@ class OpenAICompatibleBackend(_OutputLimits):
             if "temperature" in params and "temperature" in str(e).lower():
                 self.no_temperature = True
                 params.pop("temperature")
+                return self.client.chat.completions.create(**params)
+            # A model that doesn't accept the thinking switch: retry without it.
+            if ("extra_body" in params or "reasoning_effort" in params) and _thinking_refused(e):
+                self.no_thinking = True
+                params.pop("extra_body", None)
+                params.pop("reasoning_effort", None)
                 return self.client.chat.completions.create(**params)
             raise
 
@@ -551,6 +589,8 @@ class OpenAIResponsesBackend(OpenAICompatibleBackend):
             params["max_output_tokens"] = limit
         if temperature is not None and not self.no_temperature:
             params["temperature"] = temperature
+        if thinking_mode(self.cfg, self.model) and not getattr(self, "no_thinking", False):
+            params["reasoning"] = {"effort": "low"}   # the Responses API has no "off"
         progress = _Progress(self.model, _step_timeout(self.cfg))
 
         def create():
@@ -560,6 +600,10 @@ class OpenAIResponsesBackend(OpenAICompatibleBackend):
                 if "temperature" in params and "temperature" in str(e).lower():
                     self.no_temperature = True
                     params.pop("temperature")
+                    return self.client.responses.create(**params)
+                if "reasoning" in params and _thinking_refused(e):
+                    self.no_thinking = True
+                    params.pop("reasoning")
                     return self.client.responses.create(**params)
                 raise
 
@@ -620,6 +664,8 @@ class AnthropicCompatibleBackend(_OutputLimits):
             # anthropic SDK 1.x has no temperature argument (current Claude models
             # reject it); third-party Anthropic-compatible APIs still accept it.
             params["extra_body"] = {"temperature": temperature}
+        if thinking_mode(self.cfg, self.model) == "off" and not getattr(self, "no_thinking", False):
+            params["thinking"] = {"type": "disabled"}
 
         progress = _Progress(self.model, _step_timeout(self.cfg))
 
@@ -642,6 +688,10 @@ class AnthropicCompatibleBackend(_OutputLimits):
                 if "extra_body" in params and "temperature" in str(e).lower():
                     self.no_temperature = True
                     params.pop("extra_body")
+                    message = run()
+                elif "thinking" in params and _thinking_refused(e):
+                    self.no_thinking = True
+                    params.pop("thinking")
                     message = run()
                 else:
                     raise
@@ -993,6 +1043,7 @@ class LLMRouter:
              temperature: Optional[float] = None, max_tokens: Optional[int] = None) -> str:
         node = current_node.get()
         spec = self.model_for(node)
+        cut_text = None   # best cut-off answer, used only if every model fails
         state = _node_state.get()
         if node and state is not None and not state["announced"]:
             state["announced"] = True
@@ -1010,16 +1061,31 @@ class LLMRouter:
                     self._log(f"⚠️ {node}: {spec} unavailable ({_short(e)}). "
                               f"This and later {provider} steps run on {self.main}.")
                 except Exception as e:
+                    if isinstance(e, AnswerCutOff):
+                        cut_text = e.text
                     self._log(f"⚠️ {node}: {spec} failed ({_short(e)}). Running this step on {self.main}.")
         try:
             result = self._backend(self.main).call(system_prompt, user_prompt, temperature, max_tokens)
             self._count(node, self.main)
             return result
         except Exception as e:
+            if isinstance(e, AnswerCutOff) and not cut_text:
+                cut_text = e.text
             if not self.backup or parse_spec(self.backup)[0] in self.down:
+                if cut_text:
+                    self._log(f"⚠️ {node}: no model gave a complete answer; using the cut-off one.")
+                    return cut_text
                 raise
             self._log(f"⚠️ {node}: main model {self.main} failed ({_short(e)}). Running this step on the backup {self.backup}.")
-        result = self._backend(self.backup).call(system_prompt, user_prompt, temperature, max_tokens)
+        try:
+            result = self._backend(self.backup).call(system_prompt, user_prompt, temperature, max_tokens)
+        except Exception as e:
+            if isinstance(e, AnswerCutOff):
+                cut_text = cut_text or e.text
+            if cut_text:
+                self._log(f"⚠️ {node}: backup failed too ({_short(e)}); using the cut-off answer.")
+                return cut_text
+            raise
         self._count(node, self.backup)
         return result
 

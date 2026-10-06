@@ -73,6 +73,10 @@ Models are written `provider:model`:
 
 Both numbers can be changed per provider in `llm_variables.json`.
 
+If an answer is **still** cut off, the step is re-run on the main model (or the backup). A cut-off answer is only used if no model can give a complete one.
+
+**Thinking switch.** `providers.<name>.thinking` turns a model's thinking off or low, for example `{"qwen*": "off", "deepseek-v4-pro": "low"}` (wildcards allowed). OpenCode Go's Qwen models are `off` by default: Qwen 3.8 Max spent its whole 16,000-token budget thinking on the first step. If a model doesn't accept the switch, the call is retried without it.
+
 **Progress and slow models.** Each step prints `▶ step … (model)` when it starts. For API models, a live line shows `⏳ model · 1m 40s · thinking…` / `writing ~1,850 tokens`. If one call takes longer than `step_timeout_seconds` (default 600 = 10 min), it's stopped and the step runs on the backup model. `setup_models.py` shows how long each model takes to answer. Slow models are better as judges (~5 calls each) than as the main writer (~20 calls).
 
 Any other OpenAI-compatible service can be added under `providers` with `"type": "openai"`, a `base_url` and an `api_key_env`.
