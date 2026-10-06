@@ -147,6 +147,29 @@ def parse_spec(spec: str, default_provider: str = "gemini") -> tuple:
     return ("claude" if spec.startswith("claude") else default_provider), spec
 
 
+def _sanitize_no_proxy():
+    """Some Macs (VPNs, proxy apps, Docker) put IPv6 ranges such as '::1/128' or
+    'fe80::/10' in NO_PROXY. The httpx library used by the OpenAI/Anthropic SDKs
+    can't read those and fails with "Invalid port: ':1'" before sending anything.
+    Drop just those entries, for this process only; everything else is kept."""
+    for var in ("NO_PROXY", "no_proxy"):
+        value = os.environ.get(var)
+        if not value:
+            continue
+        kept = []
+        for entry in value.split(","):
+            e = entry.strip()
+            if e and "://" not in e and ":" in e and ("/" in e or e.startswith("[")):
+                continue  # IPv6 range or bracketed IPv6: unreadable for httpx
+            kept.append(entry)
+        cleaned = ",".join(kept)
+        if cleaned != value:
+            os.environ[var] = cleaned
+
+
+_sanitize_no_proxy()
+
+
 def load_keys(path: str = KEYS_PATH):
     """Loads API keys from llm_keys.env into the environment (without overriding)."""
     try:
@@ -691,7 +714,10 @@ def test_model(spec: str, providers: dict) -> tuple:
 
 
 def _short(e) -> str:
-    return re.sub(r"\s+", " ", str(e))[:160]
+    text = re.sub(r"\s+", " ", str(e))[:160]
+    if "Invalid port" in text or "InvalidURL" in type(e).__name__:
+        text += " (your NO_PROXY setting has an entry Python can't read; run: env | grep -i proxy)"
+    return text
 
 
 # --------------------------------------------------------------------------
