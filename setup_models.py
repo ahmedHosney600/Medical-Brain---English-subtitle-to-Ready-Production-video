@@ -19,6 +19,8 @@ ICON = {"active": "✅", "off": "⚪", "error": "❌"}
 ROLE_HELP = {
     "main_model": "MAIN model: writes the script, and runs any step whose own model fails",
     "single_model": "ONE STRONG model: used for every step when you pick option 2 in main.py",
+    "backup_model": "BACKUP model (optional): runs a step when the main model fails, e.g. Gemini Canvas timed out\n"
+                    "   or the tab closed. Type 0 for no backup",
 }
 
 
@@ -59,8 +61,26 @@ def show_status(config: dict) -> dict:
     return status
 
 
+def offer_proxy_token(config: dict, status: dict) -> bool:
+    """The Gemini Canvas proxy keeps its token in <proxy folder>/native_host/.proxy_token."""
+    gem = config["providers"].get("gemini", {})
+    if gem.get("type") != "canvas_proxy" or status.get("gemini") == "active" or gem.get("api_key"):
+        return False
+    folder = ask("  Gemini Canvas proxy isn't answering. Path to your gemini-canvas-proxy folder\n"
+                 "  (to read its token; Enter to skip): ")
+    folder = os.path.expanduser(folder.strip().strip('"').strip("'"))
+    token_file = os.path.join(folder, "native_host", ".proxy_token")
+    if folder and os.path.exists(token_file):
+        gem["token_file"] = token_file
+        print(f"  Using the token in {token_file}")
+        return True
+    if folder:
+        print(f"  No token found at {token_file} (run the proxy's ./setup.sh first).")
+    return False
+
+
 def offer_keys(config: dict, status: dict) -> bool:
-    changed = False
+    changed = offer_proxy_token(config, status)
     for name, cfg in config["providers"].items():
         env = cfg.get("api_key_env")
         if status.get(name) == "off" and env and not cfg.get("free"):
@@ -89,6 +109,8 @@ def collect_models(config: dict, status: dict) -> list:
         except Exception:
             pass
     current = [config["main_model"], config["single_model"], *config["hybrid_routes"].values()]
+    if config.get("backup_model"):
+        current.append(config["backup_model"])
     for spec in current:
         if spec not in specs:
             specs.append(spec)
@@ -110,9 +132,11 @@ def print_models(specs: list):
         print(line.rstrip())
 
 
-def pick(label: str, current: str, specs: list) -> str:
+def pick(label: str, current: str, specs: list, allow_none: bool = False) -> str:
     while True:
-        answer = ask(f"{label}\n   current: {current}\n   number, provider:model, or Enter to keep: ", current)
+        answer = ask(f"{label}\n   current: {current or 'none'}\n   number, provider:model, or Enter to keep: ", current)
+        if allow_none and answer in ("0", ""):
+            return "" if answer == "0" else current
         if answer.isdigit() and 1 <= int(answer) <= len(specs):
             return specs[int(answer) - 1]
         if ":" in answer:
@@ -124,12 +148,14 @@ def choose_and_test(config: dict, specs: list):
     print("\nChoose a model for each role (Enter keeps the current one).\n")
     for role in ("main_model", "single_model"):
         config[role] = pick(ROLE_HELP[role], config[role], specs)
+    config["backup_model"] = pick(ROLE_HELP["backup_model"], config.get("backup_model", ""), specs, allow_none=True)
     print("\nHYBRID judges (option 3 in main.py): each of these steps runs on its own model:")
     for node, spec in list(config["hybrid_routes"].items()):
         config["hybrid_routes"][node] = pick(f" • {node}", spec, specs)
 
     while True:
-        chosen = sorted({config["main_model"], config["single_model"], *config["hybrid_routes"].values()})
+        chosen = sorted({config["main_model"], config["single_model"], *config["hybrid_routes"].values(),
+                         *([config["backup_model"]] if config.get("backup_model") else [])})
         print("\nTesting each chosen model with a one-word call...")
         failed = []
         for spec in chosen:
@@ -144,9 +170,9 @@ def choose_and_test(config: dict, specs: list):
             print("⚠️  Your MAIN model failed. Runs need it: pick another, or start its service (e.g. the Gemini Canvas tab).")
         if ask("Re-pick the failed models? [Y/n] ", "y").lower() != "y":
             return
-        for role in ("main_model", "single_model"):
-            if config[role] in failed:
-                config[role] = pick(ROLE_HELP[role], config[role], specs)
+        for role in ("main_model", "single_model", "backup_model"):
+            if config.get(role) and config[role] in failed:
+                config[role] = pick(ROLE_HELP[role], config[role], specs, allow_none=role == "backup_model")
         for node, spec in list(config["hybrid_routes"].items()):
             if spec in failed:
                 config["hybrid_routes"][node] = pick(f" • {node}", spec, specs)

@@ -43,8 +43,11 @@ MODES = ("main", "single", "hybrid")
 MODE_ALIASES = {"gemini": "main", "claude": "single", "auto": "hybrid"}
 
 DEFAULT_PROVIDERS = {
-    "gemini": {"type": "openai", "label": "Gemini Canvas proxy", "base_url": "http://localhost:8765/v1",
-               "api_key_env": "OPENAI_API_KEY", "free": True},
+    # Only this provider gets the Canvas-proxy handling (retries on time-outs,
+    # JSON mode, room for thinking tokens). Every other API is called normally.
+    "gemini": {"type": "canvas_proxy", "label": "Gemini Canvas proxy", "base_url": "http://localhost:8765/v1",
+               "api_key_env": "OPENAI_API_KEY", "free": True,
+               "timeout_retries": 2, "retry_wait_seconds": 10, "min_max_tokens": 16000, "json_mode": True},
     "claude": {"type": "claude", "label": "Claude", "transport": "claude_code", "effort": "high",
                "efforts": {}, "timeout_seconds": 900},
     "deepseek": {"type": "openai", "label": "DeepSeek", "base_url": "https://api.deepseek.com",
@@ -53,6 +56,7 @@ DEFAULT_PROVIDERS = {
                  "api_key_env": "OPENCODE_API_KEY"},
 }
 DEFAULT_MAIN = "gemini:gemini-3-flash-preview"
+DEFAULT_BACKUP = ""   # e.g. "deepseek:deepseek-v4-flash": runs a step when the main model fails
 DEFAULT_SINGLE = "claude:claude-opus-5-5"
 DEFAULT_HYBRID_ROUTES = {
     # High-stakes medical checks: deepest reasoning.
@@ -169,6 +173,7 @@ def load_llm_config(path: str = CONFIG_PATH) -> dict:
         "provider": MODE_ALIASES.get(mode, mode),
         "main_model": main_model,
         "single_model": single_model,
+        "backup_model": raw.get("backup_model", DEFAULT_BACKUP),
         "hybrid_routes": routes,
         "providers": providers,
     }
@@ -193,6 +198,7 @@ def save_llm_config(config: dict, path: str = CONFIG_PATH):
         "provider": config["provider"],
         "main_model": config["main_model"],
         "single_model": config["single_model"],
+        "backup_model": config.get("backup_model", ""),
         "hybrid_routes": config["hybrid_routes"],
         "providers": providers_out,
     })
@@ -202,28 +208,37 @@ def save_llm_config(config: dict, path: str = CONFIG_PATH):
 
 
 def provider_key(cfg: dict) -> Optional[str]:
-    return cfg.get("api_key") or (os.environ.get(cfg["api_key_env"]) if cfg.get("api_key_env") else None)
+    if cfg.get("api_key"):
+        return cfg["api_key"]
+    if cfg.get("token_file"):
+        try:
+            with open(os.path.expanduser(cfg["token_file"]), encoding="utf-8") as f:
+                token = f.read().strip()
+            if token:
+                return token
+        except OSError:
+            pass
+    return os.environ.get(cfg["api_key_env"]) if cfg.get("api_key_env") else None
 
 
 # --------------------------------------------------------------------------
 # Backends
 # --------------------------------------------------------------------------
 class OpenAICompatibleBackend:
-    """Gemini Canvas proxy, DeepSeek, OpenCode Go, or any OpenAI-compatible API."""
+    """DeepSeek, OpenCode Go, or any OpenAI-compatible API: called normally,
+    with the SDK's standard retries and a long timeout. No proxy limits."""
 
-    def __init__(self, provider: str, cfg: dict, model: str):
+    def __init__(self, provider: str, cfg: dict, model: str, max_retries: int = 2, timeout: Optional[float] = None):
         from openai import OpenAI
         self.provider, self.cfg, self.model = provider, cfg, model
         key = provider_key(cfg)
         if not key and not cfg.get("free"):
             raise ProviderUnavailable(f"no API key: set {cfg.get('api_key_env')} in {KEYS_PATH} (run setup_models.py)")
         self.client = OpenAI(api_key=key or "not-needed", base_url=cfg["base_url"],
-                             timeout=cfg.get("timeout_seconds", 600), max_retries=1)
+                             timeout=timeout or cfg.get("timeout_seconds", 900), max_retries=max_retries)
         self.no_temperature = False
 
-    def call(self, system_prompt: str, user_prompt: str,
-             temperature: Optional[float], max_tokens: Optional[int]) -> str:
-        import openai
+    def _params(self, system_prompt, user_prompt, temperature, max_tokens) -> dict:
         params = dict(model=self.model, messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -232,17 +247,32 @@ class OpenAICompatibleBackend:
             params["max_tokens"] = max_tokens
         if temperature is not None and not self.no_temperature:
             params["temperature"] = temperature
+        return params
+
+    def _create(self, params: dict):
+        import openai
         try:
-            try:
-                resp = self.client.chat.completions.create(**params)
-            except openai.BadRequestError as e:
-                # Some reasoning models reject temperature: retry once without it.
-                if "temperature" in params and "temperature" in str(e).lower():
-                    self.no_temperature = True
-                    params.pop("temperature")
-                    resp = self.client.chat.completions.create(**params)
-                else:
-                    raise
+            return self.client.chat.completions.create(**params)
+        except openai.BadRequestError as e:
+            # Some reasoning models reject temperature: retry once without it.
+            if "temperature" in params and "temperature" in str(e).lower():
+                self.no_temperature = True
+                params.pop("temperature")
+                return self.client.chat.completions.create(**params)
+            raise
+
+    def _text(self, resp) -> str:
+        choice = resp.choices[0]
+        if getattr(choice, "finish_reason", None) == "length":
+            print(f"  [warning] {self.provider}:{self.model} hit max_tokens; the text may be cut off")
+        return choice.message.content or ""
+
+    def call(self, system_prompt: str, user_prompt: str,
+             temperature: Optional[float], max_tokens: Optional[int]) -> str:
+        import openai
+        params = self._params(system_prompt, user_prompt, temperature, max_tokens)
+        try:
+            return self._text(self._create(params))
         except (openai.AuthenticationError, openai.PermissionDeniedError, openai.RateLimitError) as e:
             raise ProviderUnavailable(str(e))
         except openai.APIStatusError as e:
@@ -251,10 +281,55 @@ class OpenAICompatibleBackend:
             raise
         except openai.APIConnectionError as e:
             raise ProviderUnavailable(f"cannot reach {self.cfg['base_url']}: {e}")
-        choice = resp.choices[0]
-        if getattr(choice, "finish_reason", None) == "length":
-            print(f"  [warning] {self.provider}:{self.model} hit max_tokens; the text may be cut off")
-        return choice.message.content or ""
+
+
+_WANTS_JSON = re.compile(r"(only\s+(valid\s+)?json|only\s+the\s+json|only\s+a\s+json|output\s+json)", re.IGNORECASE)
+
+
+class CanvasProxyBackend(OpenAICompatibleBackend):
+    """Gemini through the local Gemini Canvas proxy (pranrichh/gemini-canvas-proxy).
+    Handles the proxy's limits, and only the proxy's:
+      - it gives each request 60 s, then answers 504 (Gemini keeps writing, the
+        answer is lost): retry the step `timeout_retries` times;
+      - Gemini 3's hidden thinking counts against max_tokens and can cut answers
+        (and JSON) short: raise max_tokens to at least `min_max_tokens`;
+      - the proxy supports JSON mode: switch it on when the prompt asks for JSON only.
+    Safety blocks (502 with blockReason) are not retried: the same prompt gets the same answer."""
+
+    def __init__(self, provider: str, cfg: dict, model: str):
+        # Our own retry loop replaces the SDK's, so a time-out isn't silently doubled.
+        super().__init__(provider, cfg, model, max_retries=0, timeout=cfg.get("timeout_seconds", 300))
+
+    def call(self, system_prompt: str, user_prompt: str,
+             temperature: Optional[float], max_tokens: Optional[int]) -> str:
+        import time
+        import openai
+        floor = self.cfg.get("min_max_tokens") or 0
+        params = self._params(system_prompt, user_prompt, temperature, max(max_tokens or 0, floor) or None)
+        if self.cfg.get("json_mode", True) and _WANTS_JSON.search(system_prompt + "\n" + user_prompt[-600:]):
+            params["response_format"] = {"type": "json_object"}
+        attempts = 1 + int(self.cfg.get("timeout_retries", 2))
+        wait = self.cfg.get("retry_wait_seconds", 10)
+        for attempt in range(1, attempts + 1):
+            try:
+                return self._text(self._create(params))
+            except openai.AuthenticationError as e:
+                raise ProviderUnavailable(f"proxy token rejected ({e}). Check the token in setup_models.py")
+            except openai.APIStatusError as e:
+                body = str(e)
+                safety = "blockReason" in body or "finishReason" in body or "safety" in body.lower()
+                if e.status_code in (502, 503, 504) and not safety and attempt < attempts:
+                    why = "timed out after 60 s" if e.status_code == 504 else f"error {e.status_code}"
+                    print(f"  ⏳ Gemini Canvas {why}; retrying ({attempt}/{attempts - 1}) in {wait}s...")
+                    time.sleep(wait)
+                    continue
+                raise
+            except (openai.APIConnectionError, openai.APITimeoutError) as e:
+                if attempt < attempts:
+                    print(f"  ⏳ Gemini Canvas proxy not reachable ({e}); retrying ({attempt}/{attempts - 1}) in {wait}s...")
+                    time.sleep(wait)
+                    continue
+                raise ProviderUnavailable(f"cannot reach the Gemini Canvas proxy at {self.cfg['base_url']}: {e}")
 
 
 class ClaudeCodeBackend:
@@ -380,6 +455,8 @@ def make_backend(spec: str, providers: dict):
         if cfg.get("transport") == "anthropic_api":
             return AnthropicAPIBackend(cfg, model)
         return ClaudeCodeBackend(cfg, model)
+    if cfg.get("type") == "canvas_proxy":
+        return CanvasProxyBackend(provider, cfg, model)
     return OpenAICompatibleBackend(provider, cfg, model)
 
 
@@ -405,6 +482,8 @@ def list_models(provider: str, cfg: dict) -> list:
     data = _http_json(cfg["base_url"].rstrip("/") + "/models", provider_key(cfg))
     items = data.get("data", data) if isinstance(data, dict) else data
     ids = [m.get("id") if isinstance(m, dict) else str(m) for m in items or []]
+    if cfg.get("type") == "canvas_proxy":
+        ids = [i for i in ids if i and "image" not in i]  # image-generation models can't write scripts
     return sorted(i for i in ids if i)
 
 
@@ -462,6 +541,9 @@ class LLMRouter:
             raise ValueError(f"Unknown mode '{mode}' (use main, single or hybrid)")
         self.mode = mode
         self.main = config["main_model"]
+        self.backup = config.get("backup_model") or ""
+        if self.backup == self.main:
+            self.backup = ""
         self.routes = dict(config["hybrid_routes"])
         self.down = {}          # provider -> reason, for the rest of the run
         self.events = []
@@ -478,10 +560,11 @@ class LLMRouter:
 
     def models_in_use(self) -> list:
         if self.mode == "single":
-            return [self.config["single_model"], self.main]
+            return [self.config["single_model"], self.main] + ([self.backup] if self.backup else [])
+        extra = [self.backup] if self.backup else []
         if self.mode == "hybrid":
-            return [self.main] + sorted(set(self.routes.values()) - {self.main})
-        return [self.main]
+            return [self.main] + sorted(set(self.routes.values()) - {self.main}) + extra
+        return [self.main] + extra
 
     def describe(self) -> str:
         if self.mode == "main":
@@ -489,7 +572,8 @@ class LLMRouter:
         if self.mode == "single":
             return f"all nodes on {self.config['single_model']} (falls back to {self.main})"
         routed = ", ".join(f"{n} → {m}" for n, m in self.routes.items())
-        return f"{self.main} writes; {routed}"
+        backup = f"; backup {self.backup}" if self.backup else ""
+        return f"{self.main} writes; {routed}{backup}"
 
     def _backend(self, spec: str):
         if spec not in self._backends:
@@ -512,7 +596,9 @@ class LLMRouter:
             if ok:
                 self._log(f"✅ {spec}")
             elif spec == self.main:
-                self._log(f"⚠️ main model {spec} did not answer ({detail}). The run will stop at the first step if it stays down.")
+                then = f"steps will run on the backup model {self.backup}" if self.backup else \
+                    "the run will stop at the first step if it stays down (set a backup model in setup_models.py)"
+                self._log(f"⚠️ main model {spec} did not answer ({detail}). Each step will still try it first; if it fails, {then}.")
             else:
                 self.down[provider] = detail
                 self._log(f"⚠️ {spec} unavailable ({detail}). Its steps will run on {self.main}.")
@@ -539,8 +625,16 @@ class LLMRouter:
                               f"This and later {provider} steps run on {self.main}.")
                 except Exception as e:
                     self._log(f"⚠️ {node}: {spec} failed ({_short(e)}). Running this step on {self.main}.")
-        result = self._backend(self.main).call(system_prompt, user_prompt, temperature, max_tokens)
-        self._count(node, self.main)
+        try:
+            result = self._backend(self.main).call(system_prompt, user_prompt, temperature, max_tokens)
+            self._count(node, self.main)
+            return result
+        except Exception as e:
+            if not self.backup or parse_spec(self.backup)[0] in self.down:
+                raise
+            self._log(f"⚠️ {node}: main model {self.main} failed ({_short(e)}). Running this step on the backup {self.backup}.")
+        result = self._backend(self.backup).call(system_prompt, user_prompt, temperature, max_tokens)
+        self._count(node, self.backup)
         return result
 
     def model_for_node(self, node: str) -> Optional[str]:

@@ -16,6 +16,7 @@ The script works in four steps:
 3. **Model choice.** It lists every model your active providers offer, and you choose:
    - the **main model**: writes the script, and runs any step whose own model fails;
    - **one strong model**: for option 2;
+   - a **backup model** (optional): runs a step when the main model fails;
    - a model for each **hybrid judge** step.
 4. **Test and save.** It test-calls every chosen model (✅/❌), lets you re-pick the failed ones, and saves to `llm_variables.json`.
 
@@ -32,6 +33,22 @@ Models are written `provider:model`:
 
 Any other OpenAI-compatible service can be added under `providers` with `"type": "openai"`, a `base_url` and an `api_key_env`.
 
+### Gemini Canvas proxy: special handling (this provider only)
+The proxy ([pranrichh/gemini-canvas-proxy](https://github.com/pranrichh/gemini-canvas-proxy)) has limits a normal API doesn't. The workflow handles them for `gemini` only:
+
+| Proxy limit | What the workflow does | Setting |
+|---|---|---|
+| Each request gets 60 s, then error 504 (the Canvas tab is slow or closed) | Retries the step, then uses the backup model | `timeout_retries` (2), `retry_wait_seconds` (10) |
+| Gemini's hidden thinking counts against `max_tokens` and can cut answers or JSON short | Raises `max_tokens` to at least 16,000 | `min_max_tokens` |
+| The proxy supports JSON mode | Switches it on for steps that ask for JSON only (the auditors) | `json_mode` |
+| Safety blocks come back as error 502 | Not retried, since the same prompt gets the same answer. Goes to the backup model | |
+| `/v1/models` also lists image models | Hidden in `setup_models.py` | |
+| The token lives in `<proxy folder>/native_host/.proxy_token` | `setup_models.py` asks for the proxy folder and reads it | `token_file` |
+
+DeepSeek, OpenCode Go, Claude and any other API are called normally, with none of these limits: long time-outs, the client's standard retries, and the step's own settings.
+
+**Backup model (optional, recommended).** If the main model still fails after its retries, that step runs on `backup_model`, e.g. `deepseek:deepseek-v4-flash`. The next step tries the main model again.
+
 ### 2. Every run: `python3 main.py script.txt` asks
 ```
   1) Main model for the whole workflow (gemini:gemini-3-flash-preview)
@@ -43,7 +60,7 @@ Choose 1-3 [3]:
 ```
 - **Every step tries its own model first.** If that model fails for any reason (usage limit, weekly limit, outage, bad key), the step is re-run on the main model and the run continues.
   - When the failure means the provider is down, its later steps go straight to the main model.
-  - Only a failure of the main model itself stops the run.
+  - If the main model fails too, the backup model runs that step. Only if that also fails (or there's no backup) does the run stop.
 - `--provider main|single|hybrid` skips the menu.
 - The terminal shows each step's model and time.
 - `output/<session>/llm_provider.json` records which model ran each step and any fallbacks.

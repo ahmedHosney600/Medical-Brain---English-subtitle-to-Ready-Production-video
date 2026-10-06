@@ -3669,6 +3669,8 @@ if __name__ == "__main__":
         for _node, _model in llm_config["hybrid_routes"].items():
             print(f"       {_node} → {_model}")
         print("     Any step whose model fails runs on the main model instead.")
+        if llm_config.get("backup_model"):
+            print(f"  Backup if the main model fails: {llm_config['backup_model']}")
         while True:
             _choice = input("Choose 1-3 [3]: ").strip() or "3"
             if _choice in ("1", "2", "3"):

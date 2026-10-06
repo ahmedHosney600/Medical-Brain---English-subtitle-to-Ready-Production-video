@@ -2,6 +2,7 @@
     "provider": "hybrid",
     "main_model": "gemini:gemini-3-flash-preview",
     "single_model": "claude:claude-opus-5-5",
+    "backup_model": "deepseek:deepseek-v4-flash",
     "hybrid_routes": {
         "medical_truth_verifier": "claude:claude-opus-5-5",
         "fidelity_auditor": "claude:claude-opus-5-5",
@@ -12,7 +13,11 @@
     "providers": {
         "gemini": {
             "base_url": "http://localhost:8765/v1",
-            "api_key": "<your Gemini Canvas proxy token>"
+            "token_file": "~/Desktop/My Computer/Programming Proejcts/gemini-canvas-proxy/native_host/.proxy_token",
+            "timeout_retries": 2,
+            "retry_wait_seconds": 10,
+            "min_max_tokens": 16000,
+            "json_mode": true
         },
         "claude": {
             "transport": "claude_code",
