@@ -85,12 +85,32 @@ def check_cue_rows(rows: list, script: str, min_words: int = 3) -> list:
 # --------------------------------------------------------------------------
 # Markdown helpers
 # --------------------------------------------------------------------------
+# Top-level parts of the package. Models don't always use the same heading
+# level (### vs ##), so a part starts at any 1–3 level heading naming one of
+# these; every other heading stays inside its part.
+SECTION_KEYS = [
+    "SCRIPT METADATA", "YOUTUBE PACKAGING", "PRODUCTION SCRIPT", "WHAT CHANGED",
+    "RETENTION ARCHITECTURE", "CTA VERSIONS", "QA RESULTS", "VIDEO SECTIONS",
+    "INTEGRATED PRODUCTION STORYBOARD", "TRANSITION MAP", "TEXT ANIMATION & OVERLAY GUIDE",
+    "AI B-ROLL GENERATION PROMPTS", "INTEGRATION DATA",
+    "SCRIPT PACKAGE", "POST-PRODUCTION GUIDE",  # wrapper headings
+]
+
+
+def _is_part_heading(line: str) -> bool:
+    m = re.match(r"^(#{1,3})\s+(.*)$", line)
+    if not m:
+        return False
+    title = m.group(2).upper()
+    return any(k in title for k in SECTION_KEYS)
+
+
 def split_sections(text: str) -> list:
-    """Splits on '### ' headings → [(heading_line, body)]. Text before the first
-    heading is returned with heading ''."""
+    """Splits into top-level parts → [(heading_line, body)]. Text before the
+    first part heading is returned with heading ''."""
     out, heading, buf = [], "", []
     for line in (text or "").splitlines():
-        if line.startswith("### "):
+        if _is_part_heading(line):
             out.append((heading, "\n".join(buf)))
             heading, buf = line, []
         else:
@@ -125,7 +145,8 @@ def table_rows(block: str) -> list:
             if seen_header and rows:
                 break
             continue
-        cells = [c.strip() for c in s.strip("|").split("|")]
+        # Split on unescaped pipes only; models often escape pipes inside a cell as \|
+        cells = [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", s.strip().strip("|"))]
         if all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
             seen_header = True
             continue
@@ -311,6 +332,14 @@ def _term_glossary(rows: list) -> str:
     return "\n".join(out)
 
 
+def _part(heading: str, body: str) -> list:
+    """Re-emits a package part at ### level, with its own sub-headings pushed
+    below it so the document outline stays consistent."""
+    title = re.sub(r"^#+\s*", "", heading).strip()
+    inner = re.sub(r"^#{1,3}(?=\s)", "####", body, flags=re.MULTILINE)
+    return ["", f"### {title}", "", inner]
+
+
 def _empty(note: str = "Nothing from the script package for this step.") -> str:
     return f"_{note}_"
 
@@ -369,14 +398,14 @@ def build_editing_workbook(final_package: str, state: Optional[dict] = None) -> 
               "A ⚠️ before a cue means it was not found word-for-word in the script: search for the nearest sentence.")
 
     # ── Overview
-    md += ["", "## 0 · OVERVIEW", "", meta[1] or _empty()]
+    md += ["", "## 0 · OVERVIEW", "", re.sub(r"^#{1,3}(?=\s)", "####", meta[1], flags=re.MULTILINE) or _empty()]
 
     # ── Filming
-    md += ["", "## 🎥 BEFORE FILMING", "", "### PRODUCTION SCRIPT (Teleprompter)", "", script[1]]
+    md += ["", "## 🎥 BEFORE FILMING"] + _part("PRODUCTION SCRIPT (Teleprompter)", script[1])
     if retention[1]:
-        md += ["", "### RETENTION ARCHITECTURE", "", retention[1]]
+        md += _part(*retention)
     if ctas[1]:
-        md += ["", "### CTA VERSIONS", "", ctas[1]]
+        md += _part(*ctas)
 
     md += ["", "## ✂️ EDITING STEPS"]
 
@@ -458,7 +487,7 @@ def build_editing_workbook(final_package: str, state: Optional[dict] = None) -> 
     # ── Publishing
     md += ["", "## 🚀 PUBLISHING", ""]
     if packaging[1]:
-        md += [packaging[0], "", packaging[1]]
+        md += _part(*packaging)
     if secs:
         md += ["", "### YOUTUBE CHAPTERS — fix the times after editing", "",
                "Put the playhead on each start sentence in the final edit and copy its time into the description.", "",
@@ -472,6 +501,6 @@ def build_editing_workbook(final_package: str, state: Optional[dict] = None) -> 
     md += ["", "## 📚 REFERENCE APPENDIX"]
     for h, b in (storyboard, transitions, text_guide, broll_detail, adaptation, qa, integration, video_sections, *leftovers):
         if h and b:
-            md += ["", h, "", b]
+            md += _part(h, b)
 
     return "\n".join(md).strip() + "\n"
