@@ -34,6 +34,7 @@ import shutil
 import subprocess
 import tempfile
 import urllib.error
+import uuid
 import urllib.request
 from typing import Optional
 
@@ -257,6 +258,21 @@ def save_llm_config(config: dict, path: str = CONFIG_PATH):
         f.write("\n")
 
 
+# OpenCode Go refuses requests without an x-opencode-session header
+# ("MissingSessionID"); it uses it to route a conversation's calls together.
+# One id per run of the workflow.
+OPENCODE_SESSION_ID = f"medical-brain-{uuid.uuid4()}"
+
+
+def provider_headers(cfg: dict) -> dict:
+    """Extra HTTP headers a provider needs: its configured "headers", plus the
+    session header for OpenCode Go."""
+    headers = dict(cfg.get("headers") or {})
+    if cfg.get("type") == "opencode_go":
+        headers.setdefault("x-opencode-session", OPENCODE_SESSION_ID)
+    return headers
+
+
 def provider_key(cfg: dict) -> Optional[str]:
     if cfg.get("api_key"):
         return str(cfg["api_key"]).strip()
@@ -286,6 +302,7 @@ class OpenAICompatibleBackend:
         if not key and not cfg.get("free"):
             raise ProviderUnavailable(f"no API key: set {cfg.get('api_key_env')} in {KEYS_PATH} (run setup_models.py)")
         self.client = OpenAI(api_key=key or "not-needed", base_url=cfg["base_url"],
+                             default_headers=provider_headers(cfg) or None,
                              timeout=timeout or cfg.get("timeout_seconds", 900), max_retries=max_retries)
         self.no_temperature = False
 
@@ -433,7 +450,7 @@ class AnthropicCompatibleBackend:
         # The SDK appends /v1/messages, so drop a trailing /v1 from the base URL.
         base = re.sub(r"/v1/?$", "", cfg["base_url"].rstrip("/"))
         self.client = anthropic.Anthropic(api_key=key, base_url=base,
-                                          default_headers={"Authorization": f"Bearer {key}"},
+                                          default_headers={"Authorization": f"Bearer {key}", **provider_headers(cfg)},
                                           timeout=cfg.get("timeout_seconds", 900), max_retries=2)
         self.no_temperature = False
 
@@ -615,12 +632,13 @@ class HTTPProblem(Exception):
     pass
 
 
-def _http_json(url: str, key: Optional[str], timeout: int = 15):
+def _http_json(url: str, key: Optional[str], timeout: int = 15, extra_headers: Optional[dict] = None):
     # A normal User-Agent: some services (e.g. opencode.ai behind Cloudflare)
     # answer 403 to Python's default "Python-urllib/3.x".
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {key or 'not-needed'}",
                                                "Accept": "application/json",
-                                               "User-Agent": "medical-brain-workflow/1.0"})
+                                               "User-Agent": "medical-brain-workflow/1.0",
+                                               **(extra_headers or {})})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
@@ -650,7 +668,7 @@ def list_models(provider: str, cfg: dict) -> list:
             return [m.id for m in client.models.list()]
         return list(CLAUDE_SUBSCRIPTION_MODELS)
     try:
-        data = _http_json(cfg["base_url"].rstrip("/") + "/models", provider_key(cfg))
+        data = _http_json(cfg["base_url"].rstrip("/") + "/models", provider_key(cfg), extra_headers=provider_headers(cfg))
     except Exception:
         if cfg.get("type") == "opencode_go" and provider_key(cfg):
             return list(OPENCODE_GO_DOC_MODELS)   # documented list; each pick is test-called
@@ -687,7 +705,7 @@ def provider_status(provider: str, cfg: dict) -> tuple:
     if cfg.get("type") == "opencode_go":
         # Read /models; if that's refused, check the key with a real call instead.
         try:
-            data = _http_json(cfg["base_url"].rstrip("/") + "/models", provider_key(cfg))
+            data = _http_json(cfg["base_url"].rstrip("/") + "/models", provider_key(cfg), extra_headers=provider_headers(cfg))
             items = data.get("data", data) if isinstance(data, dict) else data
             return "active", f"{len(items or [])} models"
         except Exception as e:
@@ -714,7 +732,7 @@ def test_model(spec: str, providers: dict) -> tuple:
 
 
 def _short(e) -> str:
-    text = re.sub(r"\s+", " ", str(e))[:160]
+    text = re.sub(r"\s+", " ", str(e))[:300]
     if "Invalid port" in text or "InvalidURL" in type(e).__name__:
         text += " (your NO_PROXY setting has an entry Python can't read; run: env | grep -i proxy)"
     return text
