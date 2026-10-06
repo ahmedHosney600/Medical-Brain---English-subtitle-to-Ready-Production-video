@@ -2,7 +2,7 @@ import os
 import re
 from typing import TypedDict, Optional
 from langgraph.graph import StateGraph, START, END
-from llm_providers import LLMRouter, load_llm_config
+from llm_providers import LLMRouter, load_llm_config, track_node
 import editing_workbook as ew
 import json
 import urllib.request
@@ -12,8 +12,8 @@ from dotenv import load_dotenv
 # Load environment variables (e.g. OPENAI_API_KEY)
 load_dotenv()
 
-# LLM settings: Gemini Canvas proxy or Claude Opus 5.5 (see llm_providers.py).
-# The backend is chosen once, at the start of the run, by llm_router.select().
+# LLM settings: Gemini, Claude, or hybrid (Gemini writes, Claude judges); see
+# llm_providers.py. The mode is chosen at startup (menu or --provider).
 llm_config = load_llm_config("llm_variables.json")
 llm_router = LLMRouter(llm_config)
 
@@ -3439,30 +3439,30 @@ def route_shorts_quality(state: PipelineState) -> str:
 workflow = StateGraph(PipelineState)
 
 # Add all 24 nodes
-workflow.add_node("source_script_analyzer", source_script_analyzer)
-workflow.add_node("seo_keyword_researcher", seo_keyword_researcher)
-workflow.add_node("strategy_planner", strategy_planner)
-workflow.add_node("hook_writer", hook_writer)
-workflow.add_node("body_restructurer", body_restructurer)
-workflow.add_node("translation_fidelity_auditor", translation_fidelity_auditor)
-workflow.add_node("cta_retention_writer", cta_retention_writer)
-workflow.add_node("dialect_warmth_layer", dialect_warmth_layer)
-workflow.add_node("fidelity_auditor", fidelity_auditor)
-workflow.add_node("script_refinement", script_refinement)
-workflow.add_node("medical_truth_verifier", medical_truth_verifier)
-workflow.add_node("self_critique", self_critique)
-workflow.add_node("packaging_creative_director", packaging_creative_director)
-workflow.add_node("packaging_generator", packaging_generator)
-workflow.add_node("packaging_honesty_ctr_auditor", packaging_honesty_ctr_auditor)
-workflow.add_node("transition_designer", transition_designer)
-workflow.add_node("text_animation_overlay_designer", text_animation_overlay_designer)
-workflow.add_node("broll_prompt_generator", broll_prompt_generator)
-workflow.add_node("production_quality_critique", production_quality_critique)
-workflow.add_node("final_script_package", final_script_package)
-workflow.add_node("shorts_moment_identifier", shorts_moment_identifier)
-workflow.add_node("shorts_script_extractor", shorts_script_extractor)
-workflow.add_node("shorts_caption_packager", shorts_caption_packager)
-workflow.add_node("shorts_quality_gate", shorts_quality_gate)
+workflow.add_node("source_script_analyzer", track_node("source_script_analyzer", source_script_analyzer))
+workflow.add_node("seo_keyword_researcher", track_node("seo_keyword_researcher", seo_keyword_researcher))
+workflow.add_node("strategy_planner", track_node("strategy_planner", strategy_planner))
+workflow.add_node("hook_writer", track_node("hook_writer", hook_writer))
+workflow.add_node("body_restructurer", track_node("body_restructurer", body_restructurer))
+workflow.add_node("translation_fidelity_auditor", track_node("translation_fidelity_auditor", translation_fidelity_auditor))
+workflow.add_node("cta_retention_writer", track_node("cta_retention_writer", cta_retention_writer))
+workflow.add_node("dialect_warmth_layer", track_node("dialect_warmth_layer", dialect_warmth_layer))
+workflow.add_node("fidelity_auditor", track_node("fidelity_auditor", fidelity_auditor))
+workflow.add_node("script_refinement", track_node("script_refinement", script_refinement))
+workflow.add_node("medical_truth_verifier", track_node("medical_truth_verifier", medical_truth_verifier))
+workflow.add_node("self_critique", track_node("self_critique", self_critique))
+workflow.add_node("packaging_creative_director", track_node("packaging_creative_director", packaging_creative_director))
+workflow.add_node("packaging_generator", track_node("packaging_generator", packaging_generator))
+workflow.add_node("packaging_honesty_ctr_auditor", track_node("packaging_honesty_ctr_auditor", packaging_honesty_ctr_auditor))
+workflow.add_node("transition_designer", track_node("transition_designer", transition_designer))
+workflow.add_node("text_animation_overlay_designer", track_node("text_animation_overlay_designer", text_animation_overlay_designer))
+workflow.add_node("broll_prompt_generator", track_node("broll_prompt_generator", broll_prompt_generator))
+workflow.add_node("production_quality_critique", track_node("production_quality_critique", production_quality_critique))
+workflow.add_node("final_script_package", track_node("final_script_package", final_script_package))
+workflow.add_node("shorts_moment_identifier", track_node("shorts_moment_identifier", shorts_moment_identifier))
+workflow.add_node("shorts_script_extractor", track_node("shorts_script_extractor", shorts_script_extractor))
+workflow.add_node("shorts_caption_packager", track_node("shorts_caption_packager", shorts_caption_packager))
+workflow.add_node("shorts_quality_gate", track_node("shorts_quality_gate", shorts_quality_gate))
 
 # Linear edges (upstream pipeline)
 workflow.add_edge(START, "source_script_analyzer")
@@ -3644,21 +3644,41 @@ if __name__ == "__main__":
     import sys
     import datetime
     
-    # Optional: --provider auto|claude|gemini (overrides llm_variables.json / LLM_PROVIDER)
+    # Optional: --provider gemini|claude|hybrid skips the startup menu
     cli_provider = None
     if "--provider" in sys.argv:
         i = sys.argv.index("--provider")
         if i + 1 >= len(sys.argv):
-            print("--provider needs a value: auto, claude or gemini")
+            print("--provider needs a value: gemini, claude or hybrid")
             sys.exit(1)
         cli_provider = sys.argv[i + 1]
         del sys.argv[i:i + 2]
-    if cli_provider:
-        llm_router = LLMRouter(llm_config, provider=cli_provider)
 
     if len(sys.argv) < 2:
-        print("Usage: python3 main.py <path_to_original_script> [path_to_video_analysis] [--provider auto|claude|gemini]")
+        print("Usage: python3 main.py <path_to_original_script> [path_to_video_analysis] [--provider gemini|claude|hybrid]")
         sys.exit(1)
+
+    def _ask_yes(question: str) -> bool:
+        if not sys.stdin.isatty():
+            return False
+        return input(question).strip().lower() in ("", "y", "yes")
+
+    # Model setup for this run: menu when interactive, otherwise flag / env / config
+    if not cli_provider and not os.environ.get("LLM_PROVIDER") and sys.stdin.isatty():
+        _routes = llm_config["hybrid_routes"]
+        print("\nWhich model setup for this run?")
+        print(f"  1) Gemini for the whole workflow ({llm_config['gemini']['model']}, free)")
+        print(f"  2) Claude for the whole workflow ({llm_config['claude']['model']})")
+        print("  3) Hybrid (recommended): Gemini writes, Claude checks:")
+        for _node, _model in _routes.items():
+            print(f"       {_node} → {_model}")
+        while True:
+            _choice = input("Choose 1-3 [3]: ").strip() or "3"
+            if _choice in ("1", "2", "3"):
+                break
+            print("Please type 1, 2 or 3.")
+        cli_provider = {"1": "gemini", "2": "claude", "3": "hybrid"}[_choice]
+    llm_router = LLMRouter(llm_config, provider=cli_provider)
         
     script_file = sys.argv[1]
     if not os.path.exists(script_file):
@@ -3736,8 +3756,8 @@ if __name__ == "__main__":
     final_script_path = os.path.join(output_dir, "final_script.md")
     checkpoint_path = os.path.join(output_dir, "checkpoint.json")
     
-    # Choose Claude or Gemini Canvas for this run (auto mode tests Claude first)
-    llm_router.select()
+    # Check Claude once before starting (claude and hybrid modes)
+    llm_router.select(ask=_ask_yes)
 
     print(f"Starting workflow... Session ID: {session_id}")
     print(f"Logs: {output_dir}")
@@ -3749,15 +3769,16 @@ if __name__ == "__main__":
     
     # Using app.stream to observe execution
     with open(session_log_path, "w", encoding="utf-8") as log_file:
+        step_start = time.time()
         for output in app.stream(initial_state):
             for key, value in output.items():
-                node_start = time.time()
-                
                 # Merge updates into cumulative state
                 cumulative_state.update(value)
-                
-                elapsed = time.time() - node_start
-                print(f"✅ Node '{key}' completed. ({elapsed:.1f}s)")
+
+                elapsed = time.time() - step_start
+                step_start = time.time()
+                _model = llm_router.model_for_node(key)
+                print(f"✅ Node '{key}' completed. ({elapsed:.0f}s" + (f", {_model})" if _model else ")"))
                 
                 # Write step details to session log
                 log_entry = {
@@ -3780,7 +3801,7 @@ if __name__ == "__main__":
     provider_report = llm_router.report()
     with open(os.path.join(output_dir, "llm_provider.json"), "w", encoding="utf-8") as pf:
         json.dump(provider_report, pf, ensure_ascii=False, indent=2)
-    print(f"\n🔀 LLM calls this run: {provider_report['calls']} (final backend: {provider_report['final_backend']})")
+    print(f"\n🔀 LLM calls this run ({provider_report['mode']}): {provider_report['calls']}")
 
     # Save the final deliverables
     longform_deliverable = cumulative_state.get("final_package", "")

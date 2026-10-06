@@ -11,20 +11,27 @@ LLM provider layer: one call_llm() for the whole pipeline, two paths behind it.
               * "anthropic_api" - pay-per-token Anthropic API key
                                   (ANTHROPIC_API_KEY).
 
-Selection ("provider" in llm_variables.json, LLM_PROVIDER env var, or
---provider on the command line):
+Three modes, picked from a menu when main.py starts (or with --provider,
+the LLM_PROVIDER env var, or "provider" in llm_variables.json):
 
-  auto    - run a tiny test call against Claude. If it answers, the run uses
-            Claude; if it fails (not logged in, subscription inactive, usage
-            limit, no key) the run uses Gemini Canvas.
-  claude  - Claude; stop with an error if it is unavailable at the start.
-  gemini  - Gemini Canvas only (the original behaviour).
+  gemini  - every node on Gemini Canvas (free).
+  claude  - every node on Claude (claude.model, Opus 5.5 by default).
+  hybrid  - (recommended) Gemini writes; the nodes listed in "hybrid_routes"
+            run on the Claude model named there (medical truth and fidelity on
+            Opus 5.5, the critiques on Sonnet 5.5). Claude judges what Gemini
+            wrote, so the judge is not grading its own writing.
 
-If Claude stops working in the middle of a run (usage limit hit, subscription
-lapsed) and "fallback_to_gemini" is true (the default), the remaining calls switch to Gemini so the run
-still finishes. Every switch is printed and recorded in llm_provider_report().
+Which node is calling is known through current_node, set by track_node()
+around every graph node in main.py.
+
+If Claude is unavailable, or stops working in the middle of a run (usage limit
+hit, subscription lapsed) and "fallback_to_gemini" is true (the default), those
+calls go to Gemini so the run still finishes. Every switch is printed and
+recorded in report().
 """
 
+import contextvars
+import functools
 import json
 import os
 import shutil
@@ -33,6 +40,31 @@ import tempfile
 from typing import Optional
 
 CLAUDE_DEFAULT_MODEL = "claude-opus-5-5"
+MODES = ("gemini", "claude", "hybrid")
+DEFAULT_HYBRID_ROUTES = {
+    # High-stakes medical checks: deepest reasoning.
+    "medical_truth_verifier": "claude-opus-5-5",
+    "fidelity_auditor": "claude-opus-5-5",
+    # Critiques: strong, cheaper, a different model family from the writer.
+    "self_critique": "claude-sonnet-5-5",
+    "packaging_honesty_ctr_auditor": "claude-sonnet-5-5",
+    "production_quality_critique": "claude-sonnet-5-5",
+}
+
+# Name of the graph node currently running (set by track_node).
+current_node = contextvars.ContextVar("current_node", default=None)
+
+
+def track_node(name: str, fn):
+    """Wraps a graph node so LLM calls made inside it know which node they belong to."""
+    @functools.wraps(fn)
+    def wrapper(state):
+        token = current_node.set(name)
+        try:
+            return fn(state)
+        finally:
+            current_node.reset(token)
+    return wrapper
 GEMINI_DEFAULT_MODEL = "gemini-3-flash-preview"
 GEMINI_DEFAULT_BASE_URL = "http://localhost:8765/v1"
 
@@ -79,9 +111,12 @@ def load_llm_config(path: str = "llm_variables.json") -> dict:
     claude.setdefault("transport", "claude_code")   # claude_code | anthropic_api
     claude.setdefault("effort", "high")             # low | medium | high | xhigh | max
     claude.setdefault("timeout_seconds", 900)
+    # Optional per-model effort, e.g. {"claude-sonnet-5-5": "medium"}
+    claude.setdefault("efforts", {})
 
     return {
-        "provider": raw.get("provider", "auto"),
+        "provider": raw.get("provider", "hybrid"),
+        "hybrid_routes": raw.get("hybrid_routes") or dict(DEFAULT_HYBRID_ROUTES),
         "fallback_to_gemini": raw.get("fallback_to_gemini", True),
         "gemini": gemini,
         "claude": claude,
@@ -256,68 +291,116 @@ def _make_claude_backend(cfg: dict):
 class LLMRouter:
     def __init__(self, config: dict, provider: Optional[str] = None):
         self.config = config
-        self.requested = (provider or os.environ.get("LLM_PROVIDER") or config["provider"]).lower()
-        if self.requested not in ("auto", "claude", "gemini"):
-            raise ValueError(f"Unknown provider '{self.requested}' (use auto, claude or gemini)")
-        # Mid-run switch to Gemini if Claude stops working (auto and claude modes).
+        mode = (provider or os.environ.get("LLM_PROVIDER") or config["provider"]).lower()
+        if mode == "auto":  # older setting name
+            mode = "hybrid"
+        if mode not in MODES:
+            raise ValueError(f"Unknown provider '{mode}' (use gemini, claude or hybrid)")
+        self.mode = mode
+        self.routes = dict(config.get("hybrid_routes") or DEFAULT_HYBRID_ROUTES)
         self.allow_fallback = bool(config.get("fallback_to_gemini", True))
+        self.claude_ok = mode != "gemini"
         self.events = []
-        self.calls = {"claude": 0, "gemini": 0}
-        self.active = None
+        self.calls = {}
+        self.node_models = {}
         self._gemini = None
+        self._claude = {}
 
+    # -- backends ---------------------------------------------------------
     def _gemini_backend(self):
         if self._gemini is None:
             self._gemini = GeminiCanvasBackend(self.config["gemini"])
         return self._gemini
 
+    def _claude_backend(self, model: str):
+        if model not in self._claude:
+            cfg = dict(self.config["claude"], model=model)
+            cfg["effort"] = cfg.get("efforts", {}).get(model, cfg.get("effort"))
+            self._claude[model] = _make_claude_backend(cfg)
+        return self._claude[model]
+
+    def claude_model_for(self, node: Optional[str]) -> Optional[str]:
+        """The Claude model this node should use, or None for Gemini."""
+        if not self.claude_ok:
+            return None
+        if self.mode == "claude":
+            return self.config["claude"]["model"]
+        if self.mode == "hybrid":
+            return self.routes.get(node)
+        return None
+
     def _log(self, msg: str):
         print(f"🔀 [LLM] {msg}")
         self.events.append(msg)
 
-    def select(self):
-        """Pick the backend for this run. Called once, before the graph starts."""
-        if self.requested == "gemini":
-            self.active = self._gemini_backend()
-            self._log(f"Using {self.active.label()}")
-            return self.active
+    def describe(self) -> str:
+        gem = self.config["gemini"]["model"]
+        if self.mode == "gemini" or not self.claude_ok:
+            return f"all nodes on Gemini ({gem})"
+        if self.mode == "claude":
+            return f"all nodes on {self.config['claude']['model']}"
+        routed = ", ".join(f"{n} → {m}" for n, m in self.routes.items())
+        return f"Gemini ({gem}) writes; {routed}"
 
+    # -- startup ----------------------------------------------------------
+    def select(self, ask=None):
+        """Checks Claude once before the graph starts. `ask(question) -> bool`
+        is used in claude mode when Claude is unavailable; without it the run stops."""
+        if self.mode == "gemini":
+            self._log(f"Mode: gemini · {self.describe()}")
+            return
+        models = {self.config["claude"]["model"]} if self.mode == "claude" else set(self.routes.values())
         try:
-            backend = _make_claude_backend(self.config["claude"])
-            reply = backend.call("Reply with the single word: OK", "ping", None, 16)
-            if not reply.strip():
-                raise ProviderUnavailable("empty reply to the test call")
-            self.active = backend
-            self._log(f"Claude is available. Using {backend.label()}")
+            for model in sorted(models):
+                reply = self._claude_backend(model).call("Reply with the single word: OK", "ping", None, 16)
+                if not reply.strip():
+                    raise ProviderUnavailable(f"empty reply from {model}")
         except Exception as e:
-            if self.requested == "claude":
-                raise RuntimeError(f"Claude was requested but is unavailable: {e}")
-            self.active = self._gemini_backend()
-            self._log(f"Claude unavailable ({str(e)[:200]}). Using {self.active.label()}")
-        return self.active
+            reason = str(e)[:200]
+            if self.mode == "claude":
+                if ask and ask(f"Claude is unavailable ({reason}). Continue with Gemini for the whole run? [Y/n] "):
+                    self.mode = "gemini"
+                else:
+                    raise RuntimeError(f"Claude was requested but is unavailable: {reason}")
+            else:
+                self._log(f"⚠️ Claude unavailable ({reason}). The Claude nodes will run on Gemini this time.")
+            self.claude_ok = False
+        self._log(f"Mode: {self.mode} · {self.describe()}")
+
+    # -- calls ------------------------------------------------------------
+    def _count(self, node, model):
+        self.calls[model] = self.calls.get(model, 0) + 1
+        if node:
+            self.node_models[node] = model
 
     def call(self, system_prompt: str, user_prompt: str,
              temperature: Optional[float] = None, max_tokens: Optional[int] = None) -> str:
-        if self.active is None:
-            self.select()
-        try:
-            result = self.active.call(system_prompt, user_prompt, temperature, max_tokens)
-            self.calls[self.active.name] += 1
-            return result
-        except ProviderUnavailable as e:
-            if self.active.name != "claude" or not self.allow_fallback:
-                raise
-            self._log(f"Claude stopped working mid-run ({str(e)[:200]}). "
-                      f"Switching the remaining steps to Gemini Canvas.")
-            self.active = self._gemini_backend()
-            result = self.active.call(system_prompt, user_prompt, temperature, max_tokens)
-            self.calls["gemini"] += 1
-            return result
+        node = current_node.get()
+        model = self.claude_model_for(node)
+        if model:
+            try:
+                result = self._claude_backend(model).call(system_prompt, user_prompt, temperature, max_tokens)
+                self._count(node, model)
+                return result
+            except ProviderUnavailable as e:
+                if not self.allow_fallback:
+                    raise
+                self.claude_ok = False
+                self._log(f"Claude stopped working mid-run ({str(e)[:200]}). "
+                          f"Switching the remaining Claude steps to Gemini Canvas.")
+        gemini = self._gemini_backend()
+        result = gemini.call(system_prompt, user_prompt, temperature, max_tokens)
+        self._count(node, gemini.model)
+        return result
+
+    def model_for_node(self, node: str) -> Optional[str]:
+        return self.node_models.get(node)
 
     def report(self) -> dict:
         return {
-            "requested_provider": self.requested,
-            "final_backend": self.active.label() if self.active else None,
+            "mode": self.mode,
+            "setup": self.describe(),
             "calls": dict(self.calls),
+            "node_models": dict(self.node_models),
             "events": list(self.events),
         }

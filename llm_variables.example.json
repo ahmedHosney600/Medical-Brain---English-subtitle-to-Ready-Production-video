@@ -1,14 +1,22 @@
 {
-    "provider": "auto",
+    "provider": "hybrid",
     "fallback_to_gemini": true,
-
+    "hybrid_routes": {
+        "medical_truth_verifier": "claude-opus-5-5",
+        "fidelity_auditor": "claude-opus-5-5",
+        "self_critique": "claude-sonnet-5-5",
+        "packaging_honesty_ctr_auditor": "claude-sonnet-5-5",
+        "production_quality_critique": "claude-sonnet-5-5"
+    },
     "claude": {
         "model": "claude-opus-5-5",
         "transport": "claude_code",
         "effort": "high",
+        "efforts": {
+            "claude-sonnet-5-5": "high"
+        },
         "timeout_seconds": 900
     },
-
     "gemini": {
         "model": "gemini-3-flash-preview",
         "api_key": "<your Gemini Canvas proxy token>",
