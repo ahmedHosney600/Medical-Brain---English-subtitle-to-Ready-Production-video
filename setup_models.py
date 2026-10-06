@@ -180,6 +180,8 @@ def print_models(specs: list, config: dict):
     print("\nAvailable models")
     print("----------------")
     specs = [label(s, config) for s in specs]
+    print("Tip: the MAIN model writes ~20 times per run, the judges ~5 times each. A slow model (see the")
+    print("     seconds in the test below) is better as a judge than as the main model.\n")
     width = max(len(s) for s in specs) + 6
     cols = max(1, min(3, 110 // width))
     rows = (len(specs) + cols - 1) // cols

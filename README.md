@@ -60,6 +60,8 @@ Models are written `provider:model`:
 
 Both numbers can be changed per provider in `llm_variables.json`.
 
+**Progress and slow models.** Each step prints `▶ step … (model)` when it starts. For API models, a live line shows `⏳ model · 1m 40s · thinking…` / `writing ~1,850 tokens`. If one call takes longer than `step_timeout_seconds` (default 600 = 10 min), it's stopped and the step runs on the backup model. `setup_models.py` shows how long each model takes to answer. Slow models are better as judges (~5 calls each) than as the main writer (~20 calls).
+
 Any other OpenAI-compatible service can be added under `providers` with `"type": "openai"`, a `base_url` and an `api_key_env`.
 
 ### Gemini Canvas proxy: special handling (this provider only)

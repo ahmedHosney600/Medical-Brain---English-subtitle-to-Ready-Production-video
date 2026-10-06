@@ -27,6 +27,8 @@ models, and choose the models for each role.
 
 import contextvars
 import functools
+import sys
+import time
 import json
 import os
 import re
@@ -98,8 +100,10 @@ DEFAULT_HYBRID_ROUTES = {
 # The `claude` CLI has no "list models" command.
 CLAUDE_SUBSCRIPTION_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5", "claude-fable-5-1"]
 
-# Name of the graph node currently running (set by track_node).
+# Name of the graph node currently running (set by track_node), and per-step
+# state (whether its start line was printed).
 current_node = contextvars.ContextVar("current_node", default=None)
+_node_state = contextvars.ContextVar("_node_state", default=None)
 
 
 def track_node(name: str, fn):
@@ -107,10 +111,12 @@ def track_node(name: str, fn):
     @functools.wraps(fn)
     def wrapper(state):
         token = current_node.set(name)
+        state_token = _node_state.set({"announced": False})
         try:
             return fn(state)
         finally:
             current_node.reset(token)
+            _node_state.reset(state_token)
     return wrapper
 
 
@@ -300,6 +306,60 @@ def _limit_refused(err) -> bool:
     return ("max_tokens" in m or "max_output_tokens" in m or "maximum" in m) and "temperature" not in m
 
 
+class StepTimeout(RuntimeError):
+    """A call took longer than step_timeout_seconds and was abandoned."""
+
+
+class _Progress:
+    """One live status line while a model streams: elapsed time, thinking or
+    writing, and roughly how many tokens. Also enforces the step time-out."""
+
+    def __init__(self, label: str, timeout: Optional[float]):
+        self.label, self.timeout = label, timeout
+        self.start = self.last = time.monotonic()
+        self.thinking = self.writing = 0
+        self.shown = False
+
+    def tick(self, thinking: int = 0, writing: int = 0):
+        self.thinking += thinking
+        self.writing += writing
+        now = time.monotonic()
+        elapsed = now - self.start
+        if self.timeout and elapsed > self.timeout:
+            self.done()
+            raise StepTimeout(f"{self.label} took more than {int(self.timeout)} s "
+                              f"(step_timeout_seconds) and was stopped")
+        if now - self.last >= 3:
+            self.last = now
+            what = f"writing ~{self.writing:,} tokens" if self.writing else \
+                (f"thinking (~{self.thinking:,} tokens)…" if self.thinking else "waiting for the first words…")
+            sys.stdout.write(f"\r  ⏳ {self.label} · {int(elapsed) // 60}m {int(elapsed) % 60:02d}s · {what}   ")
+            sys.stdout.flush()
+            self.shown = True
+
+    def elapsed(self) -> float:
+        return time.monotonic() - self.start
+
+    def done(self):
+        if self.shown:
+            sys.stdout.write("\r" + " " * 90 + "\r")
+            sys.stdout.flush()
+            self.shown = False
+
+
+def _step_timeout(cfg: dict) -> Optional[float]:
+    value = cfg.get("step_timeout_seconds", 600)
+    return float(value) if value else None
+
+
+def _client_timeout(cfg: dict) -> float:
+    """HTTP time-out: also covers a server that goes completely silent mid-stream."""
+    limits = [float(cfg.get("timeout_seconds", 900))]
+    if _step_timeout(cfg):
+        limits.append(_step_timeout(cfg))
+    return min(limits)
+
+
 class _OutputLimits:
     """Output-length handling shared by the API backends (not the Gemini proxy,
     which has its own):
@@ -316,12 +376,15 @@ class _OutputLimits:
         floor = int(self.cfg.get("min_max_tokens", 16000) or 0)
         cap = int(self.cfg.get("max_output_cap", 32000) or 0)
         limit = max(max_tokens or 0, floor) or None
+        started = time.monotonic()
         try:
             text, cut = self._once(system_prompt, user_prompt, temperature, limit)
         except _LimitTooHigh:
             limit = 8192
             text, cut = self._once(system_prompt, user_prompt, temperature, limit)
-        if cut and limit and limit < cap:
+        timeout = _step_timeout(self.cfg)
+        slow = bool(timeout) and time.monotonic() - started > timeout / 2
+        if cut and limit and limit < cap and not slow:
             limit = min(limit * 2, cap)
             try:
                 text, cut = self._once(system_prompt, user_prompt, temperature, limit)
@@ -337,7 +400,7 @@ class OpenAICompatibleBackend(_OutputLimits):
     """DeepSeek, OpenCode Go, or any OpenAI-compatible API: called normally,
     with the SDK's standard retries and a long timeout. No proxy limits."""
 
-    def __init__(self, provider: str, cfg: dict, model: str, max_retries: int = 2, timeout: Optional[float] = None):
+    def __init__(self, provider: str, cfg: dict, model: str, max_retries: int = 1, timeout: Optional[float] = None):
         from openai import OpenAI
         self.provider, self.cfg, self.model = provider, cfg, model
         key = provider_key(cfg)
@@ -345,7 +408,7 @@ class OpenAICompatibleBackend(_OutputLimits):
             raise ProviderUnavailable(f"no API key: set {cfg.get('api_key_env')} in {KEYS_PATH} (run setup_models.py)")
         self.client = OpenAI(api_key=key or "not-needed", base_url=cfg["base_url"],
                              default_headers=provider_headers(cfg) or None,
-                             timeout=timeout or cfg.get("timeout_seconds", 900), max_retries=max_retries)
+                             timeout=timeout or _client_timeout(cfg), max_retries=max_retries)
         self.no_temperature = False
 
     def _params(self, system_prompt, user_prompt, temperature, max_tokens) -> dict:
@@ -397,10 +460,36 @@ class OpenAICompatibleBackend(_OutputLimits):
             raise ProviderUnavailable(f"cannot reach {self.cfg['base_url']}: {e}")
 
     def _once(self, system_prompt, user_prompt, temperature, limit) -> tuple:
+        """Streams the answer so progress can be shown and a too-slow call stopped."""
         params = self._params(system_prompt, user_prompt, temperature, limit)
-        resp = self._map_errors(lambda: self._create(params))
-        choice = resp.choices[0]
-        return choice.message.content or "", getattr(choice, "finish_reason", None) == "length"
+        params["stream"] = True
+        progress = _Progress(self.model, _step_timeout(self.cfg))
+
+        def run():
+            stream = self._create(params)
+            parts, finish = [], None
+            try:
+                for chunk in stream:
+                    if not chunk.choices:
+                        progress.tick()
+                        continue
+                    choice = chunk.choices[0]
+                    delta = choice.delta
+                    content = getattr(delta, "content", None)
+                    reasoning = getattr(delta, "reasoning_content", None) or getattr(delta, "reasoning", None)
+                    if content:
+                        parts.append(content)
+                    progress.tick(thinking=1 if reasoning else 0, writing=1 if content else 0)
+                    if choice.finish_reason:
+                        finish = choice.finish_reason
+            finally:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+                progress.done()
+            return "".join(parts), finish == "length"
+        return self._map_errors(run)
 
 
 _WANTS_JSON = re.compile(r"(only\s+(valid\s+)?json|only\s+the\s+json|only\s+a\s+json|output\s+json)", re.IGNORECASE)
@@ -457,11 +546,12 @@ class OpenAIResponsesBackend(OpenAICompatibleBackend):
 
     def _once(self, system_prompt, user_prompt, temperature, limit) -> tuple:
         import openai
-        params = dict(model=self.model, instructions=system_prompt, input=user_prompt)
+        params = dict(model=self.model, instructions=system_prompt, input=user_prompt, stream=True)
         if limit is not None:
             params["max_output_tokens"] = limit
         if temperature is not None and not self.no_temperature:
             params["temperature"] = temperature
+        progress = _Progress(self.model, _step_timeout(self.cfg))
 
         def create():
             try:
@@ -472,8 +562,34 @@ class OpenAIResponsesBackend(OpenAICompatibleBackend):
                     params.pop("temperature")
                     return self.client.responses.create(**params)
                 raise
-        resp = self._map_errors(create)
-        return resp.output_text or "", getattr(resp, "status", None) == "incomplete"
+
+        def run():
+            stream = create()
+            parts, incomplete, final_text = [], False, None
+            try:
+                for event in stream:
+                    kind = getattr(event, "type", "")
+                    if kind == "response.output_text.delta":
+                        parts.append(event.delta)
+                        progress.tick(writing=1)
+                    elif "reasoning" in kind and kind.endswith(".delta"):
+                        progress.tick(thinking=1)
+                    elif kind == "response.incomplete":
+                        incomplete = True
+                        progress.tick()
+                    elif kind == "response.completed":
+                        final_text = getattr(event.response, "output_text", None)
+                        progress.tick()
+                    else:
+                        progress.tick()
+            finally:
+                try:
+                    stream.close()
+                except Exception:
+                    pass
+                progress.done()
+            return (final_text if final_text is not None else "".join(parts)), incomplete
+        return self._map_errors(run)
 
 
 class AnthropicCompatibleBackend(_OutputLimits):
@@ -493,7 +609,7 @@ class AnthropicCompatibleBackend(_OutputLimits):
         base = re.sub(r"/v1/?$", "", cfg["base_url"].rstrip("/"))
         self.client = anthropic.Anthropic(api_key=key, base_url=base,
                                           default_headers={"Authorization": f"Bearer {key}", **provider_headers(cfg)},
-                                          timeout=cfg.get("timeout_seconds", 900), max_retries=2)
+                                          timeout=_client_timeout(cfg), max_retries=1)
         self.no_temperature = False
 
     def _once(self, system_prompt, user_prompt, temperature, limit) -> tuple:
@@ -505,10 +621,20 @@ class AnthropicCompatibleBackend(_OutputLimits):
             # reject it); third-party Anthropic-compatible APIs still accept it.
             params["extra_body"] = {"temperature": temperature}
 
+        progress = _Progress(self.model, _step_timeout(self.cfg))
+
         def run():
-            # Streamed so long outputs don't hit HTTP time-outs.
-            with self.client.messages.stream(**params) as stream:
-                return stream.get_final_message()
+            # Streamed so long outputs don't hit HTTP time-outs, with live progress.
+            try:
+                with self.client.messages.stream(**params) as stream:
+                    for event in stream:
+                        delta = getattr(event, "delta", None)
+                        kind = getattr(delta, "type", "") if delta is not None else ""
+                        progress.tick(thinking=1 if kind == "thinking_delta" else 0,
+                                      writing=1 if kind == "text_delta" else 0)
+                    return stream.get_final_message()
+            finally:
+                progress.done()
         try:
             try:
                 message = run()
@@ -767,10 +893,12 @@ def provider_status(provider: str, cfg: dict) -> tuple:
 
 def test_model(spec: str, providers: dict) -> tuple:
     """One tiny real call. (ok, detail)."""
+    started = time.monotonic()
     try:
         # 512 tokens: reasoning models spend some on thinking before answering.
         reply = make_backend(spec, providers).call("Reply with the single word: OK", "ping", None, 512)
-        return (True, "answers") if reply.strip() else (False, "empty reply")
+        took = time.monotonic() - started
+        return (True, f"answers ({took:.1f} s)") if reply.strip() else (False, "empty reply")
     except Exception as e:
         return False, _short(e)
 
@@ -865,6 +993,11 @@ class LLMRouter:
              temperature: Optional[float] = None, max_tokens: Optional[int] = None) -> str:
         node = current_node.get()
         spec = self.model_for(node)
+        state = _node_state.get()
+        if node and state is not None and not state["announced"]:
+            state["announced"] = True
+            target = spec if parse_spec(spec)[0] not in self.down else self.main
+            print(f"▶ {node} … ({target})", flush=True)
         if spec != self.main:
             provider = parse_spec(spec)[0]
             if provider not in self.down:
