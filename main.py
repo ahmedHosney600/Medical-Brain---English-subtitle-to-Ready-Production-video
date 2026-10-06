@@ -3,6 +3,7 @@ import re
 from typing import TypedDict, Optional
 from langgraph.graph import StateGraph, START, END
 from llm_providers import LLMRouter, load_llm_config
+import editing_workbook as ew
 import json
 import urllib.request
 import urllib.parse
@@ -479,7 +480,8 @@ OUTPUT FORMAT:
 
 ### Pacing & Chapters Strategy
 **Pacing & Pattern Interrupt Plan**: [Every 30–45s visual/audio shift schedule]
-**YouTube Chapters Plan**: Each chapter timestamp MUST align with a real content start cue / main point from the script (will be used for YouTube segments). Plan chapter names and approximate timestamps that correspond to the actual narrative beats and section transitions:
+**YouTube Chapters Plan**: Each chapter timestamp MUST align with a real content start cue / main point from the script (will be used for YouTube segments). Plan chapter names and approximate timestamps that correspond to the actual narrative beats and section transitions.
+CHAPTER NAME RULES (these become the YouTube chapters viewers click on): viewer-facing, clear, and keyword-bearing — 2–7 Arabic words (max 45 characters) that say what that part answers (e.g., "ليه رسم القلب ممكن يطلع سليم؟"). Never production labels such as مقدمة / هوك / خاتمة / دعوة للاشتراك / CTA / Act / الجزء الأول — even the first chapter (0:00) names the question the video opens with, and the last names its takeaway. At least 3 chapters, first at 0:00, each at least 10 seconds. Use the SEO primary or a secondary keyword naturally in 1–2 chapter names.
 | Chapter # | Approx. Timestamp | Chapter Name (Arabic) | Main Cue / Point from Script |
 |---|---|---|---|
 | 1 | 0:00 | [chapter name] | [the start cue or main point this chapter marks] |
@@ -1909,6 +1911,9 @@ ADDITIONAL ELEMENT TYPES (use alongside the 5 primary types):
    - **Color palette**: specific hex colors for each element (e.g., "arteries: #E63946, veins: #457B9D, labels: white on dark background")
    - **Placement & size**: full-screen whiteboard moment vs. corner overlay on talking head, exact screen region and approximate size ratio
    - **Reference description**: plain-language description of what the finished drawing should look like, as if describing it to someone who can't see it
+   - **Whiteboard image prompt** (English, for Google Flow image generation): plain white whiteboard, clean black marker line art, at most 2 accent colors, the FINISHED composition, and NO text, letters, numbers or labels anywhere in the image
+   - **Draw-on video prompt** (English, image-to-video in Google Flow with the image above as the start frame): a hand with a black marker draws the elements in the build-sequence order, static camera, white background, no text appears, ~8 seconds
+   - **Labels to add in Premiere**: every label/annotation as on-screen text (Arabic or English) with the exact cue words where it appears — labels are never part of the AI image
 
 ANIMATION SPECIFICATION — for EVERY text element, describe:
 - **Entry animation**: How it appears (fade-in, slide-in-left, slide-in-up, scale-up, pop, typewriter, draw-on). Include duration in ms and easing function (sine/quad/cubic/quart/quint/expo/circ/back) and direction (in/out/in-out).
@@ -2465,11 +2470,26 @@ def _audit_part1(text: str) -> list:
     except Exception:
         pass
 
+    # VIDEO SECTIONS = YouTube chapters: titles must be usable as chapters, and
+    # the start/end sentences must really be in the script (the editor searches for them).
+    sections = ew.parse_video_sections(text)
+    issues.extend(f"CHAPTER TITLE: {p}" for p in ew.check_chapter_titles(sections))
+    cue_problems = ew.check_cue_rows(
+        [(f"VIDEO SECTIONS row {s['num']}", s["start"], s["end"]) for s in sections],
+        ew.production_script(text), min_words=1,
+    )
+    if cue_problems:
+        issues.append(
+            "VIDEO SECTIONS SENTENCES NOT EXACT: " + "; ".join(cue_problems[:12]) +
+            ". Copy every Start/End Sentence character-for-character from the spoken words of the PRODUCTION SCRIPT."
+        )
+
     return issues
 
 
-def _audit_part2(text: str) -> list:
-    """Audit Part 2 (Post-Production) for quality issues."""
+def _audit_part2(text: str, script: str = "") -> list:
+    """Audit Part 2 (Post-Production) for quality issues. `script` is the
+    production script the cues must come from."""
     issues = []
 
     # Storyboard must be present and have enough rows
@@ -2523,6 +2543,29 @@ def _audit_part2(text: str) -> list:
     # B-Roll detail section must exist
     if "AI B-ROLL GENERATION PROMPTS" not in text:
         issues.append("MISSING: The AI B-ROLL GENERATION PROMPTS detail section is absent.")
+
+    rows = ew.parse_storyboard(text)
+
+    # Cues: the editor finds every event by its words, so they must be exact.
+    if script and rows:
+        cue_problems = ew.check_cue_rows(
+            [(f"SB#{r['num']} ({r['layer']})", r["start"], r["end"]) for r in rows], script
+        )
+        if cue_problems:
+            issues.append(
+                f"STORYBOARD CUES NOT EXACT ({len(cue_problems)}): " + "; ".join(cue_problems[:20]) +
+                ". Every START/END CUE must be 4-8 consecutive spoken words copied exactly from the PRODUCTION SCRIPT and unique in it."
+            )
+
+    # Whiteboard drawings must be producible in Google Flow.
+    for r in rows:
+        if "DRAWING" in r["layer"]:
+            d = r["detail"].upper()
+            if "IMAGE PROMPT" not in d or "DRAW-ON PROMPT" not in d:
+                issues.append(
+                    f"DRAWING ANIM SB#{r['num']} is missing its IMAGE PROMPT and/or DRAW-ON PROMPT "
+                    "(see the DRAWING ANIM detail format)."
+                )
 
     return issues
 
@@ -2581,7 +2624,7 @@ Copy the approved thumbnail concepts through exactly as provided in THUMBNAIL CO
 - \u0627\u0644\u0643\u0644\u0627\u0645 \u0641\u064a \u0647\u0630\u0627 \u0627\u0644\u0641\u064a\u062f\u064a\u0648 \u0644\u0623\u063a\u0631\u0627\u0636 \u0627\u0644\u062a\u0648\u0639\u064a\u0629 \u0648\u0627\u0644\u062a\u062b\u0642\u064a\u0641 \u0627\u0644\u0637\u0628\u064a \u0627\u0644\u0639\u0627\u0645 \u0648\u0644\u0627 \u064a\u063a\u0646\u064a \u0639\u0646 \u0627\u0633\u062a\u0634\u0627\u0631\u0629 \u0637\u0628\u064a\u0628\u0643 \u0627\u0644\u0645\u062e\u062a\u0635.
 
 \u23f1\ufe0f \u0627\u0644\u0641\u0635\u0648\u0644 (Chapters):
-[Complete chapter list with accurate timecodes. CRITICAL: Each chapter MUST align with the START CUE / main point of a real content section in the production script. Chapters mark narrative beats, not arbitrary time intervals. Use the YouTube Chapters Plan from the Strategy Plan as the reference.]
+[One line per VIDEO SECTIONS row below, in the form "M:SS <the exact same Section Title>", first line at 0:00. (This list is rebuilt automatically from the VIDEO SECTIONS table, so make the table right.)]
 
 [Arabic hashtags — include at least 2-3 built from the SEO SECONDARY KEYWORDS below]
 ```
@@ -2664,11 +2707,19 @@ DESCRIPTION SEO RULE: weave the SEO SECONDARY KEYWORDS below naturally through t
 ---
 
 ### 📹 VIDEO SECTIONS (YouTube Editing Guide)
-A section-by-section breakdown of the entire video for the editor. Each row represents one distinct content section with its title and the exact first/last spoken Arabic sentences that mark its boundaries in the production script.
+A section-by-section breakdown of the entire video. Each row is one content section AND one YouTube chapter: the Section Title is published as-is as the chapter title.
+
+SECTION TITLE RULES (= YouTube chapter titles):
+- Viewer-facing, clear and keyword-bearing: 2–7 Arabic words, max 45 characters, saying what this part answers for the viewer. Good: "ليه رسم القلب ممكن يطلع سليم؟", "الفرق بين قلب الرياضي والمرض". Bad: "المقدمة والهوك", "الخاتمة والدعوة للاشتراك".
+- NEVER production labels: مقدمة، هوك، خاتمة، دعوة للاشتراك، اشترك، CTA، Act، الجزء الأول. The first row (0:00) names the question the video opens with; the last row names the takeaway.
+- At least 3 rows; every section at least 10 seconds. Use the SEO primary or a secondary keyword naturally in 1–2 titles.
+- Duration Estimate in the form "Xm Ys".
+
+SENTENCE RULES: Start/End Sentence must be copied character-for-character from the PRODUCTION SCRIPT above (spoken words only — never stage directions in parentheses or [cues]). If a sentence appears more than once in the script, add the neighbouring words so it is unique.
 
 | # | Section Title (Arabic) | ▶️ Start Sentence (exact first Arabic sentence of this section from the script) | ⏹️ End Sentence (exact last Arabic sentence of this section from the script) | Duration Estimate | Notes for Editor |
 |---|---|---|---|---|---|
-| 1 | [e.g., المقدمة والهوك] | [exact first spoken sentence] | [exact last spoken sentence before next section] | [Xm Xs] | [any special notes] |"""
+| 1 | [viewer-facing chapter title] | [exact first spoken sentence] | [exact last spoken sentence before next section] | [Xm Ys] | [any special notes] |"""
 
     base_user_prompt_1 = f"""Compile Part 1 of the YouTube Production Deliverable.
 
@@ -2718,6 +2769,7 @@ AVOID LIST: {state.get("avoid_list", "")}
 CRITICAL: Copy the APPROVED TITLE OPTIONS and APPROVED THUMBNAIL CONCEPTS through in full, including every AI Image Generation Prompt paragraph in full. Do NOT abbreviate, reword, or say "same as above" — these were already written and quality-gated upstream."""
 
     part1 = ""
+    best_1 = None  # (issue_count, text): a retry can come back worse, so keep the best
     correction_note_1 = ""
     for attempt in range(MAX_FINAL_PACKAGE_RETRIES + 1):
         user_prompt_1 = base_user_prompt_1
@@ -2725,6 +2777,8 @@ CRITICAL: Copy the APPROVED TITLE OPTIONS and APPROVED THUMBNAIL CONCEPTS throug
             user_prompt_1 += f"\n\n\u26a0\ufe0f CORRECTION REQUIRED (attempt {attempt + 1}):\n{correction_note_1}"
         part1 = call_llm(system_prompt_1, user_prompt_1, temperature=0.3, max_tokens=10000)
         issues_1 = _audit_part1(part1)
+        if best_1 is None or len(issues_1) < best_1[0]:
+            best_1 = (len(issues_1), part1)
         if not issues_1:
             print(f"  [final_package Part1] OK on attempt {attempt + 1}")
             break
@@ -2733,6 +2787,12 @@ CRITICAL: Copy the APPROVED TITLE OPTIONS and APPROVED THUMBNAIL CONCEPTS throug
         for i, issue in enumerate(issues_1, 1):
             correction_note_1 += f"  {i}. {issue}\n"
         correction_note_1 += "Regenerate the COMPLETE output fixing every issue above."
+    part1 = best_1[1]
+    # The description's chapter list is always rebuilt from VIDEO SECTIONS, so
+    # the chapter titles can never drift from the section titles.
+    part1 = ew.rebuild_description_chapters(part1)
+    # Part 2's cues must come from the script the presenter actually reads.
+    filmed_script = ew.production_script(part1) or state.get("refined_script", "")
 
     # -----------------------------------------------------------------
     # CALL 2 - Post-Production Storyboard & Detail Sections (with retry)
@@ -2746,7 +2806,12 @@ Your ONLY job is to produce the following sections:
 ### \U0001f3ac INTEGRATED PRODUCTION STORYBOARD
 Frame-accurate guide for the video editor. Every row = ONE atomic event. Simultaneous events get their OWN rows sharing the same timecode and cues.
 
-Layer types: TRANSITION | ZOOM/REFRAME | B-ROLL | TOP-RIGHT POPUP | TEXT OVERLAY TITLE | WARNING/ALERT BOX | QUOTE BOX | KINETIC TEXT | LOWER-THIRD | DRAWING ANIM | SFX
+Layer types: TRANSITION | ZOOM/REFRAME | B-ROLL | TOP-RIGHT POPUP | TEXT OVERLAY TITLE | WARNING/ALERT BOX | QUOTE BOX | KINETIC TEXT | LOWER-THIRD | ICON/SHAPE | DRAWING ANIM | SFX
+
+CUE RULES (the editor finds every event by searching for its cue words, so they must be exact):
+- START CUE and END CUE = 4–8 consecutive spoken words copied character-for-character from the PRODUCTION SCRIPT (spoken words only — never stage directions in parentheses, [bracket cues], or placeholders like "(بداية الفيديو)", "(Start)", "(Black)").
+- Each cue must occur only ONCE in the script; if the words repeat elsewhere, add neighbouring words until unique.
+- For an event at the very start, the START CUE is the first spoken words of the script.
 
 | # | Act | \u23f1\ufe0f Timecode | \u25b6\ufe0f START CUE (exact first Arabic words from script) | \u23f9\ufe0f END CUE (exact last Arabic words) | Layer | Detail |
 |---|---|---|---|---|---|---|
@@ -2762,6 +2827,9 @@ MANDATORY DETAIL FORMAT (no abbreviations):
 - KINETIC TEXT: `"[Arabic text]" | Entry: [anim, Xms, easing] | Hold: [Xs] | Exit: [anim, Xms] | Pos: [position]`
 - LOWER-THIRD: `"[text]" | Entry: [anim, Xms, easing] | Hold: [Xs] | Exit: [anim, Xms] | Pos: Bottom-left/right`
 - SFX: `[Sound name] | Trigger: [on cut/on word/on motion] | Vol: [low/med/punch]`
+- ICON/SHAPE (optional): `[icon or shape, e.g. heart icon / circle highlight / arrow] | Entry: [anim, Xms] | Hold: [Xs] | Exit: [anim, Xms] | Pos: [position]`
+- DRAWING ANIM: `[what is drawn] | IMAGE PROMPT: [English prompt for a still whiteboard image: plain white whiteboard, clean black marker line art, at most 2 accent colors, the FINISHED drawing composition, NO text, letters, numbers or labels anywhere in the image] | DRAW-ON PROMPT: [English image-to-video prompt using that image as the start frame: a hand with a black marker draws the elements in this order: ..., static camera, white background, no text appears, ~8s] | LABELS IN PREMIERE: [each label text (Arabic/English) + the cue words where it appears] | Dur: [Xs]`
+  (Generated in Google Flow: image first, then image-to-video. AI cannot draw Arabic or anatomy labels reliably, so labels are always added as text in Premiere.)
 
 COVERAGE: Full video 0:00 to outro. 25-40 rows minimum. EVERY event from Transition Map, Text Animation & Overlay Guide, and B-Roll Prompts MUST appear.
 
@@ -2818,8 +2886,8 @@ Compliance Note for Reviewer:
 
     base_user_prompt_2 = f"""Compile Part 2 of the YouTube Production Deliverable (Post-Production Guide).
 
-PRODUCTION SCRIPT (use exact Arabic sentences as START CUE / END CUE in storyboard):
-{state.get("refined_script", "")}
+PRODUCTION SCRIPT (copy START CUE / END CUE words exactly from here — spoken words only):
+{filmed_script}
 
 TRANSITION DESIGN MAP (reproduce in full, add SB# cross-references):
 {state.get("transition_design", "")}
@@ -2837,18 +2905,21 @@ PLATFORM: {state.get("target_platform", "")}
 
 RULES:
 1. Storyboard: 25-40 rows, full video 0:00 to outro.
-2. START CUE / END CUE: exact Arabic words from the Production Script above.
+2. START CUE / END CUE: 4-8 consecutive spoken words copied exactly from the Production Script above, unique in the script, never stage directions or placeholders.
 3. B-ROLL storyboard rows: write FULL AI prompt inline - NEVER "[Full Prompt in SB]" or any shortcut.
 4. B-Roll detail table: ALSO write full AI prompt in each row - self-contained, duplicates are fine."""
 
     part2 = ""
+    best_2 = None
     correction_note_2 = ""
     for attempt in range(MAX_FINAL_PACKAGE_RETRIES + 1):
         user_prompt_2 = base_user_prompt_2
         if correction_note_2:
             user_prompt_2 += f"\n\n⚠️ CORRECTION REQUIRED (attempt {attempt + 1}):\n{correction_note_2}"
         part2 = call_llm(system_prompt_2, user_prompt_2, temperature=0.3, max_tokens=12000)
-        issues_2 = _audit_part2(part2)
+        issues_2 = _audit_part2(part2, filmed_script)
+        if best_2 is None or len(issues_2) < best_2[0]:
+            best_2 = (len(issues_2), part2)
         if not issues_2:
             print(f"  [final_package Part2] OK on attempt {attempt + 1}")
             break
@@ -2857,6 +2928,7 @@ RULES:
         for i, issue in enumerate(issues_2, 1):
             correction_note_2 += f"  {i}. {issue}\n"
         correction_note_2 += "Regenerate the COMPLETE output fixing every issue above."
+    part2 = best_2[1]
 
     final_package = part1 + "\n\n---\n\n" + part2
     return {"final_package": final_package}
@@ -3508,6 +3580,7 @@ def export_broll_prompt_files(text: str, fallback_broll: str = "", output_dir: s
         if (
             line_clean.startswith("|")
             and not line_clean.startswith("|---")
+            and "DRAWING" not in line_clean.upper()  # whiteboard rows have their own files
             and not any(h in line_clean.upper() for h in ["FULL AI GENERATION PROMPT", "AI GENERATION PROMPT", "TIMECODE", "START CUE", "LAYER"])
         ):
             parts = [p.strip() for p in line_clean.split("|") if p.strip()]
@@ -3536,6 +3609,34 @@ def export_broll_prompt_files(text: str, fallback_broll: str = "", output_dir: s
             f.write("\n\n".join(videos).strip() + "\n")
         print(f"🎬 B-Roll Video prompts saved to: {vid_path} ({len(videos)} prompts)")
 
+    return images, videos
+
+
+def export_whiteboard_prompt_files(text: str, output_dir: str = "") -> tuple:
+    """
+    Saves the whiteboard (DRAWING ANIM) prompts for the Google Flow automator:
+    - whiteboard_images.txt : still whiteboard image per drawing (generate first)
+    - whiteboard_videos.txt : draw-on image-to-video prompt per drawing, in the
+                              same order, to run with the matching image as start frame
+    Same format as the B-roll files: prompts separated by a blank line.
+    """
+    if not output_dir:
+        return [], []
+    images, videos = [], []
+    for r in ew.parse_storyboard(text):
+        if "DRAWING" not in r["layer"]:
+            continue
+        img = re.search(r"IMAGE PROMPT:\s*(.*?)(?=\s*\|\s*(?:DRAW-ON PROMPT|LABELS IN PREMIERE|Dur)\b|$)", r["detail"], re.IGNORECASE | re.DOTALL)
+        vid = re.search(r"DRAW-ON PROMPT:\s*(.*?)(?=\s*\|\s*(?:LABELS IN PREMIERE|Dur)\b|$)", r["detail"], re.IGNORECASE | re.DOTALL)
+        if img and vid:
+            images.append(img.group(1).strip(" []`\""))
+            videos.append(vid.group(1).strip(" []`\""))
+    for name, prompts, label in (("whiteboard_images.txt", images, "image"), ("whiteboard_videos.txt", videos, "draw-on video")):
+        if prompts:
+            path = os.path.join(output_dir, name)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("\n\n".join(prompts).strip() + "\n")
+            print(f"✏️ Whiteboard {label} prompts saved to: {path} ({len(prompts)} prompts)")
     return images, videos
 
 
@@ -3697,7 +3798,14 @@ if __name__ == "__main__":
             shorts_section += "## TIMED CAPTIONS & ON-SCREEN OVERLAYS\n\n" + shorts_captions_content
 
     if longform_deliverable:
-        complete_output = longform_deliverable + shorts_section
+        # Reorder into the editing workflow (pure Python, nothing is retyped).
+        # If the package has an unexpected shape, keep it as generated.
+        try:
+            longform_document = ew.build_editing_workbook(longform_deliverable, cumulative_state)
+        except Exception as wb_err:
+            print(f"  ⚠️ Could not reorder the package into editing steps ({wb_err}); saving it as generated.")
+            longform_document = longform_deliverable
+        complete_output = longform_document + shorts_section
         with open(final_script_path, "w", encoding="utf-8") as f:
             f.write(complete_output)
         print(f"\nWorkflow finished. Final complete package saved to: {final_script_path}")
@@ -3711,10 +3819,11 @@ if __name__ == "__main__":
 
         # Automatically export dedicated B-Roll prompt files (Images & Videos)
         export_broll_prompt_files(
-            text=complete_output,
+            text=longform_deliverable + shorts_section,
             fallback_broll=cumulative_state.get("broll_prompts", ""),
             output_dir=output_dir
         )
+        export_whiteboard_prompt_files(longform_deliverable, output_dir=output_dir)
 
         # Automatically generate responsive HTML, PDF, and DOCX exports
         try:
