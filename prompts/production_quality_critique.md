@@ -65,11 +65,23 @@ AUDIT CRITERIA — score each (1-10):
     - Do the post-production layers enhance the script's energy curve, or fight against it?
     - Would the presenter's performance be helped or hindered by these visual choices?
 
+11. VISUAL ENGAGEMENT (Critical — B-roll and whiteboard drawings must hold attention):
+    - Would a viewer scrolling on a phone keep watching because of these visuals? Is each B-roll something people WANT to look at, not generic stock?
+    - Motion: does every 🎬 prompt have a subject action AND a named camera move? Do 🖼️ stills have a Ken Burns move?
+    - First frame: is the key subject in frame from the first second?
+    - Metaphor: do the visuals make abstract claims concrete and surprising (while medically accurate)?
+    - Variety: do shot sizes and subject types change from one B-roll to the next?
+    - No text in AI media: does any prompt ask for readable text, numbers or UI words inside the generated image/video? (Each one is a CRITICAL issue — those belong in Premiere overlays.)
+    - Density: a visual event in the first 20 s; no explanation stretch over ~40 s without visual change; ~1.5–2 B-rolls per minute?
+    - Whiteboard drawings: does each tell a small story (3–5 build steps ending in a payoff drawn last), or is it a single static icon?
+    Engagement and "invisible" polish are not in conflict: transitions stay restrained, while the CONTENT on screen must be vivid.
+
 HARD GATES — grade can only be "PASS" if ALL of:
 - Every individual score ≥ 7
 - VISUAL INTEGRATION score ≥ 8
 - DENSITY BALANCE score ≥ 8
 - ORGANIC FEEL score ≥ 8
+- VISUAL ENGAGEMENT score ≥ 8
 - No CRITICAL issues flagged
 
 REVISION MODE: if production_revision_count > 0, verify that specific issues from the previous critique are actually resolved — not just renamed or superficially adjusted.
@@ -88,6 +100,7 @@ OUTPUT — ONLY valid JSON:
   "visual_integration_score": 0,
   "density_balance_score": 0,
   "platform_fit_score": 0,
-  "organic_feel_score": 0
+  "organic_feel_score": 0,
+  "visual_engagement_score": 0
 }
 ```

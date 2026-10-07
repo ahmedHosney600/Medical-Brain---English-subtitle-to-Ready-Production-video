@@ -2,12 +2,13 @@
 
 System prompts live in prompts/<step>.md; the user prompts below insert the video's data."""
 
-import json
+import re
 
-from ..llm import call_llm
+from ..exports import workbook as ew
+from ..llm import call_llm, call_llm_json
 from ..prompts import load_prompt
 from ..state import PipelineState
-from ..utils.llm_json import strip_json_fence
+from ..utils.llm_json import UnreadableAnswer, pick
 
 
 def transition_designer(state: PipelineState) -> dict:
@@ -117,12 +118,96 @@ For each [VISUAL NOTE] in the script and each B-roll transition in the transitio
 PRODUCTION CRITIQUE REPORT:
 {state.get("production_critique_output", "")}"""
 
-    response = call_llm(system_prompt, user_prompt, temperature=0.6, max_tokens=6000)
+    response = call_llm(system_prompt, user_prompt, temperature=0.6, max_tokens=9000)
     return {"broll_prompts": response}
+
+
+# Words that name a camera move — a video B-roll without one tends to look like dead stock.
+_CAMERA_MOVE = re.compile(
+    r"\b(?:push[- ]?in|pull[- ]?(back|out)|dolly|parallax|orbit|track(ing)?\b|rack[- ]focus|pan(s|ning)?\b|tilt|"
+    r"crane|zoom|slide|time[- ]?lapse|slow[- ]?motion|handheld|gimbal|steadicam|fly[- ]?(through|over)|"
+    r"camera (moves|drifts|glides|rises|descends|follows|circles))", re.IGNORECASE)
+# On-screen words or numbers requested inside the generated image (AI garbles them).
+_TEXT_IN_IMAGE = re.compile(r"[\"“«][^\"”»]{1,60}[\"”»]|\bnumbers? like\b|\breadout\b|\bthe words?\b", re.IGNORECASE)
+
+
+def _seconds(stamp: str):
+    m = re.search(r"(\d{1,2}):(\d{2})", stamp or "")
+    return int(m.group(1)) * 60 + int(m.group(2)) if m else None
+
+
+def broll_engagement_problems(broll_prompts: str, overlay_guide: str = "", minutes: float = 0) -> list:
+    """Code checks that keep B-roll eye-catching (they hold whatever model wrote it):
+    motion in every video clip, no text inside generated media, enough visual events, no long gaps."""
+    lines = (broll_prompts or "").splitlines()
+    head = next((i for i, l in enumerate(lines) if l.strip().startswith("|") and "PROMPT" in l.upper()
+                 and ("TYPE" in l.upper() or "TIMESTAMP" in l.upper())), None)
+    if head is None:
+        return ["The B-Roll Prompt Table is missing or has no 'AI Generation Prompt' column."]
+    cols = [c.strip().upper() for c in re.split(r"(?<!\\)\|", lines[head])[1:-1]]
+
+    def col(*names):
+        return next((i for i, c in enumerate(cols) if any(n in c for n in names)), None)
+
+    c_num, c_time, c_type = col("#"), col("TIMESTAMP", "TIME"), col("TYPE")
+    c_prompt, c_notes = col("GENERATION PROMPT", "PROMPT"), col("COMPOSITION", "NOTES")
+    problems, times, rows = [], [], 0
+    for line in lines[head + 1:]:
+        if not line.strip().startswith("|"):
+            if rows:
+                break
+            continue
+        cells = [c.strip() for c in re.split(r"(?<!\\)\|", line)[1:-1]]
+        if all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c) or len(cells) <= (c_prompt or 0):
+            continue
+        rows += 1
+        num = cells[c_num] if c_num is not None else str(rows)
+        prompt = cells[c_prompt] if c_prompt is not None else ""
+        kind = cells[c_type] if c_type is not None else ""
+        notes = cells[c_notes] if c_notes is not None and c_notes < len(cells) else ""
+        t = _seconds(cells[c_time]) if c_time is not None else None
+        if t is not None:
+            times.append(t)
+        visible = re.split(r"\b(avoid|negative)\b", prompt, maxsplit=1, flags=re.IGNORECASE)[0]
+        if "VIDEO" in kind.upper() or "🎬" in kind:
+            if not _CAMERA_MOVE.search(prompt):
+                problems.append(f"B-roll #{num} (video) has no camera move: add one (slow push-in, dolly, orbit, "
+                                "rack focus, tracking…) and a visible subject action.")
+        elif not re.search(r"ken burns|push|zoom|slide|pan|move", notes + " " + prompt, re.IGNORECASE):
+            problems.append(f"B-roll #{num} (still) has no Ken Burns move in Composition Notes.")
+        asks_text = _TEXT_IN_IMAGE.search(visible)
+        if asks_text:
+            problems.append(f"B-roll #{num} asks for on-screen text/numbers inside the generated image "
+                            f"({asks_text.group(0)[:40]}): AI garbles them — show shapes only and put the words "
+                            "in Composition Notes as a Premiere overlay.")
+    drawings = len(re.findall(r"draw-on (video )?prompt", overlay_guide or "", re.IGNORECASE))
+    if minutes and rows + drawings < round(1.2 * minutes):
+        problems.append(f"Only {rows} B-rolls + {drawings} whiteboard drawings for a ~{minutes:.0f}-minute video: "
+                        f"plan at least {round(1.5 * minutes)} visual moments (about 1.5–2 per minute).")
+    times.sort()
+    if times and times[0] > 20:
+        problems.append(f"The first B-roll starts at {times[0] // 60}:{times[0] % 60:02d}: add one in the first 20 seconds.")
+    for a, b in zip(times, times[1:]):
+        if b - a > 90:
+            problems.append(f"No B-roll between {a // 60}:{a % 60:02d} and {b // 60}:{b % 60:02d}: "
+                            "add one in that stretch (or a whiteboard drawing).")
+    return problems
+
+
+def _video_minutes(state: PipelineState) -> float:
+    m = re.search(r"\d+(?:\.\d+)?", str(state.get("target_duration") or ""))
+    if m:
+        return float(m.group())
+    words = len(ew.spoken_text(ew.filming_script(state.get("refined_script", ""))).split())
+    return words / 140 if words else 0
 
 
 def production_quality_critique(state: PipelineState) -> dict:
     system_prompt = load_prompt("production_quality_critique")
+    code_problems = broll_engagement_problems(state.get("broll_prompts", ""), state.get("text_animation_overlay", ""),
+                                              _video_minutes(state))
+    code_note = ("\n\n### Code checks — B-roll engagement (must fix)\n" + "\n".join(f"- {p}" for p in code_problems)
+                 if code_problems else "")
 
     user_prompt = f"""Audit the post-production editing layers as an integrated visual system.
 
@@ -145,52 +230,57 @@ TARGET PLATFORM: {state.get("target_platform", "")}
 B-ROLL AVAILABILITY: {state.get("broll_availability", "")}
 
 REVISION COUNT: {state.get("production_revision_count", 0)}
+{("CODE CHECKS (measured by code — each one is a CRITICAL issue to list in your report):" + code_note) if code_problems else ""}
 
 Evaluate all three layers individually AND as an integrated system. Score each criterion. Output ONLY the JSON object."""
 
-    response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=6000)
-    
+    try:
+        data, response = call_llm_json(system_prompt, user_prompt, temperature=0.5, max_tokens=6000,
+                                       required=[("production_grade", "grade")])
+    except UnreadableAnswer as e:
+        data, response = None, e.raw
     text = response.strip()
     try:
-        text = strip_json_fence(text)
-        data = json.loads(text.strip())
+        if data is None:
+            raise ValueError("unreadable JSON answer")
 
-        grade = str(data.get("production_grade", "")).strip().upper()
+        grade = str(pick(data, "production_grade", "grade", default="")).strip().upper()
         
-        # Extract all scores
-        scores = {
-            "transition_appropriateness": int(data.get("transition_appropriateness_score", 0)),
-            "transition_restraint": int(data.get("transition_restraint_score", 0)),
-            "text_animation_clarity": int(data.get("text_animation_clarity_score", data.get("icon_clarity_score", 0))),
-            "animation_timing": int(data.get("animation_timing_score", 0)),
-            "broll_relevance": int(data.get("broll_relevance_score", 0)),
-            "broll_medical_accuracy": int(data.get("broll_medical_accuracy_score", 0)),
-            "visual_integration": int(data.get("visual_integration_score", 0)),
-            "density_balance": int(data.get("density_balance_score", 0)),
-            "platform_fit": int(data.get("platform_fit_score", 0)),
-            "organic_feel": int(data.get("organic_feel_score", 0)),
+        # A score the critic left out is unknown, not 0: it doesn't fail a gate on its own.
+        names = {
+            "transition_appropriateness": ("transition_appropriateness_score",),
+            "transition_restraint": ("transition_restraint_score",),
+            "text_animation_clarity": ("text_animation_clarity_score", "icon_clarity_score"),
+            "animation_timing": ("animation_timing_score",),
+            "broll_relevance": ("broll_relevance_score",),
+            "broll_medical_accuracy": ("broll_medical_accuracy_score",),
+            "visual_integration": ("visual_integration_score",),
+            "density_balance": ("density_balance_score",),
+            "platform_fit": ("platform_fit_score",),
+            "organic_feel": ("organic_feel_score",),
+            "visual_engagement": ("visual_engagement_score",),
         }
-        
+        scores = {k: pick(data, *v, kind=int) for k, v in names.items()}
+        known = {k: v for k, v in scores.items() if v is not None}
+
         # Apply hard gates
-        all_above_7 = all(s >= 7 for s in scores.values())
-        integration_ok = scores["visual_integration"] >= 8
-        density_ok = scores["density_balance"] >= 8
-        organic_ok = scores["organic_feel"] >= 8
-        
-        if not (all_above_7 and integration_ok and density_ok and organic_ok):
+        gates_ok = (all(v >= 7 for v in known.values())
+                    and all(known.get(k, 10) >= 8 for k in
+                            ("visual_integration", "density_balance", "organic_feel", "visual_engagement")))
+        if not gates_ok or code_problems:
             grade = "NEEDS_REVISION"
-        
         if grade not in ["PASS"]:
             grade = "NEEDS_REVISION"
 
+        report = pick(data, "production_critique_report", "critique_report", "report", default="", kind=str) or text
         return {
             "production_grade": grade,
-            "production_critique_output": data.get("production_critique_report", "") or text,
+            "production_critique_output": report + code_note,
             "production_revision_count": state.get("production_revision_count", 0) + 1,
         }
     except Exception:
         return {
             "production_grade": "NEEDS_REVISION",
-            "production_critique_output": response,
+            "production_critique_output": response + code_note,
             "production_revision_count": state.get("production_revision_count", 0) + 1,
         }

@@ -170,6 +170,9 @@ def main():
                 except Exception as e:
                     print(f"  [warning] Could not save checkpoint: {e}")
 
+    if ew.quality_warning(cumulative_state):
+        print(f"\n{ew.quality_warning(cumulative_state)}")
+
     # Record which model(s) actually produced this run
     provider_report = llm_router.report()
     with open(os.path.join(output_dir, "llm_provider.json"), "w", encoding="utf-8") as pf:

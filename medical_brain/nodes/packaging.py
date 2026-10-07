@@ -2,13 +2,12 @@
 
 System prompts live in prompts/<step>.md; the user prompts below insert the video's data."""
 
-import json
 import re
 
-from ..llm import call_llm
+from ..llm import call_llm, call_llm_json
 from ..prompts import load_prompt
 from ..state import PipelineState
-from ..utils.llm_json import strip_json_fence
+from ..utils.llm_json import UnreadableAnswer, pick
 
 
 
@@ -123,7 +122,11 @@ SEO PRIMARY KEYWORD: {state.get("seo_primary_keyword", "")}
 
 Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B test set. Output ONLY the JSON object."""
 
-    response = call_llm(system_prompt, user_prompt, temperature=0.3, max_tokens=6000)
+    try:
+        data, response = call_llm_json(system_prompt, user_prompt, temperature=0.3, max_tokens=6000,
+                                       required=[("packaging_grade", "grade"), "top_promise_delivery_score"])
+    except UnreadableAnswer as e:
+        data, response = None, e.raw
     revision = state.get("packaging_revision_count", 0) + 1
 
     # Code checks that can't be talked past: enough candidates, natural faces.
@@ -142,20 +145,19 @@ Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B tes
 
     text = response.strip()
     try:
-        text = strip_json_fence(text)
-        data = json.loads(text.strip())
-
-        grade = str(data.get("packaging_grade", "")).strip().upper()
-        top_pd_score = int(data.get("top_promise_delivery_score", 0))
+        if data is None:
+            raise ValueError("unreadable JSON answer")
+        grade = str(pick(data, "packaging_grade", "grade", default="")).strip().upper()
+        top_pd_score = pick(data, "top_promise_delivery_score", default=0, kind=int)
         if top_pd_score < 9 or grade != "PASS" or code_issues:
             grade = "NEEDS_REVISION"
 
-        report = data.get("packaging_critique_report", "") or text
+        report = pick(data, "packaging_critique_report", "critique_report", "report", default="", kind=str) or text
         if code_issues:
             report += "\n\n### Code checks (must fix)\n" + "\n".join(f"- {i}" for i in code_issues)
 
-        ab_titles = [str(t) for t in (data.get("ab_test_titles") or []) if str(t).strip()]
-        ab_thumbs = [str(t) for t in (data.get("ab_test_thumbnails") or []) if str(t).strip()]
+        ab_titles = [str(t) for t in (pick(data, "ab_test_titles", default=[]) or []) if str(t).strip()]
+        ab_thumbs = [str(t) for t in (pick(data, "ab_test_thumbnails", default=[]) or []) if str(t).strip()]
         ab_set = ""
         if ab_titles or ab_thumbs:
             ab_set = "**Titles to A/B test (ranked):**\n" + "\n".join(f"{i}. {t}" for i, t in enumerate(ab_titles, 1))
@@ -164,7 +166,7 @@ Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B tes
         return {
             "packaging_grade": grade,
             "packaging_critique_output": report,
-            "recommended_title": str(data.get("recommended_title", "")).strip(),
+            "recommended_title": str(pick(data, "recommended_title", default="")).strip(),
             "packaging_ab_test_set": ab_set,
             "packaging_revision_count": revision,
         }

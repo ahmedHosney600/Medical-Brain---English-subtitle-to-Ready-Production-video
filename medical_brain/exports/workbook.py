@@ -77,21 +77,32 @@ def cue_problem(cue: str, norm_script: str, min_words: int = 3) -> Optional[str]
     return None
 
 
+def _bare(word: str) -> str:
+    """A normalized word without the "و" (and) it is often glued to: والسكته → السكته."""
+    return word[1:] if len(word) >= 4 and word.startswith("و") else word
+
+
+# Non-spoken notes in the script: [VISUAL NOTE: …] cues, and stage directions in
+# parentheses that open a line, e.g. **(د. أحمد بيعدل وضعية جلوسه، نبرة فيها ذكاء)**
+_NOTE = re.compile(r"(\[[^\]]*\]|(?:^|\n)[ \t>*\"«]*\([^)\n]*\)[*\"»]*)")
+
+
 class _ScriptIndex:
-    """The spoken script as tokens: original spelling (for the editor) + normalized (for matching)."""
+    """The spoken script as tokens: original spelling (for the editor) + normalized
+    (for matching; a leading "و" is ignored, see _bare)."""
 
     def __init__(self, script: str):
         self.orig, self.norm = [], []
-        self.brackets = []   # (normalized text of a [cue], index of the next spoken word)
-        for piece in re.split(r"(\[[^\]]*\])", script or ""):
-            if piece.startswith("["):
+        self.brackets = []   # (normalized text of a non-spoken note, index of the next spoken word)
+        for i, piece in enumerate(_NOTE.split(script or "")):
+            if i % 2:
                 self.brackets.append((normalize_ar(piece), len(self.norm)))
                 continue
             for tok in spoken_text(piece).split():
                 n = normalize_ar(tok)
                 if n:
                     self.orig.append(tok)
-                    self.norm.append(n)
+                    self.norm.append(_bare(n))
 
     def occurrences(self, words: list) -> list:
         k = len(words)
@@ -142,6 +153,7 @@ def _locate(cue_words: list, idx: _ScriptIndex, after: int, length: int, max_len
     """Best place for a cue: exact match (first at/after `after`), else the window
     with the most shared words. END cues that are too short grow to the left, so the
     cue still ends where the spoken sentence ends. Returns (start, length, grew_left) or None."""
+    cue_words = [_bare(w) for w in cue_words]
     hits = idx.occurrences(cue_words)
     if hits:
         start = next((h for h in hits if h >= after), hits[0])
@@ -156,6 +168,13 @@ def _locate(cue_words: list, idx: _ScriptIndex, after: int, length: int, max_len
     spots = [at for text, at in idx.brackets if cue_text and cue_text in text]
     if spots:
         at = next((a for a in spots if a >= after), spots[0])
+        if end_anchor and at <= after < len(idx.norm):
+            # The note sits before this row's START: end with the sentence START opens.
+            ends = [k for k in range(after + 2, min(len(idx.orig), after + 25))
+                    if re.search(r"[.!?؟]+[\"»)]*$", idx.orig[k])]
+            stop = ends[0] + 1 if ends else min(len(idx.orig), after + max_length)
+            start = max(after, stop - length)
+            return idx.grow_back(start, stop - start, max_length) + (True,)
         if end_anchor and at > 0:
             start = max(0, at - length)
             return idx.grow_back(start, at - start, max_length) + (True,)
@@ -556,6 +575,21 @@ def _empty(note: str = "Nothing from the script package for this step.") -> str:
     return f"_{note}_"
 
 
+def quality_warning(state: Optional[dict]) -> str:
+    """One line when the script's quality loop ended without passing its medical gates."""
+    state = state or {}
+    if not state.get("quality_revision_count"):
+        return ""
+    if (state.get("quality_grade") == "PASS" and state.get("medical_accuracy_pass")
+            and state.get("truth_pass")):
+        return ""
+    return (f"⚠️ The medical quality gate did not pass after {state.get('quality_revision_count')} rounds "
+            f"(fidelity {state.get('fidelity_score', '?')}/10, medical accuracy "
+            f"{'pass' if state.get('medical_accuracy_pass') else 'FAIL'}, truth {state.get('truth_score', '?')}/10"
+            f"{'' if state.get('truth_pass') else ' FAIL'}): review the script against the fact-check "
+            "reports in checkpoint.json before filming.")
+
+
 def build_editing_workbook(final_package: str, state: Optional[dict] = None) -> str:
     """Reorders final_package into the editing workflow. Raises on unexpected
     structure; the caller falls back to the original package."""
@@ -610,6 +644,8 @@ def build_editing_workbook(final_package: str, state: Optional[dict] = None) -> 
               "A ⚠️ before a cue means it was not found word-for-word in the script: search for the nearest sentence.")
 
     # ── Overview
+    if quality_warning(state):
+        md += ["", f"> {quality_warning(state)}"]
     md += ["", "## 0 · OVERVIEW", "", re.sub(r"^#{1,3}(?=\s)", "####", meta[1], flags=re.MULTILINE) or _empty()]
 
     # ── Filming

@@ -1,10 +1,15 @@
 """OpenAI-compatible chat API: DeepSeek, OpenCode Go (GLM, Kimi...), any /chat/completions service."""
+import re
 from typing import Optional
 
 from ..config import KEYS_PATH, provider_headers, provider_key, thinking_mode
 from ..errors import ProviderUnavailable, _LimitTooHigh, _limit_refused, _looks_unavailable, _thinking_refused
 from ..progress import _Progress, _client_timeout, _step_timeout, current_node
 from .base import _OutputLimits
+
+
+# A step that wants JSON says so in its prompt ("Output ONLY the JSON object").
+_WANTS_JSON = re.compile(r"(only\s+(valid\s+)?json|only\s+the\s+json|only\s+a\s+json|output\s+json)", re.IGNORECASE)
 
 
 class OpenAICompatibleBackend(_OutputLimits):
@@ -31,6 +36,10 @@ class OpenAICompatibleBackend(_OutputLimits):
             params["max_tokens"] = max_tokens
         if temperature is not None and not self.no_temperature:
             params["temperature"] = temperature
+        # JSON mode wherever the API offers it (switched off for the run if this model refuses it).
+        if (self.cfg.get("json_mode", True) and not getattr(self, "no_json_mode", False)
+                and _WANTS_JSON.search(system_prompt + "\n" + user_prompt[-600:])):
+            params["response_format"] = {"type": "json_object"}
         mode = None if getattr(self, "no_thinking", False) else thinking_mode(self.cfg, self.model)
         if mode == "off":
             params["extra_body"] = {"enable_thinking": False}      # Qwen-style switch
@@ -48,6 +57,12 @@ class OpenAICompatibleBackend(_OutputLimits):
                 self.no_temperature = True
                 params.pop("temperature")
                 return self.client.chat.completions.create(**params)
+            # A model without JSON mode: retry without it, and don't ask again this run.
+            if "response_format" in params and re.search(r"response_format|json_object|json mode|json_schema",
+                                                         str(e), re.IGNORECASE):
+                self.no_json_mode = True
+                params.pop("response_format")
+                return self._create(params)
             # A model that doesn't accept the thinking switch: retry without it.
             if ("extra_body" in params or "reasoning_effort" in params) and _thinking_refused(e):
                 self.no_thinking = True

@@ -68,6 +68,10 @@ class PipelineState(TypedDict):
     self_critique_output: str
     quality_grade: str
     quality_revision_count: int
+    best_script: str                 # best round of the quality loop so far (verified script)
+    best_script_rank: list
+    best_script_scores: dict
+    best_script_round: int
     final_package: str
     dialect_score: int
     warmth_score: int

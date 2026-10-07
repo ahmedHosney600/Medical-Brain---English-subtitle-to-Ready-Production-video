@@ -73,7 +73,22 @@ class CueTest(unittest.TestCase):
                  "|---|---|---|---|---|---|---|\n| 1 | 1 | 0:00 | الطبيعي = اختيار إحصائي | الطبيعي = اختيار إحصائي | KINETIC | x |\n")
         row = ew.parse_storyboard(ew.repair_cues(table, script)[0])[0]
         self.assertTrue(row["start"].startswith("المشكلة بقى"))
-        self.assertTrue(row["end"].endswith("واضحة جداً"))
+        # END from the same note can't come before START: it closes START's sentence.
+        self.assertTrue(row["end"].endswith("لقطة سريعة"))
+
+    def test_cue_from_a_stage_direction_and_waw_prefix(self):
+        script = ("### 🎬 PRODUCTION SCRIPT\nده عامل خطر معروف للجلطات والسكتة الدماغية عند الكبار.\n\n"
+                  "**(أنيميشن لملعب كرة، وحكم راية بيرفع التسلل)**\n\n"
+                  "الموضوع عامل زي حكم الراية في الكورة بالظبط.\n")
+        table = ("## INTEGRATED PRODUCTION STORYBOARD\n| # | Act | Time | START CUE | END CUE | Layer | Detail |\n"
+                 "|---|---|---|---|---|---|---|\n"
+                 "| 1 | 1 | 0:00 | ده عامل خطر معروف | السكتة الدماغية | B-ROLL | x |\n"
+                 "| 2 | 1 | 0:10 | الموضوع عامل زي حكم | التسلل | B-ROLL | y |\n")
+        text, _, _ = ew.repair_cues(table, script)
+        rows = ew.parse_storyboard(text)
+        self.assertEqual(ew.check_cue_rows([(r["num"], r["start"], r["end"]) for r in rows], script), [])
+        self.assertTrue(rows[0]["end"].endswith("والسكتة الدماغية"))
+        self.assertTrue(rows[1]["end"].endswith("في الكورة بالظبط"))
 
     def test_filler_words_alone_do_not_place_a_cue(self):
         idx = ew._ScriptIndex("تحس فجأة إن قلبك خبط في صدرك، زي ما تكون زغطة بسيطة.")
@@ -213,6 +228,97 @@ class ExportTest(unittest.TestCase):
         md = ew.build_editing_workbook(package, {"recommended_title": "عنوان", "packaging_ab_test_set": "1. a\n2. b"})
         self.assertIn("A/B TEST SET", md)
         self.assertIn("**Recommended title:** عنوان", md)
+
+
+class JsonAnswersTest(unittest.TestCase):
+    """Reading JSON works the same whichever model answered."""
+
+    def test_parse_handles_every_models_habits(self):
+        from medical_brain.utils.llm_json import parse_llm_json
+        self.assertEqual(parse_llm_json('{"a": "he flagged this as a "lost number" here", "b": 1}')["a"],
+                         'he flagged this as a "lost number" here')                     # stray quotes
+        self.assertEqual(parse_llm_json('Sure! ```json\n{"a": 1}\n``` hope it helps')["a"], 1)
+        self.assertEqual(parse_llm_json('Result: {"a": {"b": 2}} done')["a"]["b"], 2)
+        self.assertEqual(parse_llm_json('{"a": True, "b": [1, 2,],}'), {"a": True, "b": [1, 2]})
+        self.assertEqual(parse_llm_json('{"a": "line one\nline two"}')["a"], "line one\nline two")
+        with self.assertRaises(ValueError):
+            parse_llm_json("no json here")
+
+    def test_pick_finds_nested_and_renamed_fields(self):
+        from medical_brain.utils.llm_json import pick
+        data = {"scores": {"dialect_score": "9/10", "medical_pass": "yes"}}
+        self.assertEqual(pick(data, "dialect_authenticity_score", "dialect_score", kind=int), 9)
+        self.assertIs(pick(data, "medical_accuracy_pass", "medical_pass", kind=bool), True)
+        self.assertIsNone(pick(data, "warmth_score", kind=int))
+
+    def test_one_repair_call_only_when_needed(self):
+        router = use_router(self, Canned('{"grade": "PASS", "score": 9}'))
+        data, _ = llm.call_llm_json("s", "u", required=["grade"])
+        self.assertEqual((data["grade"], len(router.prompts)), ("PASS", 1))
+        answers = iter(['{"grade": "PASS", "note": "a "quoted" word" "broken', '{"grade": "PASS"}'])
+        router = use_router(self, Canned())
+        router.call = lambda s, u, *a, **k: (router.prompts.append(u), next(answers))[1]
+        data, _ = llm.call_llm_json("s", "u", required=["grade"])
+        self.assertEqual(len(router.prompts), 2)
+        self.assertIn("PREVIOUS ANSWER", router.prompts[1])
+        self.assertEqual(data["grade"], "PASS")
+
+
+class QualityGateTest(unittest.TestCase):
+    JUDGES = {"fidelity_score": 9, "medical_accuracy_pass": True, "truth_score": 9, "truth_pass": True,
+              "refined_script": "VERIFIED SCRIPT", "quality_revision_count": 2, "max_quality_revision_count": 4}
+
+    def test_missing_scores_are_not_zero_and_verified_script_moves_on(self):
+        use_router(self, Canned(json.dumps({"critique_grade": "A", "critique_report": "all gates passed",
+                                            "revised_script": "UNCHECKED REWRITE"})))
+        out = self_critique(dict(self.JUDGES, dialect_score=9, warmth_score=9))
+        self.assertEqual(out["quality_grade"], "PASS")
+        self.assertEqual(out["fidelity_score"], 9)
+        self.assertEqual(out["refined_script"], "VERIFIED SCRIPT")
+
+    def test_last_round_keeps_the_best_script(self):
+        use_router(self, Canned(json.dumps({"critique_grade": "A", "dialect_authenticity_score": 9, "warmth_score": 9,
+                                            "fidelity_score": 9, "medical_accuracy_pass": True})))
+        state = dict(self.JUDGES)
+        state.update(self_critique(state))                       # round 3 passes and becomes the best
+        self.assertEqual(state["best_script"], "VERIFIED SCRIPT")
+        state.update(refined_script="WORSE SCRIPT", fidelity_score=7, medical_accuracy_pass=False,
+                     quality_grade="C")                          # round 4: the rewrite got worse
+        use_router(self, Canned("not json at all"))
+        out = self_critique(state)
+        self.assertEqual(out["refined_script"], "VERIFIED SCRIPT")
+        self.assertEqual(out["quality_grade"], "PASS")
+        self.assertTrue(out["medical_accuracy_pass"])
+
+    def test_overview_warns_when_the_gate_never_passed(self):
+        failed = {"quality_revision_count": 4, "quality_grade": "C", "fidelity_score": 7,
+                  "medical_accuracy_pass": False, "truth_score": 9, "truth_pass": True}
+        self.assertIn("did not pass after 4 rounds", ew.quality_warning(failed))
+        self.assertEqual(ew.quality_warning(dict(failed, quality_grade="PASS", medical_accuracy_pass=True)), "")
+        self.assertIn("did not pass", ew.build_editing_workbook(SCRIPT + "\n" + STORYBOARD, failed))
+
+
+class BrollEngagementTest(unittest.TestCase):
+    HEAD = ("| # | Timestamp | ▶️ START CUE | ⏹️ END CUE | Script Context | Type | Main Cue | AI Generation Prompt "
+            "| Composition Notes | Dur |\n|---|---|---|---|---|---|---|---|---|---|\n")
+
+    def test_flags_static_clips_text_in_images_and_gaps(self):
+        from medical_brain.nodes.production import broll_engagement_problems
+        table = self.HEAD + (
+            '| 1 | 0:40 | a | b | c | 🎬 Video | watch | Close-up of a wrist, the watch displays "45 BPM". '
+            'Avoid: AI artifacts. | center | 4s |\n'
+            '| 2 | 3:00 | a | b | c | 🖼️ Image | paper | A lab paper on a desk. | center | 4s |\n')
+        problems = " ".join(broll_engagement_problems(table, "", 10))
+        for expected in ("no camera move", "on-screen text", "no Ken Burns", "Only 2 B-rolls",
+                         "first 20 seconds", "between 0:40 and 3:00"):
+            self.assertIn(expected, problems)
+
+    def test_engaging_prompts_pass(self):
+        from medical_brain.nodes.production import broll_engagement_problems
+        rows = "".join(f'| {i} | {i // 2}:{(i % 2) * 30:02d} | a | b | c | 🎬 Video | x | A man in a Cairo street '
+                       f'checks his wrist, slow push-in, teal grade. Avoid: no text, no "letters". | left | 4s |\n'
+                       for i in range(0, 7))
+        self.assertEqual(broll_engagement_problems(self.HEAD + rows, "", 3), [])
 
 
 if __name__ == "__main__":

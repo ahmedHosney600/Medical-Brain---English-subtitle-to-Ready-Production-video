@@ -39,12 +39,21 @@ class H(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         m = body["model"]
         assert body.get("stream"), "expected a streaming request"
+        json_mode = "response_format" in body
+        if json_mode and os.environ.get("REJECT_JSON"):
+            b = json.dumps({"error": {"message": "response_format is not supported by this model",
+                                      "type": "invalid_request_error"}}).encode()
+            self.send_response(400); self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+            return
         self.sse_start()
         try:
             if self.path.endswith("/chat/completions"):
                 base = {"id": "c", "object": "chat.completion.chunk", "created": 0, "model": m}
                 for i in range(THINK):
                     time.sleep(DELAY); self.ev({**base, "choices": [{"index": 0, "delta": {"reasoning_content": "hmm "}, "finish_reason": None}]})
+                if json_mode:      # tells the test the request asked for JSON mode
+                    self.ev({**base, "choices": [{"index": 0, "delta": {"content": "JSON "}, "finish_reason": None}]})
                 for i in range(WORDS):
                     time.sleep(DELAY); self.ev({**base, "choices": [{"index": 0, "delta": {"content": f"w{i} "}, "finish_reason": None}]})
                 self.ev({**base, "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]})

@@ -330,7 +330,7 @@ APPROVED THUMBNAIL CONCEPTS (from the packaging loop — copy through, do not re
 
 RECOMMENDED TITLE (use as the primary Video Title): {state.get("recommended_title", "") or "(see packaging audit)"}
 
-A/B TEST SET (YouTube "Test & compare" — copy this list under the title options as "#### A/B Test Set"):
+A/B TEST SET (YouTube "Test & compare" — copy this list under the title options, under a level-4 heading named A/B Test Set):
 {state.get("packaging_ab_test_set", "") or "(see packaging audit)"}
 
 PACKAGING AUDIT:
@@ -445,4 +445,6 @@ RULES:
     part2 = best_2[1]
 
     final_package = part1 + "\n\n---\n\n" + part2
+    # Models sometimes double a heading's marks ("#### #### A/B Test Set").
+    final_package = re.sub(r"^(#{1,6})\s+#{1,6}\s+", r"\1 ", final_package, flags=re.MULTILINE)
     return {"final_package": final_package}

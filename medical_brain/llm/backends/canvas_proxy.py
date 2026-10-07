@@ -1,12 +1,8 @@
 """Gemini through the local Gemini Canvas proxy (pranrichh/gemini-canvas-proxy)."""
-import re
 from typing import Optional
 
 from ..errors import ProviderUnavailable
 from .openai_compat import OpenAICompatibleBackend
-
-
-_WANTS_JSON = re.compile(r"(only\s+(valid\s+)?json|only\s+the\s+json|only\s+a\s+json|output\s+json)", re.IGNORECASE)
 
 
 class CanvasProxyBackend(OpenAICompatibleBackend):
@@ -16,7 +12,6 @@ class CanvasProxyBackend(OpenAICompatibleBackend):
         answer is lost): retry the step `timeout_retries` times;
       - Gemini 3's hidden thinking counts against max_tokens and can cut answers
         (and JSON) short: raise max_tokens to at least `min_max_tokens`;
-      - the proxy supports JSON mode: switch it on when the prompt asks for JSON only.
     Safety blocks (502 with blockReason) are not retried: the same prompt gets the same answer."""
 
     def __init__(self, provider: str, cfg: dict, model: str):
@@ -29,8 +24,6 @@ class CanvasProxyBackend(OpenAICompatibleBackend):
         import openai
         floor = self.cfg.get("min_max_tokens") or 0
         params = self._params(system_prompt, user_prompt, temperature, max(max_tokens or 0, floor) or None)
-        if self.cfg.get("json_mode", True) and _WANTS_JSON.search(system_prompt + "\n" + user_prompt[-600:]):
-            params["response_format"] = {"type": "json_object"}
         attempts = 1 + int(self.cfg.get("timeout_retries", 2))
         wait = self.cfg.get("retry_wait_seconds", 10)
         for attempt in range(1, attempts + 1):

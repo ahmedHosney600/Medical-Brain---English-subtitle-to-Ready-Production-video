@@ -2,12 +2,10 @@
 
 System prompts live in prompts/<step>.md; the user prompts below insert the video's data."""
 
-import json
-
-from ..llm import call_llm
+from ..llm import call_llm, call_llm_json
 from ..prompts import load_prompt
 from ..state import PipelineState
-from ..utils.llm_json import strip_json_fence
+from ..utils.llm_json import UnreadableAnswer, pick
 
 
 def shorts_moment_identifier(state: PipelineState) -> dict:
@@ -112,14 +110,17 @@ SOURCE ANALYSIS & MEDICAL FACT LEDGER:
 TARGET PLATFORM: {state.get("target_platform", "youtube")}
 SHORTS REVISION COUNT: {state.get("shorts_revision_count", 0)}"""
 
-    response = call_llm(system_prompt, user_prompt, temperature=0.4, max_tokens=5000)
-    
+    try:
+        data, response = call_llm_json(system_prompt, user_prompt, temperature=0.4, max_tokens=5000,
+                                       required=["shorts_quality_grade"])
+    except UnreadableAnswer as e:
+        data, response = None, e.raw
     text = response.strip()
     try:
-        text = strip_json_fence(text)
-        data = json.loads(text.strip())
+        if data is None:
+            raise ValueError("unreadable JSON answer")
 
-        grade = str(data.get("shorts_quality_grade", "")).strip().upper()
+        grade = str(pick(data, "shorts_quality_grade", "grade", default="")).strip().upper()
         clips = data.get("per_clip_scores", [])
         
         all_clips_pass = True

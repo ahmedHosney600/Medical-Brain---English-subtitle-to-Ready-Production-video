@@ -4,10 +4,10 @@ System prompts live in prompts/<step>.md; the user prompts below insert the vide
 
 import json
 
-from ..llm import call_llm
+from ..llm import call_llm, call_llm_json
 from ..prompts import load_prompt
 from ..state import PipelineState
-from ..utils.llm_json import strip_json_fence
+from ..utils.llm_json import UnreadableAnswer, strip_json_fence
 from ..utils.seo import fetch_autocomplete_grounding
 
 
@@ -24,12 +24,15 @@ VIDEO ANALYSIS INTELLIGENCE (pre-curated insights for this specific video — us
 
 Do not rewrite or translate anything. Only analyze and extract. Every claim in the ledger must be traceable back to a specific point in the script above. Output ONLY the JSON object."""
 
-    response = call_llm(system_prompt, user_prompt, temperature=0.3, max_tokens=5000)
-    
+    try:
+        data, response = call_llm_json(system_prompt, user_prompt, temperature=0.3, max_tokens=5000,
+                                       required=["source_analysis"])
+    except UnreadableAnswer as e:
+        data, response = None, e.raw
     text = response.strip()
     try:
-        text = strip_json_fence(text)
-        data = json.loads(text.strip())
+        if data is None:
+            raise ValueError("unreadable JSON answer")
         
         # Only overwrite if the LLM provided a non-empty value, allowing manual overrides if the user did set them.
         updates = {"source_analysis": data.get("source_analysis", "") or text}
@@ -88,11 +91,15 @@ SOURCE SCRIPT ANALYSIS (for topic/claim accuracy — do not invent keywords beyo
 
 Produce the keyword plan. Output ONLY the JSON object."""
 
-    response = call_llm(system_prompt, user_prompt, temperature=0.4, max_tokens=1500)
+    try:
+        data, response = call_llm_json(system_prompt, user_prompt, temperature=0.4, max_tokens=1500,
+                                       required=["primary_keyword"])
+    except UnreadableAnswer as e:
+        data, response = None, e.raw
     text = response.strip()
     try:
-        text = strip_json_fence(text)
-        data = json.loads(text.strip())
+        if data is None:
+            raise ValueError("unreadable JSON answer")
         secondary = data.get("secondary_keywords", [])
         secondary_str = ", ".join(secondary) if isinstance(secondary, list) else str(secondary)
         return {

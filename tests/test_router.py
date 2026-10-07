@@ -68,6 +68,21 @@ class StreamingTest(unittest.TestCase):
             text = llm.make_backend(f"opencode:{model}", c["providers"]).call("s", "u", 0.3, 100)
             self.assertEqual(text.strip(), "w0 w1 w2", model)
 
+    def test_json_mode_for_any_openai_compatible_api(self):
+        c = config("x:any-model", x={"type": "openai", "base_url": f"http://127.0.0.1:{self.fast_port}/v1", "api_key": "k"})
+        backend = llm.make_backend("x:any-model", c["providers"])
+        self.assertTrue(backend.call("Output ONLY the JSON object.", "u", 0.3, 100).startswith("JSON"))
+        self.assertFalse(backend.call("Write a script.", "u", 0.3, 100).startswith("JSON"))
+
+    def test_json_mode_dropped_when_the_model_refuses_it(self):
+        port = free_port()
+        proc = start("fake_stream.py", port, env={"DELAY": "0.01", "THINK": "0", "WORDS": "2", "REJECT_JSON": "1"})
+        self.addCleanup(stop, proc)
+        c = config("x:any-model", x={"type": "openai", "base_url": f"http://127.0.0.1:{port}/v1", "api_key": "k"})
+        backend = llm.make_backend("x:any-model", c["providers"])
+        self.assertEqual(backend.call("Output ONLY the JSON object.", "u", 0.3, 100).strip(), "w0 w1")
+        self.assertTrue(backend.no_json_mode)
+
     def test_slow_call_times_out_and_backup_answers(self):
         c = config("opencode:qwen3.8-max", backup="fast:glm-5.3",
                    opencode=self.provider(self.slow_port, step_timeout_seconds=2),

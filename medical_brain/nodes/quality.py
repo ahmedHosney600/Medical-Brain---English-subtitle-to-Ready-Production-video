@@ -2,12 +2,10 @@
 
 System prompts live in prompts/<step>.md; the user prompts below insert the video's data."""
 
-import json
-
-from ..llm import call_llm
+from ..llm import call_llm_json
 from ..prompts import load_prompt
 from ..state import PipelineState
-from ..utils.llm_json import strip_json_fence
+from ..utils.llm_json import UnreadableAnswer, pick
 
 
 def translation_fidelity_auditor(state: PipelineState) -> dict:
@@ -34,19 +32,22 @@ AVOID LIST:
 
 Output ONLY the JSON object. Check every sentence for calque risk and every section for contextual correspondence to its counterpart in the original script."""
 
-    llm_response = call_llm(system_prompt, user_prompt, temperature=0.2, max_tokens=6000)
-    
+    try:
+        data, llm_response = call_llm_json(system_prompt, user_prompt, temperature=0.2, max_tokens=6000,
+                                           required=["translation_grade", "naturalness_score", "contextual_alignment_score"])
+    except UnreadableAnswer as e:
+        data, llm_response = None, e.raw
     text = llm_response.strip()
     try:
-        text = strip_json_fence(text)
-        data = json.loads(text.strip())
+        if data is None:
+            raise ValueError("unreadable JSON answer")
 
-        grade = str(data.get("translation_grade", "")).strip().upper()
+        grade = str(pick(data, "translation_grade", "grade", default="")).strip().upper()
         if grade not in ["PASS", "NEEDS_REVISION"]:
             grade = "NEEDS_REVISION"
 
-        naturalness = int(data.get("naturalness_score", 0))
-        contextual = int(data.get("contextual_alignment_score", 0))
+        naturalness = pick(data, "naturalness_score", default=0, kind=int)
+        contextual = pick(data, "contextual_alignment_score", default=0, kind=int)
 
         if naturalness < 8 or contextual < 8:
             grade = "NEEDS_REVISION"
@@ -94,17 +95,19 @@ AVOID LIST:
 
 Output ONLY the JSON object. Check every claim, every analogy, and the disclaimer."""
 
-    response = call_llm(system_prompt, user_prompt, temperature=0.2, max_tokens=5000)
-    
-    text = response.strip()
     try:
-        text = strip_json_fence(text)
-        data = json.loads(text.strip())
+        data, response = call_llm_json(system_prompt, user_prompt, temperature=0.2, max_tokens=5000,
+                                       required=["fidelity_score", "medical_accuracy_pass"])
+    except UnreadableAnswer as e:
+        data, response = None, e.raw
+    try:
+        if data is None:
+            raise ValueError("unreadable JSON answer")
         
         return {
             "fidelity_audit_output": data.get("fidelity_report", ""),
-            "medical_accuracy_pass": data.get("medical_accuracy_pass", False),
-            "fidelity_score": int(data.get("fidelity_score", 0)),
+            "medical_accuracy_pass": pick(data, "medical_accuracy_pass", default=False, kind=bool),
+            "fidelity_score": pick(data, "fidelity_score", default=0, kind=int),
             "disclaimer_check": str(data.get("disclaimer_check", "")),
         }
     except Exception:
@@ -144,15 +147,18 @@ AVOID LIST:
 
 Examine every single line, claim, mechanism, number, study, analogy, and advice. Output ONLY valid JSON."""
 
-    response = call_llm(system_prompt, user_prompt, temperature=0.2, max_tokens=12000)
-    
+    try:
+        data, response = call_llm_json(system_prompt, user_prompt, temperature=0.2, max_tokens=12000,
+                                       required=["truth_score", "truth_pass"])
+    except UnreadableAnswer as e:
+        data, response = None, e.raw
     text = response.strip()
     try:
-        text = strip_json_fence(text)
-        data = json.loads(text.strip())
+        if data is None:
+            raise ValueError("unreadable JSON answer")
         
-        truth_score = int(data.get("truth_score", 0))
-        truth_pass = bool(data.get("truth_pass", False))
+        truth_score = pick(data, "truth_score", default=0, kind=int)
+        truth_pass = pick(data, "truth_pass", default=False, kind=bool)
         verified_script = (data.get("verified_script", "") or "").strip()
         
         return {
@@ -201,58 +207,83 @@ AVOID LIST:
 
 Output ONLY the JSON object. Include the full revised script."""
 
-    response = call_llm(system_prompt, user_prompt, temperature=0.6, max_tokens=12000)
-    
-    text = response.strip()
     try:
-        text = strip_json_fence(text)
-        data = json.loads(text.strip())
+        data, response = call_llm_json(system_prompt, user_prompt, temperature=0.6, max_tokens=12000,
+                                       required=[("critique_grade", "grade"), ("dialect_authenticity_score", "dialect_score"), ("warmth_score", "warmth"), ("fidelity_score", "fidelity"), ("medical_accuracy_pass", "medical_pass")])
+    except UnreadableAnswer as e:
+        data, response = None, e.raw
+    try:
+        if data is None:
+            raise ValueError("unreadable JSON answer")
 
-        grade = str(data.get("critique_grade", "")).strip().upper()
+        grade = str(pick(data, "critique_grade", "grade", default="")).strip().upper()
         if grade not in ["A+", "A", "B", "C", "D", "F"]:
             grade = "F"
-
-        dialect_score = int(data.get("dialect_authenticity_score", 0))
-        warmth_score = int(data.get("warmth_score", 0))
-        # The critique also rewrote the script, so it may lower the independent
-        # fidelity auditor's verdict but never raise it.
-        fidelity_score = int(data.get("fidelity_score", 0))
-        medical_pass = bool(data.get("medical_accuracy_pass", False))
-        if "fidelity_score" in state:
-            fidelity_score = min(fidelity_score, int(state.get("fidelity_score") or 0))
-        if "medical_accuracy_pass" in state:
-            medical_pass = medical_pass and bool(state.get("medical_accuracy_pass"))
-        truth_score = int(state.get("truth_score", 10))
-        truth_pass = bool(state.get("truth_pass", True))
-
-        if grade in ["A+", "A"]:
-            if dialect_score < 8 or warmth_score < 8:
-                grade = "B"
-            if not medical_pass or fidelity_score < 9 or not truth_pass or truth_score < 9:
-                grade = "C"
-
-        return {
-            "quality_grade": "PASS" if grade in ["A", "A+"] else grade,
-            "self_critique_output": data.get("critique_report", "") or text,
-            "refined_script": (data.get("revised_script", "") or "").strip() or state.get("refined_script", ""),
-            "quality_revision_count": state.get("quality_revision_count", 0) + 1,
-            "dialect_score": dialect_score,
-            "warmth_score": warmth_score,
-            "fidelity_score": fidelity_score,
-            "medical_accuracy_pass": medical_pass,
-            "truth_score": truth_score,
-            "truth_pass": truth_pass
-        }
+        return _critique_result(state, grade, data, response)
     except Exception:
-        return {
-            "quality_grade": "NEEDS_REVISION",
-            "self_critique_output": response,
-            "refined_script": state.get("refined_script", ""),
-            "quality_revision_count": state.get("quality_revision_count", 0) + 1,
-            "dialect_score": state.get("dialect_score", 0),
-            "warmth_score": state.get("warmth_score", 0),
-            "fidelity_score": state.get("fidelity_score", 0),
-            "medical_accuracy_pass": state.get("medical_accuracy_pass", False),
-            "truth_score": state.get("truth_score", 0),
-            "truth_pass": state.get("truth_pass", False)
-        }
+        # Unreadable answer: the scores this round are the independent judges' only.
+        return _critique_result(state, "NEEDS_REVISION", None, response)
+
+
+def _critique_result(state: PipelineState, grade: str, data, raw: str) -> dict:
+    """Combines self_critique's answer with the independent judges' verdicts, and
+    keeps the best round: the loop never ends on a worse script than one it already had."""
+    data = data or {}
+    # A score the critique didn't give is unknown, not 0: fall back to the last
+    # known value, and never let a missing value fail the gate on its own.
+    dialect = pick(data, "dialect_authenticity_score", "dialect_score", "dialect", kind=int)
+    warmth = pick(data, "warmth_score", "warmth", kind=int)
+    dialect = dialect if dialect is not None else state.get("dialect_score") or None
+    warmth = warmth if warmth is not None else state.get("warmth_score") or None
+
+    # The critique also rewrote the script, so it may lower the independent
+    # fidelity auditor's verdict but never raise it.
+    auditor_fidelity = state.get("fidelity_score")
+    auditor_pass = state.get("medical_accuracy_pass")
+    critique_fidelity = pick(data, "fidelity_score", "fidelity", kind=int)
+    critique_pass = pick(data, "medical_accuracy_pass", "medical_pass", kind=bool)
+    known_fidelity = [v for v in (auditor_fidelity, critique_fidelity) if v is not None]
+    fidelity = min(known_fidelity) if known_fidelity else 0
+    known_pass = [v for v in (auditor_pass, critique_pass) if v is not None]
+    medical_pass = all(known_pass) if known_pass else False
+    truth_score = int(state.get("truth_score", 0) or 0)
+    truth_pass = bool(state.get("truth_pass", False))
+
+    if grade in ["A+", "A"]:
+        if (dialect is not None and dialect < 8) or (warmth is not None and warmth < 8):
+            grade = "B"
+        if not medical_pass or fidelity < 9 or not truth_pass or truth_score < 9:
+            grade = "C"
+    passed = grade in ["A", "A+"]
+
+    # The script the judges just scored (truth verifier's output). When this round
+    # passes, that verified script is what moves on — not a fresh, unchecked rewrite.
+    verified = state.get("refined_script", "")
+    revised = (pick(data, "revised_script", default="", kind=str) or "").strip()
+    round_no = state.get("quality_revision_count", 0) + 1
+    scores = {"dialect_score": dialect or 0, "warmth_score": warmth or 0, "fidelity_score": fidelity,
+              "medical_accuracy_pass": medical_pass, "truth_score": truth_score, "truth_pass": truth_pass}
+    rank = [int(passed), truth_score + fidelity + 10 * int(medical_pass and truth_pass),
+            (dialect or 0) + (warmth or 0)]
+
+    result = {
+        "quality_grade": "PASS" if passed else grade,
+        "self_critique_output": pick(data, "critique_report", "report", default="", kind=str) or raw,
+        "refined_script": verified if passed else (revised or verified),
+        "quality_revision_count": round_no,
+        **scores,
+    }
+    best = state.get("best_script_rank")
+    if verified and (not best or rank > list(best)):
+        result.update(best_script=verified, best_script_rank=rank, best_script_scores=scores,
+                      best_script_round=round_no)
+    elif best and not passed and round_no >= state.get("max_quality_revision_count", 2):
+        # Last round and it didn't pass: go on with the best round's script.
+        best_scores = state.get("best_script_scores") or {}
+        best_passed = bool(best[0])
+        print(f"  ↩️ self_critique: round {round_no} did not pass; keeping round "
+              f"{state.get('best_script_round')}'s script ({'it passed' if best_passed else 'it scored higher'})")
+        result.update(best_scores)
+        result["refined_script"] = state.get("best_script", verified)
+        result["quality_grade"] = "PASS" if best_passed else result["quality_grade"]
+    return result

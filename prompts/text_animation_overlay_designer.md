@@ -48,10 +48,11 @@ ADDITIONAL ELEMENT TYPES (use alongside the 5 primary types):
 
 9. **Progress Indicators**: Section markers, chapter counters.
 
-9. **Drawing Animations (CONDITIONAL — only when needed)**: Whiteboard-style sketch reveals, progressive diagram builds, sketch overlay annotations, animated handwriting. Use these ONLY when the medical mechanism being explained is genuinely difficult to follow verbally — when "making the invisible visible" meaningfully aids comprehension. NOT every script needs drawing animations.
+9. **Whiteboard Drawing Animations (key mechanisms & analogies)**: Hand-drawn whiteboard reveals are among the most watchable moments of an explainer: the viewer waits to see what the drawing becomes. Plan one for every key mechanism, cause→effect chain, comparison (normal vs abnormal, before vs after) or central analogy that can be drawn — usually 3–5 in a 10-minute video, spread across the acts (never two in a row).
 
-   When to include: Complex multi-step medical mechanisms, cause-effect chains with 3+ steps, anatomical processes invisible to the eye, healthy vs. unhealthy comparisons.
-   When NOT to include: Simple concepts explained clearly with words, warm/emotional moments, sections where B-roll or text overlays already provide adequate visual support.
+   Each drawing tells a small story, not a single icon: 3–5 build steps, each tied to a spoken line, ending in a PAYOFF element drawn last (the red arrow, the highlighted zone, the crossed-out wrong idea, the side-by-side "this vs that") that lands exactly on the key sentence. A lone shape (one bell curve, one speedometer) is not enough — show what changes, what it means, or how two things differ.
+
+   When NOT to include: warm/emotional moments, and points already clear from a B-roll shot.
 
    For each drawing animation, provide HIGHLY DETAILED specs:
    - **Draw style**: whiteboard / sketch overlay / handwriting / progressive diagram
@@ -62,8 +63,8 @@ ADDITIONAL ELEMENT TYPES (use alongside the 5 primary types):
    - **Color palette**: specific hex colors for each element (e.g., "arteries: #E63946, veins: #457B9D, labels: white on dark background")
    - **Placement & size**: full-screen whiteboard moment vs. corner overlay on talking head, exact screen region and approximate size ratio
    - **Reference description**: plain-language description of what the finished drawing should look like, as if describing it to someone who can't see it
-   - **Whiteboard image prompt** (English, for Google Flow image generation): plain white whiteboard, clean black marker line art, at most 2 accent colors, the FINISHED composition, and NO text, letters, numbers or labels anywhere in the image
-   - **Draw-on video prompt** (English, image-to-video in Google Flow with the image above as the start frame): a hand with a black marker draws the elements in the build-sequence order, static camera, white background, no text appears, ~8 seconds
+   - **Whiteboard image prompt** (English, for Google Flow image generation): plain white whiteboard, bold clean black marker line art in a friendly hand-drawn explainer style, the FINISHED composition with every build element placed (layout: left/right, top/bottom), at most 2 accent colors used ONLY on the payoff element, generous white space for the Premiere labels, and NO text, letters, numbers or labels anywhere in the image
+   - **Draw-on video prompt** (English, image-to-video in Google Flow with the image above as the start frame): a hand with a black marker draws the elements in the build-sequence order (list them), then the accent-colour payoff is drawn last with a quick highlight stroke, static camera, white background, no text appears, 8–12 seconds
    - **Labels to add in Premiere**: every label/annotation as on-screen text (Arabic or English) with the exact cue words where it appears — labels are never part of the AI image
 
 ANIMATION SPECIFICATION — for EVERY text element, describe:
