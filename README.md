@@ -13,6 +13,43 @@ The packaging steps produce, per video:
 
 To change these rules, add `"thumbnail_face_rules": "…your own rules…"` to `input_fields.json`.
 
+## Project structure
+
+```
+main.py / setup_models.py   commands you run (thin wrappers)
+prompts/                    one .md file per step: the instructions sent to the model
+  _shared/                  rules used by several prompts (Egyptian CTR rules, thumbnail face rules)
+medical_brain/
+  nodes/                    the 24 steps, grouped by stage
+    analysis.py             source analysis, SEO keyword research, strategy
+    script_writing.py       hook, body, CTA, dialect & warmth, refinement
+    quality.py              translation fidelity, medical fidelity, medical truth, self-critique
+    packaging.py            titles & thumbnails (+ face-rule check)
+    production.py           transitions, text animations, B-roll, production critique
+    final_package.py        the final production document (+ its code audits)
+    shorts.py               Reels & Shorts
+  graph.py                  the list of steps (NODES) and how they connect
+  routing.py                where each quality gate sends the run next (revise / move on)
+  state.py                  the shared state and the defaults a new run starts with
+  prompts.py                load_prompt(): reads prompts/<step>.md
+  llm/                      models: providers, backends, router & fallbacks, checks
+  exports/                  editing workbook, HTML/PDF/DOCX, Google Flow prompt files
+  cli.py                    the run behind `python3 main.py`
+  setup_models.py           the model chooser behind `python3 setup_models.py`
+tests/                      python3 -m unittest discover -s tests -t .
+docs/                       guides, workflow notes, reference analyses
+```
+
+**Tuning a prompt:** edit `prompts/<step>.md`. No code changes are needed. `{{NAME}}` markers, such as `{{EGYPTIAN_CTR_RULES}}`, are filled in by the step.
+
+**Adding a step:**
+1. Write `prompts/my_step.md`.
+2. Add a function `my_step(state) -> dict` in the right `medical_brain/nodes/` module. It builds the user prompt from `state` and calls `call_llm(load_prompt("my_step"), user_prompt, ...)`.
+3. Add `("my_step", module.my_step)` to `NODES` in `medical_brain/graph.py` and connect it with `add_edge` in `build_app()`.
+4. To run it on a specific model in Hybrid mode, add it to `hybrid_routes` (via `setup_models.py`).
+
+**Tests:** run `python3 -m unittest discover -s tests -t .`. They need no internet and use local fake model servers.
+
 ## Install
 
 ```bash
