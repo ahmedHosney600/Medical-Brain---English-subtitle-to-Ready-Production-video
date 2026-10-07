@@ -288,6 +288,7 @@ SECTION_KEYS = [
     "INTEGRATED PRODUCTION STORYBOARD", "TRANSITION MAP", "TEXT ANIMATION & OVERLAY GUIDE",
     "AI B-ROLL GENERATION PROMPTS", "INTEGRATION DATA",
     "SCRIPT PACKAGE", "POST-PRODUCTION GUIDE",  # wrapper headings
+    "VERIFIED SOURCES",
 ]
 
 
@@ -706,6 +707,20 @@ def production_warning(state: Optional[dict]) -> str:
     return (f"⚠️ The post-production review did not pass after {state.get('production_revision_count')} rounds; "
             "check the critique in checkpoint.json (production_critique_output)"
             + (". Still to fix by hand: " + " · ".join(left) if left else "."))
+
+
+def add_research_sources(package: str, references: list, key_refs: list) -> str:
+    """For a video built from a research dossier: the full reference list goes into the
+    document, and the key sources into the YouTube description (before its closing fence)."""
+    if not references:
+        return package
+    text = package.rstrip() + "\n\n---\n\n### 📚 VERIFIED SOURCES\n\n" + "\n".join(f"- {r}" for r in references) + "\n"
+    if key_refs:
+        block = "\n📚 المصادر:\n" + "\n".join("- " + re.sub(r"^\[S\d+\]\s*", "", r) for r in key_refs) + "\n"
+        m = re.search(r"(Description[^\n]*\n(?:(?!```)[^\n]*\n)*?```[^\n]*\n)(.*?)(\n```)", text, re.IGNORECASE | re.DOTALL)
+        if m:
+            text = text[:m.end(2)] + "\n" + block.rstrip("\n") + text[m.end(2):]
+    return text
 
 
 def package_warning(state: Optional[dict]) -> str:

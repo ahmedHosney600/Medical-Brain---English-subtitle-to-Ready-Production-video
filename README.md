@@ -1,5 +1,28 @@
 # Medical-Brain---English-subtitle-to-Ready-Production-video
 
+## Three workflows
+
+Run `python3 main.py` with no arguments to get a menu. Or start one directly:
+
+| You have | Command | You get |
+|---|---|---|
+| An English subtitle/script | `python3 main.py script.txt` | The video production package (as before) |
+| Only a topic | `python3 main.py --topic "smartwatches and atrial fibrillation"` | A verified research dossier to review |
+| Only a topic, want the video too | `python3 main.py --topic "…" --workflow research-video` | Dossier → your review → video package |
+| A dossier you reviewed | `python3 main.py --continue output/<session>` | Next research round, or the video |
+
+### Topic → research (verified facts from trusted sources)
+1. **Plan.** An outline of 6–10 sections, the questions each must answer, and search queries.
+2. **Collect.** Sources come from PubMed, Europe PMC and MedlinePlus (no key needed). Trusted web pages (WHO, NHS, NICE, CDC, Mayo Clinic, …) are added when a Tavily or Brave key is set in `setup_models.py`. Every source is ranked by evidence level (guideline > meta-analysis > RCT > observational > review) and recency.
+3. **Screen.** A judge model keeps the relevant, credible sources and searches again for the gaps.
+4. **Extract.** Atomic facts, each with the **exact quote** from its source. Code checks that the quote really is in the source and that every number in the claim is in the quote, so made-up facts are rejected.
+5. **Verify.** A separate judge model checks that every claim is faithful to its quote, current, consistent and safe. Facts it can't verify are listed under "Not included", never used.
+6. **Coverage.** The editor-in-chief model checks that the dossier is comprehensive and genuinely useful, and researches what's missing.
+7. **Dossier.** `output/<session>/research/dossier.md` (+ HTML/PDF/DOCX), with every fact cited [S#] and a reference list.
+8. **Your review.** Edit `research/review.md`: write what to ADD / CHANGE / REMOVE, or `APPROVED: yes`, then run `python3 main.py --continue output/<session>`. A new round researches only what you asked for. Approve when it's right.
+
+In `--workflow research-video`, approval starts the video workflow with the dossier as its source. Its fact-checkers then reject any claim that isn't in the dossier, and the verified sources are added to the final document and to the YouTube description (المصادر). Research limits (rounds, sources per section, years) are in `input_fields.json`.
+
 ## Titles and thumbnails
 
 The packaging steps produce, per video:
@@ -19,6 +42,7 @@ To change these rules, add `"thumbnail_face_rules": "…your own rules…"` to `
 main.py / setup_models.py   commands you run (thin wrappers)
 prompts/                    one .md file per step: the instructions sent to the model
   _shared/                  rules used by several prompts (Egyptian CTR rules, thumbnail face rules)
+  research/                 the research workflow's steps
 medical_brain/
   nodes/                    the 24 steps, grouped by stage
     analysis.py             source analysis, SEO keyword research, strategy
@@ -33,6 +57,7 @@ medical_brain/
   state.py                  the shared state and the defaults a new run starts with
   prompts.py                load_prompt(): reads prompts/<step>.md
   llm/                      models: providers, backends, router & fallbacks, checks
+  research/                 the topic → research workflow (sources/, nodes, graph, dossier)
   exports/                  editing workbook, HTML/PDF/DOCX, Google Flow prompt files
   cli.py                    the run behind `python3 main.py`
   setup_models.py           the model chooser behind `python3 setup_models.py`

@@ -148,6 +148,10 @@ AVOID LIST:
 {state.get("avoid_list", "")}
 
 Examine every single line, claim, mechanism, number, study, analogy, and advice. Output ONLY valid JSON."""
+    if state.get("research_dossier"):
+        user_prompt += """
+
+The ORIGINAL SOURCE above is a verified RESEARCH DOSSIER with citations [S#]. Every factual claim in the script must trace to one of its facts with the same numbers and population; flag (and remove in verified_script) any claim, number or study that is not in the dossier, even if you believe it is true."""
 
     try:
         data, response = call_llm_json(system_prompt, user_prompt, temperature=0.2, max_tokens=12000,

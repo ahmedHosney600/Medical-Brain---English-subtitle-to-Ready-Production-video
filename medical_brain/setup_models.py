@@ -94,6 +94,18 @@ def offer_proxy_token(config: dict, status: dict) -> bool:
     return False
 
 
+def offer_web_search_key() -> None:
+    """The research workflow searches PubMed, Europe PMC and MedlinePlus without a key;
+    a Tavily or Brave key adds trusted web pages (WHO, NHS, Mayo Clinic, …)."""
+    if os.environ.get("TAVILY_API_KEY") or os.environ.get("BRAVE_API_KEY"):
+        print("  ✅ web search for research: " + ("Tavily" if os.environ.get("TAVILY_API_KEY") else "Brave"))
+        return
+    key = ask("  Optional — a Tavily (tvly-…) or Brave Search API key adds trusted web pages to the\n"
+              "  topic research (PubMed / Europe PMC / MedlinePlus work without one). Paste it or Enter to skip: ")
+    if key:
+        lp.save_key("TAVILY_API_KEY" if key.startswith("tvly-") else "BRAVE_API_KEY", key)
+
+
 def offer_keys(config: dict, status: dict) -> bool:
     changed = offer_proxy_token(config, status)
     for name, cfg in config["providers"].items():
@@ -103,6 +115,7 @@ def offer_keys(config: dict, status: dict) -> bool:
             if key:
                 lp.save_key(env, key)
                 changed = True
+    offer_web_search_key()
     claude = config["providers"].get("claude", {})
     if status.get("claude") != "active" and claude.get("transport") != "anthropic_api" and os.environ.get("ANTHROPIC_API_KEY"):
         if ask("  Claude subscription isn't working but ANTHROPIC_API_KEY is set. Use the API key for Claude? [y/N] ").lower() == "y":

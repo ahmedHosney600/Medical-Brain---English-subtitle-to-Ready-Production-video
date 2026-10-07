@@ -23,6 +23,10 @@ VIDEO ANALYSIS INTELLIGENCE (pre-curated insights for this specific video — us
 {state.get("video_analysis", "")}
 
 Do not rewrite or translate anything. Only analyze and extract. Every claim in the ledger must be traceable back to a specific point in the script above. Output ONLY the JSON object."""
+    if state.get("research_dossier"):
+        user_prompt += """
+
+SOURCE TYPE: a RESEARCH DOSSIER, not a video transcript. Every line is a fact already verified against the cited source [S#]. Build the Medical Fact Ledger from these facts, keeping their numbers, populations and [S#] citations exactly; there is no speaker or original video structure, so propose the structure from the outline and the viewer's journey. Nothing outside the dossier may enter the ledger."""
 
     try:
         data, response = call_llm_json(system_prompt, user_prompt, temperature=0.3, max_tokens=5000,

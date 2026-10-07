@@ -18,5 +18,12 @@
   "max_translation_revision_count": 3,
   "max_quality_revision_count": 4,
   "max_production_revision_count": 2,
-  "max_shorts_revision_count": 2
+  "max_shorts_revision_count": 2,
+  "max_screen_rounds": 2,
+  "max_verify_rounds": 2,
+  "max_coverage_rounds": 2,
+  "sources_per_query": 6,
+  "sources_per_section": 8,
+  "research_years": 10,
+  "research_trusted_domains": []
 }

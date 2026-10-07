@@ -83,6 +83,14 @@ DEFAULT_BACKUP = ""
 DEFAULT_SINGLE = "claude:claude-opus-5-5"
 
 
+# Research workflow judge → the video judge whose model it borrows when not set.
+RESEARCH_JUDGES = {
+    "source_screener": "fidelity_auditor",
+    "fact_verifier": "medical_truth_verifier",
+    "coverage_critic": "self_critique",
+}
+
+
 DEFAULT_HYBRID_ROUTES = {
     # High-stakes medical checks: deepest reasoning.
     "medical_truth_verifier": "claude:claude-opus-5-5",
@@ -177,6 +185,11 @@ def load_llm_config(path: str = CONFIG_PATH) -> dict:
     for node, spec in (raw.get("hybrid_routes") or DEFAULT_HYBRID_ROUTES).items():
         p, m = parse_spec(spec, main_provider)
         routes[node] = f"{p}:{m}"
+    # Research-workflow judges: if the file doesn't name them, they use the model of
+    # the matching video-workflow judge (so a configured Hybrid setup covers both).
+    for node, like in RESEARCH_JUDGES.items():
+        if node not in routes and like in routes:
+            routes[node] = routes[like]
 
     mode = (raw.get("provider") or "hybrid").lower()
     return {
