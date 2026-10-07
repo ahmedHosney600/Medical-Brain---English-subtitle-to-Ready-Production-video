@@ -1576,7 +1576,7 @@ def route_shorts_quality(state: PipelineState) -> str:
 ### Prerequisites & Configuration Files
 1. **`.env`**:
    ```env
-   OPENAI_API_KEY=your-api-key-here
+   OPENAI_COMPATIBLE_API_KEY=your-api-key-here
    ```
 2. **`llm_variables.json`**:
    ```json

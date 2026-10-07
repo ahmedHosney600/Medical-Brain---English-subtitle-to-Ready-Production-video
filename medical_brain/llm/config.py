@@ -24,7 +24,7 @@ DEFAULT_PROVIDERS = {
     # Only this provider gets the Canvas-proxy handling (retries on time-outs,
     # JSON mode, room for thinking tokens). Every other API is called normally.
     "gemini": {"type": "canvas_proxy", "label": "Gemini Canvas proxy", "base_url": "http://localhost:8765/v1",
-               "api_key_env": "OPENAI_API_KEY", "free": True,
+               "api_key_env": "OPENAI_COMPATIBLE_API_KEY", "free": True,
                "timeout_retries": 2, "retry_wait_seconds": 10, "min_max_tokens": 16000, "json_mode": True},
     "claude": {"type": "claude", "label": "Claude", "transport": "claude_code", "effort": "high",
                "efforts": {}, "timeout_seconds": 900},

@@ -26,7 +26,7 @@ def with_heading(heading: str, content: str) -> str:
 
 
 def main():
-    # Load environment variables (e.g. OPENAI_API_KEY)
+    # Load environment variables (e.g. OPENAI_COMPATIBLE_API_KEY)
     load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
     llm_config = load_llm_config()
     app = build_app()
