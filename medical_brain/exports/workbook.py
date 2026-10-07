@@ -28,6 +28,7 @@ def normalize_ar(text: str) -> str:
     """Normalizes Arabic for cue matching: no diacritics or punctuation,
     أإآ→ا, ى→ي, ة→ه, single spaces."""
     s = _DIACRITICS.sub("", text or "")
+    s = re.sub(r"[\"`“”«»]", "", s)        # quotes glue to words: و"كاميرا → وكاميرا
     s = re.sub(r"[أإآٱ]", "ا", s)
     s = s.replace("ى", "ي").replace("ة", "ه").replace("ؤ", "و").replace("ئ", "ي")
     s = _PUNCT.sub(" ", s)
@@ -38,8 +39,13 @@ def spoken_text(script: str) -> str:
     """The words actually spoken in the production script: drops [cues],
     (stage directions), **=== act headers ===** and markdown markers."""
     s = re.sub(r"\[[^\]]*\]", " ", script or "")
-    s = re.sub(r"\([^)]*\)", " ", s)
+    # Stage directions are parentheses that open a line, e.g. "(الكاميرا قريبة، نبرة هادئة)",
+    # or long ones. Short inline parentheses are spoken terms, e.g. "الـ (AF)", and stay.
+    s = re.sub(r"(^|\n)[ \t>*\"«]*\([^)\n]*\)", r"\1 ", s)
+    s = re.sub(r"\((?:[^)\s]+\s+){4,}[^)]*\)", " ", s)
     s = re.sub(r"=+[^=\n]*=+", " ", s)
+    s = re.sub(r"\*\*[^*\n]{1,40}:\*\*", " ", s)      # speaker labels like **د. أحمد حسني:**
+    s = re.sub(r"[*#>]+", " ", s)                       # leftover markdown markers
     return s
 
 
@@ -48,7 +54,7 @@ _PLACEHOLDER_HINTS = ("بداية الفيديو", "نهاية الفيديو", 
 
 def find_cue(cue: str, norm_script: str) -> int:
     """How many times the cue occurs (as whole words) in the normalized script."""
-    c = normalize_ar(cue)
+    c = normalize_ar(spoken_text(cue))
     if not c:
         return 0
     return len(re.findall(r"(?:^|\s)" + re.escape(c) + r"(?=\s|$)", norm_script))
@@ -57,9 +63,10 @@ def find_cue(cue: str, norm_script: str) -> int:
 def cue_problem(cue: str, norm_script: str, min_words: int = 3) -> Optional[str]:
     """None when the cue is usable; otherwise a short reason."""
     raw = (cue or "").strip()
-    if not raw or raw.startswith("(") or any(h in raw.lower() for h in _PLACEHOLDER_HINTS if h != "—") or raw in ("—", "-"):
+    if not raw or not normalize_ar(spoken_text(raw)) or raw in ("—", "-") \
+            or any(h in raw.lower() for h in _PLACEHOLDER_HINTS if h != "—"):
         return "placeholder, not a spoken sentence"
-    words = normalize_ar(raw).split()
+    words = normalize_ar(spoken_text(raw)).split()
     if len(words) < min_words:
         return f"too short ({len(words)} words) to find reliably"
     n = find_cue(raw, norm_script)
@@ -68,6 +75,141 @@ def cue_problem(cue: str, norm_script: str, min_words: int = 3) -> Optional[str]
     if n > 1:
         return f"appears {n} times in the script (add words until it is unique)"
     return None
+
+
+class _ScriptIndex:
+    """The spoken script as tokens: original spelling (for the editor) + normalized (for matching)."""
+
+    def __init__(self, script: str):
+        self.orig, self.norm = [], []
+        for tok in spoken_text(script).split():
+            n = normalize_ar(tok)
+            if n:
+                self.orig.append(tok)
+                self.norm.append(n)
+
+    def occurrences(self, words: list) -> list:
+        k = len(words)
+        return [i for i in range(len(self.norm) - k + 1) if self.norm[i:i + k] == words] if k else []
+
+    def unique_window(self, start: int, length: int, max_length: int) -> tuple:
+        """Grow a window from `start` until it occurs exactly once (shifted back
+        if it would run past the end of the script)."""
+        start = max(0, min(start, len(self.norm) - length))
+        length = min(length, len(self.norm) - start)
+        while length < max_length and start + length < len(self.norm) \
+                and len(self.occurrences(self.norm[start:start + length])) > 1:
+            length += 1
+        return start, length
+
+    def grow_back(self, start: int, length: int, max_length: int) -> tuple:
+        """Like unique_window, but grows to the left (for END cues)."""
+        while length < max_length and start > 0 \
+                and len(self.occurrences(self.norm[start:start + length])) > 1:
+            start, length = start - 1, length + 1
+        return start, length
+
+    def text(self, start: int, length: int, from_end: bool = False) -> str:
+        """Original words of the window, kept inside one sentence when the cue is long enough."""
+        words = self.orig[start:start + length]
+        ends = [i for i, w in enumerate(words) if re.search(r"[.!?؟:]+[\"»)]*$", w)]
+        if from_end:
+            cut = [i for i in ends if i < len(words) - 1 and len(words) - 1 - i >= 3]
+            if cut:
+                words = words[cut[-1] + 1:]
+        else:
+            cut = [i for i in ends if i >= 2]
+            if cut:
+                words = words[:cut[0] + 1]
+        text = re.sub(r"[\"“”«»]", "", " ".join(words))
+        if text.count("(") != text.count(")"):        # window cut a "(AF)" in half
+            text = text.replace("(", "").replace(")", "")
+        return text.strip(" ,،.؛:")
+
+
+def _locate(cue_words: list, idx: _ScriptIndex, after: int, length: int, max_length: int,
+            end_anchor: bool = False):
+    """Best place for a cue: exact match (first at/after `after`), else the window
+    with the most shared words. END cues that are too short grow to the left, so the
+    cue still ends where the spoken sentence ends. Returns (start, length, grew_left) or None."""
+    hits = idx.occurrences(cue_words)
+    if hits:
+        start = next((h for h in hits if h >= after), hits[0])
+        if end_anchor and len(cue_words) < length:
+            grow = length - len(cue_words)
+            new_start = max(0, start - grow)
+            return idx.grow_back(new_start, len(cue_words) + (start - new_start), max_length) + (True,)
+        return idx.unique_window(start, max(length, len(cue_words)), max_length) + (False,)
+    wanted = set(cue_words)
+    if len(wanted) < 2:
+        return None
+    best, best_score = None, 0
+    span = max(len(cue_words), length) + 2
+    for order in (range(after, len(idx.norm)), range(0, after)):
+        for s in order:
+            window = idx.norm[s:s + span]
+            if not window or window[0] not in wanted:
+                continue
+            score = len(wanted & set(window))
+            if score > best_score:
+                best, best_score = s, score
+        if best_score >= max(2, (len(wanted) + 1) // 2):
+            break
+    if best is None or best_score < max(2, (len(wanted) + 1) // 2):
+        return None
+    return idx.unique_window(best, max(length, min(len(cue_words), max_length)), max_length) + (False,)
+
+
+def repair_cue_table(text: str, section_key: str, start_col: int, end_col: int, script: str,
+                     length: int = 5, max_length: int = 9) -> tuple:
+    """Replaces START/END cues that aren't exact, unique script words with the matching
+    words from the script (closest match, in timeline order). Returns
+    (text, fixed, examples). Cues that can't be placed are left as they are."""
+    idx = _ScriptIndex(script)
+    norm_script = normalize_ar(spoken_text(script))
+    lines = text.splitlines(keepends=True)
+    in_section, header_seen, pos = False, False, 0
+    fixed, examples = 0, []
+    for i, line in enumerate(lines):
+        if _is_part_heading(line.rstrip("\n")):
+            in_section = section_key.upper() in line.upper()
+            header_seen = False
+            continue
+        if not in_section or not line.lstrip().startswith("|"):
+            continue
+        parts = re.split(r"(?<!\\)\|", line)
+        cells = [c.strip() for c in parts[1:-1]]
+        if all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
+            header_seen = True
+            continue
+        if not header_seen or len(cells) <= end_col:
+            continue
+        for col in (start_col, end_col):
+            cue = cells[col]
+            end = col == end_col
+            if cue_problem(cue, norm_script, min_words=3) is None:
+                found = _locate(normalize_ar(spoken_text(cue)).split(), idx, pos, length, max_length)
+            else:
+                cue_words = normalize_ar(spoken_text(cue)).split()
+                found = _locate(cue_words, idx, pos, length, max_length, end_anchor=end) if cue_words else None
+                if found:
+                    new = idx.text(*found)
+                    if new and cue_problem(new, norm_script, min_words=3) is None:
+                        parts[col + 1] = f" {new} "
+                        fixed += 1
+                        if len(examples) < 5:
+                            examples.append(f"{cue} → {new}")
+            if found and col == start_col:
+                pos = found[0]
+        lines[i] = "|".join(parts)
+    return "".join(lines), fixed, examples
+
+
+def repair_cues(package_text: str, script: str) -> tuple:
+    """Repairs the storyboard and VIDEO SECTIONS cues. Returns (text, fixed, examples)."""
+    text, n1, ex1 = repair_cue_table(package_text, "INTEGRATED PRODUCTION STORYBOARD", 3, 4, script)
+    text, n2, ex2 = repair_cue_table(text, "VIDEO SECTIONS", 2, 3, script, length=8, max_length=25)
+    return text, n1 + n2, ex1 + ex2
 
 
 def check_cue_rows(rows: list, script: str, min_words: int = 3) -> list:
@@ -488,6 +630,16 @@ def build_editing_workbook(final_package: str, state: Optional[dict] = None) -> 
     md += ["", "## 🚀 PUBLISHING", ""]
     if packaging[1]:
         md += _part(*packaging)
+    ab_set = state.get("packaging_ab_test_set") or ""
+    if isinstance(ab_set, (list, tuple)):
+        ab_set = "\n".join(f"{i}. {x}" for i, x in enumerate(ab_set, 1))
+    ab_set = str(ab_set).strip()
+    if (title or ab_set) and "A/B TEST SET" not in final_package.upper():
+        md += ["", "### 🧪 A/B TEST SET (YouTube Test & compare)", ""]
+        if title:
+            md += [f"**Recommended title:** {title}", ""]
+        if ab_set:
+            md += [ab_set]
     if secs:
         md += ["", "### YOUTUBE CHAPTERS — fix the times after editing", "",
                "Put the playhead on each start sentence in the final edit and copy its time into the description.", "",

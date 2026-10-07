@@ -62,24 +62,6 @@ def check_packages():
     print("  ✅ Installed." if not still else f"  ❌ Still missing: {', '.join(still)}")
 
 
-def save_key(env_name: str, value: str):
-    """Adds or replaces NAME=value in llm_keys.env and keeps the file out of git."""
-    lines = []
-    if os.path.exists(lp.KEYS_PATH):
-        with open(lp.KEYS_PATH, encoding="utf-8") as f:
-            lines = [l for l in f.read().splitlines() if not l.startswith(env_name + "=")]
-    value = value.strip()
-    lines.append(f"{env_name}={value}")
-    with open(lp.KEYS_PATH, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
-    os.environ[env_name] = value
-    gi = ".gitignore"
-    existing = open(gi, encoding="utf-8").read().splitlines() if os.path.exists(gi) else []
-    if lp.KEYS_PATH not in existing:
-        with open(gi, "a", encoding="utf-8") as f:
-            f.write(lp.KEYS_PATH + "\n")
-
-
 def show_status(config: dict) -> dict:
     print("\nProviders")
     print("---------")
@@ -117,7 +99,7 @@ def offer_keys(config: dict, status: dict) -> bool:
         if status.get(name) == "off" and env and not cfg.get("free"):
             key = ask(f"  Paste your {cfg.get('label', name)} API key to enable it (Enter to skip): ")
             if key:
-                save_key(env, key)
+                lp.save_key(env, key)
                 changed = True
     claude = config["providers"].get("claude", {})
     if status.get("claude") != "active" and claude.get("transport") != "anthropic_api" and os.environ.get("ANTHROPIC_API_KEY"):

@@ -10,9 +10,5 @@
         "packaging_honesty_ctr_auditor": "deepseek:deepseek-flash",
         "production_quality_critique": "deepseek:deepseek-flash"
     },
-    "providers": {
-        "gemini": {
-            "api_key": "ddafa199-2899-4015-9ff8-6f63400bc93a"
-        }
-    }
+    "providers": {}
 }

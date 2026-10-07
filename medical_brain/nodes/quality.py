@@ -214,8 +214,14 @@ Output ONLY the JSON object. Include the full revised script."""
 
         dialect_score = int(data.get("dialect_authenticity_score", 0))
         warmth_score = int(data.get("warmth_score", 0))
+        # The critique also rewrote the script, so it may lower the independent
+        # fidelity auditor's verdict but never raise it.
         fidelity_score = int(data.get("fidelity_score", 0))
         medical_pass = bool(data.get("medical_accuracy_pass", False))
+        if "fidelity_score" in state:
+            fidelity_score = min(fidelity_score, int(state.get("fidelity_score") or 0))
+        if "medical_accuracy_pass" in state:
+            medical_pass = medical_pass and bool(state.get("medical_accuracy_pass"))
         truth_score = int(state.get("truth_score", 10))
         truth_pass = bool(state.get("truth_pass", True))
 

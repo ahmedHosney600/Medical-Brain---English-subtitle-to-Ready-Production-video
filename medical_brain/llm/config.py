@@ -187,8 +187,29 @@ def load_llm_config(path: str = CONFIG_PATH) -> dict:
     }
 
 
-def save_llm_config(config: dict, path: str = CONFIG_PATH):
-    """Writes the new format, keeping any fields already in the file that we don't manage."""
+def save_key(env_name: str, value: str, path: str = KEYS_PATH):
+    """Adds or replaces NAME=value in llm_keys.env and keeps that file out of git."""
+    lines = []
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            lines = [l for l in f.read().splitlines() if not l.startswith(env_name + "=")]
+    value = value.strip()
+    lines.append(f"{env_name}={value}")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    os.environ[env_name] = value
+    gitignore = os.path.join(os.path.dirname(path), ".gitignore")
+    name = os.path.basename(path)
+    existing = open(gitignore, encoding="utf-8").read().splitlines() if os.path.exists(gitignore) else []
+    if name not in existing:
+        with open(gitignore, "a", encoding="utf-8") as f:
+            f.write(name + "\n")
+
+
+def save_llm_config(config: dict, path: str = CONFIG_PATH, keys_path: str = KEYS_PATH):
+    """Writes the new format, keeping any fields already in the file that we don't manage.
+    API keys never go into this (tracked) file: an inline "api_key" is moved to
+    llm_keys.env under the provider's api_key_env."""
     try:
         with open(path, "r", encoding="utf-8") as f:
             raw = json.load(f)
@@ -200,6 +221,14 @@ def save_llm_config(config: dict, path: str = CONFIG_PATH):
     for name, cfg in config["providers"].items():
         default = DEFAULT_PROVIDERS.get(name, {})
         diff = {k: v for k, v in cfg.items() if default.get(k) != v}
+        key = diff.pop("api_key", None)
+        env = cfg.get("api_key_env")
+        if key and env:
+            if os.environ.get(env) != str(key).strip():
+                save_key(env, str(key), keys_path)
+        elif key:
+            print(f"⚠️  Not saving the {name} API key in {os.path.basename(path)}: "
+                  f"set \"api_key_env\" for it and put the key in {os.path.basename(keys_path)}.")
         if diff or name not in DEFAULT_PROVIDERS:
             providers_out[name] = diff
     raw.update({

@@ -135,19 +135,28 @@ AUDIT / CRITIQUE REPORT:
 def dialect_warmth_layer(state: PipelineState) -> dict:
     system_prompt = load_prompt("dialect_warmth_layer")
 
-    user_prompt = f"""Rewrite for dialect authenticity and warmth.
-
-DIALECT REGISTER: {state.get("dialect_register", "")}
-CODE-SWITCHING LEVEL: {state.get("code_switching_level", "")}
-
-HOOK:
+    revising = state.get("quality_revision_count", 0) > 0 and state.get("refined_script", "")
+    if revising:
+        # Later passes start from the fact-checked script, so the medical truth
+        # verifier's corrections survive the rewrite.
+        script_block = f"""CURRENT SCRIPT (already fact-checked — keep every medical correction; use this as the base):
+{state.get("refined_script", "")}"""
+    else:
+        script_block = f"""HOOK:
 {state.get("hook", "")}
 
 SCRIPT BODY (post translation-fidelity gate):
 {state.get("revised_body", "")}
 
 RETENTION, DISCLAIMER & CTA LAYER:
-{state.get("cta_output", "")}
+{state.get("cta_output", "")}"""
+
+    user_prompt = f"""Rewrite for dialect authenticity and warmth.
+
+DIALECT REGISTER: {state.get("dialect_register", "")}
+CODE-SWITCHING LEVEL: {state.get("code_switching_level", "")}
+
+{script_block}
 
 PRESENTER PROFILE:
 {state.get("presenter_profile", "")}
@@ -165,10 +174,16 @@ Rewrite every spoken line for both dialect authenticity and warmth. Keep all cue
 
 ## MODE: REVISION PASS (Pass #{state.get("quality_revision_count", 0)})
 
-Pay special attention to anything the critique flagged under DIALECT AUTHENTICITY or WARMTH/DE-CLINICALIZATION. Don't let the same issue survive into this pass. Fix ONLY what's flagged.
+Pay special attention to anything the critique flagged under DIALECT AUTHENTICITY or WARMTH/DE-CLINICALIZATION. Don't let the same issue survive into this pass. Fix ONLY what's flagged. Never reintroduce a claim the truth verification or fidelity audit below corrected or flagged.
 
 AUDIT / CRITIQUE REPORT:
-{state.get("self_critique_output", "")}"""
+{state.get("self_critique_output", "")}
+
+MEDICAL TRUTH VERIFICATION REPORT (score {state.get("truth_score", 0)}/10):
+{state.get("truth_verification_report", "")}
+
+MEDICAL FIDELITY AUDIT:
+{state.get("fidelity_audit_output", "")}"""
 
     response = call_llm(system_prompt, user_prompt, temperature=0.75, max_tokens=9000)
     return {"dialect_warmth_output": response}

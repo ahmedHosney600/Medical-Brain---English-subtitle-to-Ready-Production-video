@@ -4,6 +4,7 @@ Asks which model setup to use, runs the pipeline graph step by step (saving a lo
 and a checkpoint after each step), then writes the final documents and exports."""
 import json
 import os
+import re
 import time
 
 from dotenv import load_dotenv
@@ -14,6 +15,14 @@ from .graph import build_app
 from .llm import LLMRouter, load_llm_config, set_router
 from .paths import PROJECT_ROOT
 from .state import apply_defaults
+
+
+def with_heading(heading: str, content: str) -> str:
+    """'## heading' + content, unless the model's text already opens with its own heading."""
+    body = re.sub(r"^(\s*-{3,}\s*\n)+", "", content.lstrip())
+    if re.match(r"#{1,3}\s", body):
+        return body.strip()
+    return f"## {heading}\n\n{content}"
 
 
 def main():
@@ -153,10 +162,10 @@ def main():
     if shorts_scripts_content:
         shorts_section += "\n\n---\n\n# 📱 REELS & SHORTS PACKAGE\n\n"
         if shorts_moments_content:
-            shorts_section += "## IDENTIFIED MOMENTS\n\n" + shorts_moments_content + "\n\n---\n\n"
-        shorts_section += "## REELS & SHORTS SCRIPTS\n\n" + shorts_scripts_content + "\n\n---\n\n"
+            shorts_section += with_heading("IDENTIFIED MOMENTS", shorts_moments_content) + "\n\n---\n\n"
+        shorts_section += with_heading("REELS & SHORTS SCRIPTS", shorts_scripts_content) + "\n\n---\n\n"
         if shorts_captions_content:
-            shorts_section += "## TIMED CAPTIONS & ON-SCREEN OVERLAYS\n\n" + shorts_captions_content
+            shorts_section += with_heading("TIMED CAPTIONS & ON-SCREEN OVERLAYS", shorts_captions_content)
 
     if longform_deliverable:
         # Reorder into the editing workflow (pure Python, nothing is retyped).

@@ -13,6 +13,18 @@ from ..exports import workbook as ew
 MAX_FINAL_PACKAGE_RETRIES = 2
 
 
+def _repair_cues(text: str, script: str, part: str) -> str:
+    """Models often paraphrase cues; swap each bad cue for the script's own words
+    before the audit, so a retry is only spent on cues code can't place."""
+    if not script:
+        return text
+    text, fixed, examples = ew.repair_cues(text, script)
+    if fixed:
+        print(f"  [final_package {part}] 🔧 fixed {fixed} cues to the script's exact words, e.g. "
+              + "; ".join(examples[:3]))
+    return text
+
+
 def _audit_part1(text: str) -> list:
     """Audit Part 1 (Script + Packaging) for quality issues.
 
@@ -176,6 +188,23 @@ def _audit_part1(text: str) -> list:
     return issues
 
 
+def whiteboard_problems(detail: str) -> list:
+    """A DRAWING ANIM row must describe a white whiteboard, and its Premiere labels
+    must be placed by cue words (times shift after filming)."""
+    problems = []
+    d = detail.lower()
+    if re.search(r"\b(black|dark)\s+(back\s?ground|board|canvas)|\bblackboard\b", d):
+        problems.append("says black/dark background; the drawing must be black marker on a plain WHITE whiteboard")
+    elif "white" not in d:
+        problems.append("the IMAGE PROMPT must ask for a plain white whiteboard and the DRAW-ON PROMPT for a white background")
+    labels = re.split(r"labels in premiere\s*:", d, maxsplit=1)
+    if len(labels) == 2:
+        labels = labels[1].split("|")[0]
+        if re.search(r"\b\d{1,2}:\d{2}\b", labels):
+            problems.append("LABELS IN PREMIERE give times (M:SS); give the cue words where each label appears instead")
+    return problems
+
+
 def _audit_part2(text: str, script: str = "") -> list:
     """Audit Part 2 (Post-Production) for quality issues. `script` is the
     production script the cues must come from."""
@@ -255,6 +284,7 @@ def _audit_part2(text: str, script: str = "") -> list:
                     f"DRAWING ANIM SB#{r['num']} is missing its IMAGE PROMPT and/or DRAW-ON PROMPT "
                     "(see the DRAWING ANIM detail format)."
                 )
+            issues.extend(f"DRAWING ANIM SB#{r['num']}: {p}" for p in whiteboard_problems(r["detail"]))
 
     return issues
 
@@ -323,6 +353,7 @@ CRITICAL: Copy the APPROVED TITLE OPTIONS and APPROVED THUMBNAIL CONCEPTS throug
         if correction_note_1:
             user_prompt_1 += f"\n\n\u26a0\ufe0f CORRECTION REQUIRED (attempt {attempt + 1}):\n{correction_note_1}"
         part1 = call_llm(system_prompt_1, user_prompt_1, temperature=0.3, max_tokens=10000)
+        part1 = _repair_cues(part1, ew.production_script(part1), "Part1")
         issues_1 = _audit_part1(part1)
         if best_1 is None or len(issues_1) < best_1[0]:
             best_1 = (len(issues_1), part1)
@@ -379,6 +410,7 @@ RULES:
         if correction_note_2:
             user_prompt_2 += f"\n\n⚠️ CORRECTION REQUIRED (attempt {attempt + 1}):\n{correction_note_2}"
         part2 = call_llm(system_prompt_2, user_prompt_2, temperature=0.3, max_tokens=12000)
+        part2 = _repair_cues(part2, filmed_script, "Part2")
         issues_2 = _audit_part2(part2, filmed_script)
         if best_2 is None or len(issues_2) < best_2[0]:
             best_2 = (len(issues_2), part2)

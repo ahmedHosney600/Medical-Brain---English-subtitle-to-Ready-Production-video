@@ -23,7 +23,7 @@ from .config import (CLAUDE_SUBSCRIPTION_MODELS, CONFIG_PATH, DEFAULT_BACKUP, DE
                      DEFAULT_MAIN, DEFAULT_PROVIDERS, DEFAULT_SINGLE, KEYS_PATH, MODE_ALIASES, MODES,
                      OPENCODE_GO_DOC_MODELS, OPENCODE_SESSION_ID, _sanitize_no_proxy, load_keys,
                      load_llm_config, opencode_endpoint, parse_spec, provider_headers, provider_key,
-                     save_llm_config, thinking_mode)
+                     save_key, save_llm_config, thinking_mode)
 from .errors import (_UNAVAILABLE_MARKERS, AnswerCutOff, ProviderUnavailable, StepTimeout, _limit_refused,
                      _LimitTooHigh, _looks_unavailable, _short, _thinking_refused)
 from .progress import _client_timeout, _node_state, _Progress, _step_timeout, current_node, track_node
