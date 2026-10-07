@@ -408,7 +408,7 @@ TRANSITION DESIGN MAP (reproduce in full, add SB# cross-references):
 TEXT ANIMATION & OVERLAY GUIDE (reproduce in full, add SB# cross-references):
 {state.get("text_animation_overlay", "")}
 
-AI B-ROLL GENERATION PROMPTS (reproduce with FULL prompts in storyboard rows AND detail table):
+AI B-ROLL GENERATION PROMPTS (copy the FULL prompt into each storyboard B-ROLL row; the detail table itself is inserted by code):
 {state.get("broll_prompts", "")}
 
 PRODUCTION QUALITY CRITIQUE: {state.get("production_critique_output", "")}
@@ -420,8 +420,11 @@ RULES:
 1. Storyboard: 25-40 rows, full video 0:00 to outro.
 2. START CUE / END CUE: 4-8 consecutive spoken words copied exactly from the Production Script above, unique in the script, never stage directions or placeholders.
 3. B-ROLL storyboard rows: write FULL AI prompt inline - NEVER "[Full Prompt in SB]" or any shortcut.
-4. B-Roll detail table: ALSO write full AI prompt in each row - self-contained, duplicates are fine."""
+4. B-Roll detail section: write only its heading and the placeholder line — the approved table is inserted by code."""
 
+    # The B-roll table the production loop approved goes in whole: a retyped copy
+    # lost half its rows in one run (and the export files are built from it).
+    approved_broll = ew.approved_broll_table(state.get("broll_prompts", ""))
     part2 = ""
     best_2 = None
     correction_note_2 = ""
@@ -430,6 +433,8 @@ RULES:
         if correction_note_2:
             user_prompt_2 += f"\n\n⚠️ CORRECTION REQUIRED (attempt {attempt + 1}):\n{correction_note_2}"
         part2 = call_llm(system_prompt_2, user_prompt_2, temperature=0.3, max_tokens=12000)
+        if approved_broll:
+            part2 = ew.replace_section(part2, "AI B-ROLL GENERATION PROMPTS", approved_broll, before="INTEGRATION DATA")
         part2 = _repair_cues(part2, filmed_script, "Part2")
         issues_2 = _audit_part2(part2, filmed_script)
         if best_2 is None or len(issues_2) < best_2[0]:

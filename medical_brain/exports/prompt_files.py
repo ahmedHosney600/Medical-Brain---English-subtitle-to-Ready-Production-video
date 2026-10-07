@@ -22,13 +22,12 @@ def export_broll_prompt_files(text: str, fallback_broll: str = "", output_dir: s
     images = []
     videos = []
 
-    # Strategy 1: AI B-ROLL GENERATION PROMPTS detail section
-    match = re.search(r"###\s*🖼️?\s*AI B-ROLL GENERATION PROMPTS.*?\n(.*?)(?=\n###|\Z)", text, re.DOTALL)
-    block = match.group(1) if match else ""
+    # Strategy 1: the approved B-roll table from the production loop (complete)
+    block = fallback_broll or ""
 
-    # Strategy 2: fallback to fallback_broll if detail section is absent or empty
-    if not block and fallback_broll:
-        block = fallback_broll
+    # Strategy 2: the document's AI B-ROLL GENERATION PROMPTS section
+    if not block:
+        block = ew.find_section(text, "AI B-ROLL GENERATION PROMPTS")
 
     # Strategy 3: fallback to storyboard if still empty
     if not block:
@@ -51,6 +50,9 @@ def export_broll_prompt_files(text: str, fallback_broll: str = "", output_dir: s
             if len(longest) > 30:
                 cleaned_prompt = longest.replace('\\"', '"').strip('"\'`')
                 cleaned_prompt = re.sub(r"^(?:🎬|🖼️)?\s*(?:Video|Image)\s*\|?\s*", "", cleaned_prompt, flags=re.IGNORECASE).strip()
+                # Plain text for the generator: no markdown bold/italics or <br> tags.
+                cleaned_prompt = re.sub(r"\*\*|__|<br\s*/?>", " ", cleaned_prompt)
+                cleaned_prompt = re.sub(r"\s{2,}", " ", cleaned_prompt).replace(" :", ":").strip()
                 line_lower = line_clean.lower()
                 if "🖼" in line_clean or "image" in line_lower:
                     images.append(cleaned_prompt)

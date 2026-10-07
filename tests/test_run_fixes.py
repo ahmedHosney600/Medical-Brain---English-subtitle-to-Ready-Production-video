@@ -321,5 +321,52 @@ class BrollEngagementTest(unittest.TestCase):
         self.assertEqual(broll_engagement_problems(self.HEAD + rows, "", 3), [])
 
 
+class BrollPathTest(unittest.TestCase):
+    """The approved B-roll table reaches the document and the export files whole."""
+    APPROVED = ("## AI B-ROLL GENERATION PROMPTS\n\n### B-Roll Prompt Table\n"
+                "| # | Timestamp | ▶️ START CUE | ⏹️ END CUE | Type | AI Generation Prompt |\n|---|---|---|---|---|---|\n"
+                + "".join(f"| {i} | 0:{i:02d} | تعالوا ناخد مثال حي | أو الـ (AF) | 🎬 Video | **Action**: clip number {i} "
+                          f"of a man checking his watch, slow push-in |\n" for i in range(1, 7))
+                + "\n### B-Roll Density Summary\n| Act | Total | 🖼️ Images | 🎬 Videos |\n|---|---|---|---|\n| Hook | 6 | 0 | 6 |\n")
+
+    def test_condensed_part2_still_gets_the_full_table(self):
+        part2 = (STORYBOARD + "\n### 🖼️ AI B-ROLL GENERATION PROMPTS\n| # | Prompt |\n|---|---|\n| 1 | only one row |\n"
+                 "\n### INTEGRATION DATA\nx\n")
+        router = use_router(self, Canned())
+        router.call = lambda system, user, *a, **k: "## SCRIPT PACKAGE\n" + SCRIPT if "Compile Part 1" in user else part2
+        out = final_script_package({"refined_script": SCRIPT, "broll_prompts": self.APPROVED})["final_package"]
+        section = ew.find_section(out, "AI B-ROLL GENERATION PROMPTS")
+        self.assertEqual(section.count("clip number"), 6)
+        self.assertNotIn("only one row", out)
+        self.assertIn("| Hook | 6 | 0 | 6 |", section)          # the density table isn't treated as cues
+
+    def test_export_reads_the_approved_table_as_plain_text(self):
+        from medical_brain.exports.prompt_files import export_broll_prompt_files
+        folder = tempfile.mkdtemp()
+        _, videos = export_broll_prompt_files("", fallback_broll=self.APPROVED, output_dir=folder)
+        self.assertEqual(len(videos), 6)
+        self.assertNotIn("**", videos[0])
+
+    def test_broll_revision_patches_the_previous_prompts(self):
+        from medical_brain.nodes.production import broll_prompt_generator
+        router = use_router(self, Canned("table"))
+        broll_prompt_generator({"broll_prompts": "OLD TABLE", "production_critique_output": "FIX ROW 3"})
+        self.assertNotIn("OLD TABLE", router.prompts[-1])
+        self.assertIn("past ~40 seconds", router.prompts[-1])
+        broll_prompt_generator({"broll_prompts": "OLD TABLE", "production_critique_output": "FIX ROW 3",
+                                "production_revision_count": 1})
+        self.assertIn("OLD TABLE", router.prompts[-1])
+        self.assertIn("FIX ROW 3", router.prompts[-1])
+
+    def test_production_warning_lists_what_is_left(self):
+        failed = {"production_revision_count": 2, "production_grade": "NEEDS_REVISION",
+                  "broll_prompts": BrollEngagementTest.HEAD + '| 1 | 0:05 | a | b | c | 🎬 Video | x | A wrist, '
+                  'the watch displays "45 BPM", slow push-in | left | 4s |\n', "target_duration": "1"}
+        warning = ew.production_warning(failed)
+        self.assertIn("did not pass after 2 rounds", warning)
+        self.assertIn("45 BPM", warning)
+        self.assertEqual(ew.production_warning(dict(failed, production_grade="PASS")), "")
+
+
 if __name__ == "__main__":
     unittest.main()

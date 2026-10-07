@@ -222,7 +222,11 @@ def repair_cue_table(text: str, section_key: str, start_col: int, end_col, scrip
         parts = re.split(r"(?<!\\)\|", line)
         cells = [c.strip() for c in parts[1:-1]]
         if all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
-            header_seen = True
+            # Only tables whose header names a cue column (a section can hold other
+            # tables, e.g. the B-roll density summary, whose numbers aren't cues).
+            head = [c.strip().upper() for c in re.split(r"(?<!\\)\|", lines[i - 1])[1:-1]] if i else []
+            header_seen = len(head) > start_col and any(
+                k in head[start_col] for k in ("START", "CUE", "LINE", "SENTENCE", "▶"))
             continue
         cols = [c for c in (start_col, end_col) if c is not None]
         if not header_seen or len(cells) <= max(cols):
@@ -252,6 +256,9 @@ def repair_cues(package_text: str, script: str) -> tuple:
     """Repairs the storyboard, VIDEO SECTIONS and retention-table cues. Returns (text, fixed, examples)."""
     text, n1, ex1 = repair_cue_table(package_text, "INTEGRATED PRODUCTION STORYBOARD", 3, 4, script)
     text, n2, ex2 = repair_cue_table(text, "VIDEO SECTIONS", 2, 3, script, length=8, max_length=25)
+    # The B-roll detail table: | # | Timestamp | ▶️ START CUE | ⏹️ END CUE | …
+    text, n4, ex4 = repair_cue_table(text, "AI B-ROLL GENERATION PROMPTS", 2, 3, script)
+    n2, ex2 = n2 + n4, ex2 + ex4
     # RETENTION ARCHITECTURE: | Element | Timestamp | Line (first Arabic words) |
     text, n3, ex3 = repair_cue_table(text, "RETENTION ARCHITECTURE", 2, None, script)
     return text, n1 + n2 + n3, ex1 + ex2 + ex3
@@ -341,6 +348,14 @@ def replace_section(text: str, key: str, body: str, before: str = "WHAT CHANGED"
             out.append(heading)
         out.append(part_body)
     return "\n".join(out)
+
+
+def approved_broll_table(broll_prompts: str) -> str:
+    """broll_prompt_generator's output without its own top heading (the document has one)."""
+    lines = (broll_prompts or "").strip().splitlines()
+    while lines and (not lines[0].strip() or lines[0].strip() == "---" or _is_part_heading(lines[0])):
+        lines.pop(0)
+    return "\n".join(lines).strip()
 
 
 _META_LINE = re.compile(r"^\s*[*_]*[A-Za-z][A-Za-z0-9 /&()\-]{1,40}[*_]*\s*:")
@@ -590,6 +605,19 @@ def quality_warning(state: Optional[dict]) -> str:
             "reports in checkpoint.json before filming.")
 
 
+def production_warning(state: Optional[dict]) -> str:
+    """One line when the post-production review ended without passing, with what is left to fix."""
+    state = state or {}
+    if not state.get("production_revision_count") or state.get("production_grade") == "PASS":
+        return ""
+    from ..nodes.production import _video_minutes, broll_engagement_problems   # (avoids an import cycle)
+    left = broll_engagement_problems(state.get("broll_prompts", ""), state.get("text_animation_overlay", ""),
+                                     _video_minutes(state))
+    return (f"⚠️ The post-production review did not pass after {state.get('production_revision_count')} rounds; "
+            "check the critique in checkpoint.json (production_critique_output)"
+            + (". Still to fix by hand: " + " · ".join(left) if left else "."))
+
+
 def build_editing_workbook(final_package: str, state: Optional[dict] = None) -> str:
     """Reorders final_package into the editing workflow. Raises on unexpected
     structure; the caller falls back to the original package."""
@@ -644,8 +672,9 @@ def build_editing_workbook(final_package: str, state: Optional[dict] = None) -> 
               "A ⚠️ before a cue means it was not found word-for-word in the script: search for the nearest sentence.")
 
     # ── Overview
-    if quality_warning(state):
-        md += ["", f"> {quality_warning(state)}"]
+    for warning in (quality_warning(state), production_warning(state)):
+        if warning:
+            md += ["", f"> {warning}"]
     md += ["", "## 0 · OVERVIEW", "", re.sub(r"^#{1,3}(?=\s)", "####", meta[1], flags=re.MULTILINE) or _empty()]
 
     # ── Filming

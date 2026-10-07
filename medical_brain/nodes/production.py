@@ -113,7 +113,19 @@ SOURCE SCRIPT ANALYSIS + MEDICAL FACT LEDGER (medical accuracy check for B-roll 
 B-ROLL AVAILABILITY: {state.get("broll_availability", "")}
 TARGET PLATFORM: {state.get("target_platform", "")}
 
-For each [VISUAL NOTE] in the script and each B-roll transition in the transition map, produce a detailed AI generation prompt. Mark each as 🖼️ Image or 🎬 Video. Coordinate with text overlay positions. Remember: prefer educational/medical contexts for B-roll, and use male subjects when people appear.
+For each [VISUAL NOTE] in the script and each B-roll transition in the transition map, produce a detailed AI generation prompt — plus extra B-roll wherever an explanation runs past ~40 seconds with no visual change (engagement principle G). Mark each as 🖼️ Image or 🎬 Video. Coordinate with text overlay positions. Remember: prefer educational/medical contexts for B-roll, and use male subjects when people appear."""
+
+    if state.get("production_revision_count", 0) > 0:
+        user_prompt += f"""
+
+---
+
+## MODE: REVISION PASS (Pass #{state.get("production_revision_count", 0)})
+
+Revise YOUR PREVIOUS B-ROLL PROMPTS below — don't start over: keep every row the critique didn't flag (same wording), fix each flagged row, and add rows to fill every gap the critique or the code checks name. Output the complete table.
+
+PREVIOUS B-ROLL PROMPTS:
+{state.get("broll_prompts", "")}
 
 PRODUCTION CRITIQUE REPORT:
 {state.get("production_critique_output", "")}"""

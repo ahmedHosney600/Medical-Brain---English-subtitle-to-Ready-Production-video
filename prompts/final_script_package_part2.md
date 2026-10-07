@@ -49,10 +49,9 @@ MANDATORY: Every English technical term in the script MUST have a TOP-RIGHT POPU
 ---
 
 ### 🖼️ AI B-ROLL GENERATION PROMPTS (Detail Reference)
-Reproduce the full B-Roll prompt table. Include: generation settings + complete table with columns: #, Timestamp, ▶️ START CUE (exact first Arabic words), ⏹️ END CUE (exact last Arabic words), Type, Main Cue (the single most important visual element that MUST be present), FULL AI Generation Prompt, SB# + density summary.
+[[APPROVED B-ROLL TABLE — inserted by code]]
 
-ZERO TOLERANCE: The "FULL AI Prompt" column MUST have the complete prompt for EVERY row. NEVER write "[Full Prompt in SB]", "[See SB#X]", "[Same as above]", "..." or any cross-reference. This table must work standalone without reading the storyboard.
-
+(Write ONLY the heading above and that one placeholder line: the approved B-roll prompt table is inserted in full by code after you answer. The storyboard's B-ROLL rows still carry their full prompts inline.)
 ---
 
 ### INTEGRATION DATA
