@@ -5,6 +5,7 @@ and a checkpoint after each step), then writes the final documents and exports."
 import json
 import os
 import re
+import sys
 import time
 
 from dotenv import load_dotenv
@@ -12,7 +13,7 @@ from dotenv import load_dotenv
 from .exports import workbook as ew
 from .exports.prompt_files import export_broll_prompt_files, export_whiteboard_prompt_files
 from .graph import build_app
-from .llm import LLMRouter, load_llm_config, set_router
+from .llm import LLMRouter, ProviderUnavailable, load_llm_config, set_router
 from .paths import PROJECT_ROOT
 from .state import apply_defaults
 
@@ -23,6 +24,15 @@ def with_heading(heading: str, content: str) -> str:
     if re.match(r"#{1,3}\s", body):
         return body.strip()
     return f"## {heading}\n\n{content}"
+
+
+def stop_run(error, checkpoint_path: str = ""):
+    """Ends the run with the fix, not a traceback."""
+    print(f"\n❌ Stopped: {error}")
+    if checkpoint_path:
+        print(f"   Steps finished so far are saved in: {checkpoint_path}")
+    print("   Check your models with: python3 setup_models.py")
+    sys.exit(1)
 
 
 def main():
@@ -98,6 +108,13 @@ def main():
     # Initialize unprovided fields to prevent KeyError/None issues in prompts
     apply_defaults(initial_state)
 
+    # Quick check of every model this run uses: a missing main model stops here,
+    # before an empty output folder is made; other failures fall back.
+    try:
+        llm_router.select()
+    except ProviderUnavailable as e:
+        stop_run(e)
+
     # Set up session output directory
     session_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = os.path.join(PROJECT_ROOT, "output", session_id)
@@ -106,9 +123,6 @@ def main():
     session_log_path = os.path.join(output_dir, "session_log.jsonl")
     final_script_path = os.path.join(output_dir, "final_script.md")
     checkpoint_path = os.path.join(output_dir, "checkpoint.json")
-
-    # Quick check of every model this run uses (never blocks; failures fall back)
-    llm_router.select()
 
     print(f"Starting workflow... Session ID: {session_id}")
     print(f"Logs: {output_dir}")
@@ -119,7 +133,17 @@ def main():
     # Using app.stream to observe execution
     with open(session_log_path, "w", encoding="utf-8") as log_file:
         step_start = time.time()
-        for output in app.stream(initial_state):
+        stream = app.stream(initial_state)
+        while True:
+            try:
+                output = next(stream)
+            except StopIteration:
+                break
+            except ProviderUnavailable as e:
+                log_file.flush()
+                with open(checkpoint_path, "w", encoding="utf-8") as cf:
+                    json.dump(cumulative_state, cf, ensure_ascii=False, indent=2)
+                stop_run(e, checkpoint_path)
             for key, value in output.items():
                 # Merge updates into cumulative state
                 cumulative_state.update(value)

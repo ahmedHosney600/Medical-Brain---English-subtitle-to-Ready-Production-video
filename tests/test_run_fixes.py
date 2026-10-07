@@ -111,6 +111,43 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(llm.provider_key(llm.load_llm_config(cfg_path)["providers"]["gemini"]), "secret-token")
 
 
+class ProxyTokenTest(unittest.TestCase):
+    def setUp(self):
+        from medical_brain.llm import config
+        self.config = config
+        config._proxy_token_cache.clear()
+        self.addCleanup(config._proxy_token_cache.clear)
+        home = tempfile.mkdtemp()
+        old_home = os.environ.get("HOME")
+        os.environ["HOME"] = home
+        self.addCleanup(os.environ.__setitem__, "HOME", old_home or "")
+        self.home = home
+        os.environ["MB_TEST_TOKEN"] = "your_api_key_here"
+        self.addCleanup(os.environ.pop, "MB_TEST_TOKEN", None)
+        self.cfg = {"type": "canvas_proxy", "api_key_env": "MB_TEST_TOKEN"}
+
+    def test_placeholder_is_not_a_key_and_proxy_token_is_found(self):
+        self.assertIsNone(llm.provider_key(self.cfg))
+        folder = os.path.join(self.home, "Desktop", "gemini-canvas-proxy-main", "native_host")
+        os.makedirs(folder)
+        with open(os.path.join(folder, ".proxy_token"), "w") as f:
+            f.write("real-token\n")
+        self.config._proxy_token_cache.clear()
+        self.assertEqual(llm.provider_key(self.cfg), "real-token")
+        os.environ["MB_TEST_TOKEN"] = "env-token"
+        self.assertEqual(llm.provider_key(self.cfg), "env-token")
+
+    def test_run_stops_before_starting_when_main_model_is_down(self):
+        router = llm.LLMRouter({**llm.load_llm_config(), "main_model": "gemini:x", "backup_model": "gemini:x",
+                                "hybrid_routes": {}}, provider="main")
+        import medical_brain.llm.router as r
+        old = r.test_model
+        r.test_model = lambda spec, providers: (False, "token missing")
+        self.addCleanup(setattr, r, "test_model", old)
+        with self.assertRaises(llm.ProviderUnavailable):
+            router.select()
+
+
 class ExportTest(unittest.TestCase):
     def test_whiteboard_rules(self):
         bad = ('heart | IMAGE PROMPT: heart line art, black background, no text | DRAW-ON PROMPT: dark background '

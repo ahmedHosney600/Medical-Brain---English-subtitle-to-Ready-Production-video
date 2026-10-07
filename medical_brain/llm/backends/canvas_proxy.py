@@ -37,7 +37,10 @@ class CanvasProxyBackend(OpenAICompatibleBackend):
             try:
                 return self._text(self._create(params))
             except openai.AuthenticationError as e:
-                raise ProviderUnavailable(f"proxy token rejected ({e}). Check the token in setup_models.py")
+                raise ProviderUnavailable(
+                    f"Gemini Canvas proxy token missing or wrong ({e.status_code}). Fix: put "
+                    f"{self.cfg.get('api_key_env') or 'the token'}=<token> in llm_keys.env (the token is in "
+                    f"<gemini-canvas-proxy folder>/native_host/.proxy_token), or run python3 setup_models.py")
             except openai.APIStatusError as e:
                 body = str(e)
                 safety = "blockReason" in body or "finishReason" in body or "safety" in body.lower()

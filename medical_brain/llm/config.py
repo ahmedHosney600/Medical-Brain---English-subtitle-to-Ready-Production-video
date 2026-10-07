@@ -1,7 +1,9 @@
 """Provider settings: defaults, llm_variables.json, API keys (llm_keys.env), model specs."""
 import fnmatch
+import glob
 import json
 import os
+import re
 import uuid
 from typing import Optional
 
@@ -256,9 +258,41 @@ def provider_headers(cfg: dict) -> dict:
     return headers
 
 
+# Example values like OPENAI_COMPATIBLE_API_KEY="your_api_key_here" are not keys.
+_PLACEHOLDER = re.compile(r"^(your[ _\-].*|.*[ _\-]here|<.*>|x+|changeme|none|null|todo)$", re.IGNORECASE)
+
+
+def _real_key(value) -> Optional[str]:
+    v = str(value or "").strip().strip("\"'").strip()
+    return v if v and not _PLACEHOLDER.match(v) else None
+
+
+_proxy_token_cache: dict = {}
+
+
+def find_proxy_token_file() -> Optional[str]:
+    """The Gemini Canvas proxy saves its token in <proxy folder>/native_host/.proxy_token.
+    Looks for a gemini-canvas-proxy folder next to this project and in the usual places."""
+    if "path" not in _proxy_token_cache:
+        home = os.path.expanduser("~")
+        bases = [os.path.dirname(PROJECT_ROOT), os.path.dirname(os.path.dirname(PROJECT_ROOT)), home,
+                 *(os.path.join(home, d) for d in ("Desktop", "Documents", "Downloads", "Projects", "Developer", "code"))]
+        found = None
+        for base in dict.fromkeys(bases):
+            for pattern in ("*canvas*proxy*/native_host/.proxy_token", "*/*canvas*proxy*/native_host/.proxy_token"):
+                hits = sorted(glob.glob(os.path.join(glob.escape(base), pattern)), key=os.path.getmtime, reverse=True)
+                if hits:
+                    found = hits[0]
+                    break
+            if found:
+                break
+        _proxy_token_cache["path"] = found
+    return _proxy_token_cache["path"]
+
+
 def provider_key(cfg: dict) -> Optional[str]:
-    if cfg.get("api_key"):
-        return str(cfg["api_key"]).strip()
+    if _real_key(cfg.get("api_key")):
+        return _real_key(cfg["api_key"])
     if cfg.get("token_file"):
         try:
             with open(os.path.expanduser(cfg["token_file"]), encoding="utf-8") as f:
@@ -267,5 +301,15 @@ def provider_key(cfg: dict) -> Optional[str]:
                 return token
         except OSError:
             pass
-    value = os.environ.get(cfg["api_key_env"]) if cfg.get("api_key_env") else None
-    return value.strip() if value else value
+    value = _real_key(os.environ.get(cfg["api_key_env"])) if cfg.get("api_key_env") else None
+    if value:
+        return value
+    if cfg.get("type") == "canvas_proxy":
+        path = find_proxy_token_file()
+        if path:
+            try:
+                with open(path, encoding="utf-8") as f:
+                    return f.read().strip() or None
+            except OSError:
+                pass
+    return None

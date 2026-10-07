@@ -73,9 +73,12 @@ class LLMRouter:
             if ok:
                 self._log(f"✅ {spec}")
             elif spec == self.main:
-                then = f"steps will run on the backup model {self.backup}" if self.backup else \
-                    "the run will stop at the first step if it stays down (set a backup model in setup_models.py)"
-                self._log(f"⚠️ main model {spec} did not answer ({detail}). Each step will still try it first; if it fails, {then}.")
+                if not self.backup and self.mode != "single":
+                    # Every step needs the main model sooner or later: stop now, not at step 1.
+                    raise ProviderUnavailable(f"main model {spec} did not answer: {detail}")
+                then = f"steps will run on the backup model {self.backup}" if self.backup else "they stop the run"
+                self._log(f"⚠️ main model {spec} did not answer ({detail}). Each step will still try it first; "
+                          f"if it fails, {then}.")
             else:
                 self.down[provider] = detail
                 self._log(f"⚠️ {spec} unavailable ({detail}). Its steps will run on {self.main}.")
