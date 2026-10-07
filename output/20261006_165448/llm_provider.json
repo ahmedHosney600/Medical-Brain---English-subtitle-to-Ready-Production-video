@@ -1,0 +1,11 @@
+{
+  "requested_provider": "gemini",
+  "final_backend": "Gemini Canvas proxy (gemini-3-flash-preview)",
+  "calls": {
+    "claude": 0,
+    "gemini": 30
+  },
+  "events": [
+    "Using Gemini Canvas proxy (gemini-3-flash-preview)"
+  ]
+}

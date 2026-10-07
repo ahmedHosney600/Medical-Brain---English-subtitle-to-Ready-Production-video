@@ -1,6 +1,18 @@
 {
-    "model": "gemini-3-flash-preview",
-    "temperature": 0.2,
-    "api_key": "ddafa199-2899-4015-9ff8-6f63400bc93a",
-    "base_url": "http://localhost:8765/v1"
+    "provider": "hybrid",
+    "main_model": "gemini:gemini-3-flash-preview",
+    "single_model": "gemini:gemini-3-flash-preview",
+    "backup_model": "gemini:gemini-3-flash-preview",
+    "hybrid_routes": {
+        "medical_truth_verifier": "deepseek:deepseek-flash",
+        "fidelity_auditor": "deepseek:deepseek-flash",
+        "self_critique": "deepseek:deepseek-flash",
+        "packaging_honesty_ctr_auditor": "deepseek:deepseek-flash",
+        "production_quality_critique": "deepseek:deepseek-flash"
+    },
+    "providers": {
+        "gemini": {
+            "api_key": "ddafa199-2899-4015-9ff8-6f63400bc93a"
+        }
+    }
 }

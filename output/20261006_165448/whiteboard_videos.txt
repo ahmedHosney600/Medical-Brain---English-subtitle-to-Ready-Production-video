@@ -1,0 +1,3 @@
+A hand draws a bell curve on a white background with a black marker, then shades the middle section, static camera, no text, ~8s
+
+A hand draws a horizontal line with a black marker, then adds a jagged line above it that stops before a red flag marker, static camera, no text, ~8s
