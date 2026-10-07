@@ -75,7 +75,10 @@ def call_llm_json(system_prompt: str, user_prompt: str, temperature: Optional[fl
         return data, raw
 
     print(f"  🔧 {current_node.get() or 'step'}: answer unreadable — {problem}; asking the model to re-send it as JSON")
-    repair = (f"Your previous answer (below, between the markers) could not be used: {problem}.\n"
+    fields = ", ".join(names if isinstance(names, str) else names[0] for names in required)
+    repair = (f"The original request ended with these instructions:\n<<<REQUEST END\n{user_prompt[-2000:]}\nREQUEST END>>>\n\n"
+              + (f"Fields the answer must contain: {fields}.\n" if fields else "")
+              + f"Your previous answer (below, between the markers) could not be used: {problem}.\n"
               "Re-send the SAME content as ONE valid JSON object and nothing else: no markdown fence, "
               "no text before or after it, every field of the output format in the instructions above, "
               "and every double quote inside a string value escaped as \\\".\n\n"

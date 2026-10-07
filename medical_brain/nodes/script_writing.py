@@ -123,7 +123,10 @@ Write all loop lines, re-engagement hooks, the disclaimer, and 3 CTA versions wi
 
 ## MODE: REVISION PASS (Pass #{state.get("quality_revision_count", 0)})
 
-Check the critique report below for anything flagged under OPEN LOOP COMPLETION, DISCLAIMER, or CTA QUALITY. Fix ONLY what's explicitly flagged. Leave everything else untouched.
+Check the critique report below for anything flagged under OPEN LOOP COMPLETION, DISCLAIMER, or CTA QUALITY. Fix ONLY what's explicitly flagged in YOUR PREVIOUS OUTPUT below. Leave everything else in it untouched (same wording).
+
+YOUR PREVIOUS OUTPUT:
+{state.get("cta_output", "")}
 
 AUDIT / CRITIQUE REPORT:
 {state.get("self_critique_output", "")}"""

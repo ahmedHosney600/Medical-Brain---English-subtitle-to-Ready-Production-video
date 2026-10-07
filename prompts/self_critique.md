@@ -28,6 +28,8 @@ HARD GATES — grade can only be "A" if ALL of the following hold:
 
 REVISION MODE: if `revision_count` > 0, verify the specific issues from your previous critique are actually resolved in the current script — not renamed or superficially touched.
 
+critique_grade must be exactly one of: "A+", "A", "B", "C", "D", "F" (no "A-" or "B+"). "A"/"A+" means every hard gate above holds.
+
 OUTPUT — ONLY valid JSON:
 ```json
 {

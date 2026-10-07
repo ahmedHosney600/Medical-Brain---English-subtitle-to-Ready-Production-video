@@ -63,7 +63,10 @@ SHORTS REVISION COUNT: {revision_count}"""
 ⚠️ PREVIOUS QUALITY GATE AUDIT & FIX INSTRUCTIONS:
 {state.get("shorts_quality_output", "")}
 
-Apply the fix instructions above. Only modify the clips that had issues; preserve clips that passed."""
+Apply the fix instructions above to YOUR PREVIOUS SHORTS SCRIPTS below. Only modify the clips that had issues; copy the clips that passed unchanged.
+
+YOUR PREVIOUS SHORTS SCRIPTS:
+{state.get("shorts_scripts", "")}"""
 
     response = call_llm(system_prompt, user_prompt, temperature=0.7, max_tokens=8000)
     return {"shorts_scripts": response}
@@ -121,18 +124,22 @@ SHORTS REVISION COUNT: {state.get("shorts_revision_count", 0)}"""
             raise ValueError("unreadable JSON answer")
 
         grade = str(pick(data, "shorts_quality_grade", "grade", default="")).strip().upper()
-        clips = data.get("per_clip_scores", [])
+        clips = pick(data, "per_clip_scores", "clips", default=[])
+        clips = clips if isinstance(clips, list) else []
         
         all_clips_pass = True
         if not clips:
             all_clips_pass = False
         else:
             for clip in clips:
-                impact = int(clip.get("standalone_impact", 0))
-                scroll = int(clip.get("scroll_stop_power", 0))
-                gap = int(clip.get("curiosity_gap", 0))
-                med_resp = str(clip.get("medical_responsibility", "")).strip().lower()
-                if impact < 8 or scroll < 8 or gap < 8 or med_resp != "pass":
+                if not isinstance(clip, dict):
+                    all_clips_pass = False
+                    break
+                impact = pick(clip, "standalone_impact", default=0, kind=int)
+                scroll = pick(clip, "scroll_stop_power", default=0, kind=int)
+                gap = pick(clip, "curiosity_gap", default=0, kind=int)
+                med_resp = str(pick(clip, "medical_responsibility", default="")).strip().lower()
+                if impact < 8 or scroll < 8 or gap < 8 or not med_resp.startswith("pass"):
                     all_clips_pass = False
                     break
         

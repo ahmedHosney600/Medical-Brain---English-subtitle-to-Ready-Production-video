@@ -2,6 +2,8 @@
 
 System prompts live in prompts/<step>.md; the user prompts below insert the video's data."""
 
+import re
+
 from ..llm import call_llm_json
 from ..prompts import load_prompt
 from ..state import PipelineState
@@ -195,6 +197,7 @@ DIALECT & WARMTH SCORES (source):
 
 MEDICAL FIDELITY AUDIT (source):
 {state.get("fidelity_audit_output", "")}
+Fidelity Score: {state.get("fidelity_score", 0)}/10 | Medical Accuracy Pass: {state.get("medical_accuracy_pass", False)}
 
 RESTRUCTURE STRATEGY PLAN:
 {state.get("strategy_plan", "")}
@@ -216,13 +219,21 @@ Output ONLY the JSON object. Include the full revised script."""
         if data is None:
             raise ValueError("unreadable JSON answer")
 
-        grade = str(pick(data, "critique_grade", "grade", default="")).strip().upper()
-        if grade not in ["A+", "A", "B", "C", "D", "F"]:
-            grade = "F"
-        return _critique_result(state, grade, data, response)
+        return _critique_result(state, _letter_grade(pick(data, "critique_grade", "grade", default="")), data, response)
     except Exception:
         # Unreadable answer: the scores this round are the independent judges' only.
         return _critique_result(state, "NEEDS_REVISION", None, response)
+
+
+def _letter_grade(value) -> str:
+    """'A+', 'A', 'A-' → A+/A/A; 'B+' → B; anything unreadable → F."""
+    text = str(value or "").strip().strip("*").strip().upper()
+    if text.startswith("PASS"):
+        return "A"
+    m = re.match(r"([A-F])\s*(\+?)(?![A-Z])", text)
+    if not m:
+        return "F"
+    return "A+" if m.group(1) == "A" and m.group(2) else m.group(1)
 
 
 def _critique_result(state: PipelineState, grade: str, data, raw: str) -> dict:
@@ -274,16 +285,20 @@ def _critique_result(state: PipelineState, grade: str, data, raw: str) -> dict:
         **scores,
     }
     best = state.get("best_script_rank")
+    best_script, best_scores, best_round, best_rank = (
+        state.get("best_script"), state.get("best_script_scores") or {}, state.get("best_script_round"), best)
     if verified and (not best or rank > list(best)):
+        best_script, best_scores, best_round, best_rank = verified, scores, round_no, rank
         result.update(best_script=verified, best_script_rank=rank, best_script_scores=scores,
                       best_script_round=round_no)
-    elif best and not passed and round_no >= state.get("max_quality_revision_count", 2):
-        # Last round and it didn't pass: go on with the best round's script.
-        best_scores = state.get("best_script_scores") or {}
-        best_passed = bool(best[0])
-        print(f"  ↩️ self_critique: round {round_no} did not pass; keeping round "
-              f"{state.get('best_script_round')}'s script ({'it passed' if best_passed else 'it scored higher'})")
+    if not passed and round_no >= state.get("max_quality_revision_count", 2) and best_script:
+        # Last round and it didn't pass: go on with the best VERIFIED script, never the
+        # critique's own unchecked rewrite.
+        best_passed = bool(best_rank and best_rank[0])
+        if best_round != round_no:
+            print(f"  ↩️ self_critique: round {round_no} did not pass; keeping round {best_round}'s script "
+                  f"({'it passed' if best_passed else 'it scored higher'})")
         result.update(best_scores)
-        result["refined_script"] = state.get("best_script", verified)
+        result["refined_script"] = best_script
         result["quality_grade"] = "PASS" if best_passed else result["quality_grade"]
     return result

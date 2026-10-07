@@ -68,6 +68,7 @@ class PipelineState(TypedDict):
     self_critique_output: str
     quality_grade: str
     quality_revision_count: int
+    final_package_issues: list       # audit problems the final package still has
     best_script: str                 # best round of the quality loop so far (verified script)
     best_script_rank: list
     best_script_scores: dict

@@ -30,7 +30,9 @@ def ask(prompt: str, default: str = "") -> str:
     try:
         answer = input(prompt).strip()
     except EOFError:
-        answer = ""
+        # No keyboard input (e.g. piped or run by a script): stop instead of looping on defaults.
+        print("\nNo input available — setup stopped. Run python3 setup_models.py in a terminal.")
+        raise SystemExit(1)
     return answer or default
 
 

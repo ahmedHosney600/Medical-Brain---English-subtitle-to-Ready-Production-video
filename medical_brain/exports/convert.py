@@ -2798,13 +2798,8 @@ def convert_markdown_file(md_path, html_path=None, pdf_path=None, docx_path=None
         print(f"⚠️ DOCX export warning: {docx_err}")
         generated_docx = None
 
-    # Automatically export dedicated B-Roll prompt files (Images & Videos) if present
-    try:
-        output_dir = os.path.dirname(md_path)
-        export_broll_prompt_files_from_markdown(md_text, output_dir=output_dir)
-    except Exception as broll_err:
-        pass
-
+    # (The B-roll / whiteboard prompt files are written by the workflow itself from the
+    # approved tables; re-extracting them from this document would overwrite them.)
     return html_path, generated_pdf, generated_docx
 
 

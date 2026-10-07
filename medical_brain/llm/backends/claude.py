@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 from typing import Optional
 
-from ..errors import ProviderUnavailable, _looks_unavailable
+from ..errors import AnswerCutOff, ProviderUnavailable, _looks_unavailable, api_failure
 
 
 class ClaudeCodeBackend:
@@ -106,18 +106,16 @@ class AnthropicAPIBackend:
         try:
             with self.client.beta.messages.stream(**params) as stream:
                 message = stream.get_final_message()
-        except (a.AuthenticationError, a.PermissionDeniedError, a.RateLimitError) as e:
-            raise ProviderUnavailable(str(e))
-        except a.APIStatusError as e:
-            if e.status_code in (402, 529) or _looks_unavailable(str(e)):
-                raise ProviderUnavailable(str(e))
-            raise
-        except a.APIConnectionError as e:
-            raise ProviderUnavailable(str(e))
+        except a.APIError as e:
+            mapped = api_failure(e, a, "the Anthropic API")
+            if mapped is None:
+                raise
+            raise mapped from e
 
         if message.stop_reason == "refusal":
             raise RuntimeError("Claude declined this request (refusal) and no fallback model accepted it")
         text = "".join(b.text for b in message.content if b.type == "text")
         if message.stop_reason == "max_tokens":
-            print(f"  [warning] Claude output hit max_tokens ({budget}); the text may be cut off")
+            # A cut answer is usually broken (half a JSON object): let the router try another model.
+            raise AnswerCutOff(f"{self.model} hit max_tokens ({budget}); the answer was cut off", text)
         return text

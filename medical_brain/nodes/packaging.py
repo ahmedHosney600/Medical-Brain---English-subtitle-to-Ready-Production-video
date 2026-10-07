@@ -89,6 +89,7 @@ SEO SECONDARY KEYWORDS: {state.get("seo_secondary_keywords", "")}
 
 REVISION COUNT: {state.get("packaging_revision_count", 0)}
 {"PREVIOUS CRITIQUE — YOU MUST RESOLVE THESE SPECIFIC ISSUES:" + chr(10) + correction_note if correction_note else ""}
+{("YOUR PREVIOUS FINALISTS (revise these: keep every title and thumbnail the critique didn't flag, word for word; fix or replace the flagged ones):" + chr(10) + state.get("title_options", "") + chr(10) + chr(10) + state.get("thumbnail_concepts", "")) if correction_note else ""}
 
 Produce 8-10 finalist titles and exactly 5 fully-specified thumbnail concepts."""
 
@@ -124,7 +125,8 @@ Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B tes
 
     try:
         data, response = call_llm_json(system_prompt, user_prompt, temperature=0.3, max_tokens=6000,
-                                       required=[("packaging_grade", "grade"), "top_promise_delivery_score"])
+                                       required=[("packaging_grade", "grade"),
+                                                 ("lowest_ab_promise_delivery_score", "top_promise_delivery_score")])
     except UnreadableAnswer as e:
         data, response = None, e.raw
     revision = state.get("packaging_revision_count", 0) + 1
@@ -148,7 +150,8 @@ Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B tes
         if data is None:
             raise ValueError("unreadable JSON answer")
         grade = str(pick(data, "packaging_grade", "grade", default="")).strip().upper()
-        top_pd_score = pick(data, "top_promise_delivery_score", default=0, kind=int)
+        top_pd_score = pick(data, "lowest_ab_promise_delivery_score", "top_promise_delivery_score",
+                            default=0, kind=int)
         if top_pd_score < 9 or grade != "PASS" or code_issues:
             grade = "NEEDS_REVISION"
 
@@ -175,5 +178,8 @@ Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B tes
         return {
             "packaging_grade": "NEEDS_REVISION",
             "packaging_critique_output": report,
+            # No verdict this round: don't leave an older round's picks next to it.
+            "recommended_title": "",
+            "packaging_ab_test_set": "",
             "packaging_revision_count": revision,
         }

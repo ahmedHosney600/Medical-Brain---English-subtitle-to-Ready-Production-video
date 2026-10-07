@@ -1,6 +1,6 @@
 """OpenAI Responses API: OpenCode Go's Grok, GPT Luna and Muse Spark models."""
 from ..config import thinking_mode
-from ..errors import _thinking_refused
+from ..errors import StepFailed, _thinking_refused
 from ..progress import _Progress, _step_timeout
 from .openai_compat import OpenAICompatibleBackend
 
@@ -47,6 +47,9 @@ class OpenAIResponsesBackend(OpenAICompatibleBackend):
                     elif kind == "response.incomplete":
                         incomplete = True
                         progress.tick()
+                    elif kind in ("response.failed", "error"):
+                        err = getattr(getattr(event, "response", None), "error", None) or getattr(event, "message", "")
+                        raise StepFailed(f"the model reported a failure: {err}")
                     elif kind == "response.completed":
                         final_text = getattr(event.response, "output_text", None)
                         progress.tick()

@@ -8,8 +8,9 @@ MAX_TRANSLATION_ITERATIONS = 2
 
 def route_translation_fidelity(state: PipelineState) -> str:
     scores_pass = (
-        state.get("naturalness_score", 0) >= 8 
+        state.get("naturalness_score", 0) >= 8
         and state.get("contextual_alignment_score", 0) >= 8
+        and state.get("translation_grade", "PASS") == "PASS"
     )
     max_iterations = state.get("max_translation_revision_count", MAX_TRANSLATION_ITERATIONS)
     hit_max = state.get("translation_revision_count", 0) >= max_iterations

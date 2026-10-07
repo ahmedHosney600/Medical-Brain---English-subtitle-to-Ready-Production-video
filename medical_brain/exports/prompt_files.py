@@ -3,6 +3,7 @@ import os
 import re
 
 from . import workbook as ew
+from .workbook import broll_rows, plain_prompt
 
 
 def export_broll_prompt_files(text: str, fallback_broll: str = "", output_dir: str = "") -> tuple:
@@ -19,45 +20,23 @@ def export_broll_prompt_files(text: str, fallback_broll: str = "", output_dir: s
     if not output_dir:
         return [], []
 
-    images = []
-    videos = []
+    images, videos = [], []
 
-    # Strategy 1: the approved B-roll table from the production loop (complete)
-    block = fallback_broll or ""
-
-    # Strategy 2: the document's AI B-ROLL GENERATION PROMPTS section
-    if not block:
-        block = ew.find_section(text, "AI B-ROLL GENERATION PROMPTS")
-
-    # Strategy 3: fallback to storyboard if still empty
-    if not block:
-        match_sb = re.search(r"###\s*🎬?\s*INTEGRATED PRODUCTION STORYBOARD.*?\n(.*?)(?=\n###|\Z)", text, re.DOTALL)
-        if match_sb:
-            block = match_sb.group(1)
-
-    for line in block.splitlines():
-        line_clean = line.strip()
-        if (
-            line_clean.startswith("|")
-            and not line_clean.startswith("|---")
-            and "DRAWING" not in line_clean.upper()  # whiteboard rows have their own files
-            and not any(h in line_clean.upper() for h in ["FULL AI GENERATION PROMPT", "AI GENERATION PROMPT", "TIMECODE", "START CUE", "LAYER"])
-        ):
-            parts = [p.strip() for p in line_clean.split("|") if p.strip()]
-            if not parts:
-                continue
-            longest = max(parts, key=len)
-            if len(longest) > 30:
-                cleaned_prompt = longest.replace('\\"', '"').strip('"\'`')
-                cleaned_prompt = re.sub(r"^(?:🎬|🖼️)?\s*(?:Video|Image)\s*\|?\s*", "", cleaned_prompt, flags=re.IGNORECASE).strip()
-                # Plain text for the generator: no markdown bold/italics or <br> tags.
-                cleaned_prompt = re.sub(r"\*\*|__|<br\s*/?>", " ", cleaned_prompt)
-                cleaned_prompt = re.sub(r"\s{2,}", " ", cleaned_prompt).replace(" :", ":").strip()
-                line_lower = line_clean.lower()
-                if "🖼" in line_clean or "image" in line_lower:
-                    images.append(cleaned_prompt)
-                elif "🎬" in line_clean or "video" in line_lower:
-                    videos.append(cleaned_prompt)
+    # Sources, best first: the approved table from the production loop, the
+    # document's B-roll section, then the storyboard's B-ROLL rows.
+    rows = broll_rows(fallback_broll) or broll_rows(ew.find_section(text, "AI B-ROLL GENERATION PROMPTS"))
+    if not rows:
+        for r in ew.parse_storyboard(text):
+            if "B-ROLL" in r["layer"].upper():
+                parts = [p.strip() for p in re.split(r"(?<!\\)\|", r["detail"]) if p.strip()]
+                kind = "image" if parts and ("🖼" in parts[0] or "IMAGE" in parts[0].upper()) else "video"
+                prompt = max((p for p in parts if not re.match(r"(?i)dur\b", p)), key=len, default="")
+                rows.append({"kind": kind, "prompt": prompt})
+    for r in rows:
+        prompt = plain_prompt(r["prompt"])
+        if r["kind"] == "drawing" or len(prompt) <= 30:
+            continue                      # whiteboard rows have their own files
+        (images if r["kind"] == "image" else videos).append(prompt)
 
     img_path = os.path.join(output_dir, "broll_images.txt")
     vid_path = os.path.join(output_dir, "broll_videos.txt")
@@ -75,7 +54,15 @@ def export_broll_prompt_files(text: str, fallback_broll: str = "", output_dir: s
     return images, videos
 
 
-def export_whiteboard_prompt_files(text: str, output_dir: str = "") -> tuple:
+def _drawings_from_overlay_guide(guide: str) -> list:
+    """(image prompt, draw-on prompt) pairs from the overlay designer's drawing specs."""
+    field = r"\**\s*%s\s*\**[^:\n]*:\s*\**\s*(.+)"
+    images = re.findall(field % r"whiteboard image prompt", guide or "", re.IGNORECASE)
+    videos = re.findall(field % r"draw-on video prompt", guide or "", re.IGNORECASE)
+    return [(plain_prompt(i), plain_prompt(v)) for i, v in zip(images, videos)]
+
+
+def export_whiteboard_prompt_files(text: str, output_dir: str = "", overlay_guide: str = "") -> tuple:
     """
     Saves the whiteboard (DRAWING ANIM) prompts for the Google Flow automator:
     - whiteboard_images.txt : still whiteboard image per drawing (generate first)
@@ -94,6 +81,12 @@ def export_whiteboard_prompt_files(text: str, output_dir: str = "") -> tuple:
         if img and vid:
             images.append(img.group(1).strip(" []`\""))
             videos.append(vid.group(1).strip(" []`\""))
+    if not images:
+        # No DRAWING rows in the storyboard (e.g. it came back short): use the
+        # approved drawing specs from the overlay guide instead.
+        for img, vid in _drawings_from_overlay_guide(overlay_guide):
+            images.append(img)
+            videos.append(vid)
     for name, prompts, label in (("whiteboard_images.txt", images, "image"), ("whiteboard_videos.txt", videos, "draw-on video")):
         if prompts:
             path = os.path.join(output_dir, name)

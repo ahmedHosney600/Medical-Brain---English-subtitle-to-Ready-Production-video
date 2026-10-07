@@ -204,8 +204,13 @@ def save_key(env_name: str, value: str, path: str = KEYS_PATH):
     name = os.path.basename(path)
     existing = open(gitignore, encoding="utf-8").read().splitlines() if os.path.exists(gitignore) else []
     if name not in existing:
+        needs_newline = False
+        if os.path.exists(gitignore):
+            with open(gitignore, "rb") as f:
+                content = f.read()
+            needs_newline = bool(content) and not content.endswith(b"\n")
         with open(gitignore, "a", encoding="utf-8") as f:
-            f.write(name + "\n")
+            f.write(("\n" if needs_newline else "") + name + "\n")
 
 
 def save_llm_config(config: dict, path: str = CONFIG_PATH, keys_path: str = KEYS_PATH):

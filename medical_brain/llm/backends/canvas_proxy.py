@@ -1,7 +1,7 @@
 """Gemini through the local Gemini Canvas proxy (pranrichh/gemini-canvas-proxy)."""
 from typing import Optional
 
-from ..errors import ProviderUnavailable
+from ..errors import AnswerCutOff, ProviderUnavailable, StepTimeout
 from .openai_compat import OpenAICompatibleBackend
 
 
@@ -11,7 +11,9 @@ class CanvasProxyBackend(OpenAICompatibleBackend):
       - it gives each request 60 s, then answers 504 (Gemini keeps writing, the
         answer is lost): retry the step `timeout_retries` times;
       - Gemini 3's hidden thinking counts against max_tokens and can cut answers
-        (and JSON) short: raise max_tokens to at least `min_max_tokens`;
+        (and JSON) short: raise max_tokens to at least `min_max_tokens`, re-send a cut
+        answer once with double the limit (up to `max_output_cap`), and if it is still
+        cut raise AnswerCutOff so the router can try another model;
     Safety blocks (502 with blockReason) are not retried: the same prompt gets the same answer."""
 
     def __init__(self, provider: str, cfg: dict, model: str):
@@ -26,9 +28,24 @@ class CanvasProxyBackend(OpenAICompatibleBackend):
         params = self._params(system_prompt, user_prompt, temperature, max(max_tokens or 0, floor) or None)
         attempts = 1 + int(self.cfg.get("timeout_retries", 2))
         wait = self.cfg.get("retry_wait_seconds", 10)
-        for attempt in range(1, attempts + 1):
+        cap = int(self.cfg.get("max_output_cap", 65536) or 0)
+        regrown = False
+        attempt = 0
+        while attempt < attempts:
+            attempt += 1
             try:
-                return self._text(self._create(params))
+                resp = self._create(params)
+                text = self._text(resp)
+                if getattr(resp.choices[0], "finish_reason", None) != "length":
+                    return text
+                limit = params.get("max_tokens") or 0
+                if not regrown and limit and limit < cap:
+                    regrown = True
+                    params["max_tokens"] = min(limit * 2, cap)
+                    print(f"  ↻ re-sending with max_tokens {params['max_tokens']} (Gemini's thinking used the budget)")
+                    attempt -= 1        # not a time-out retry
+                    continue
+                raise AnswerCutOff(f"{self.provider}:{self.model} hit max_tokens ({limit}); the answer was cut off", text)
             except openai.AuthenticationError as e:
                 raise ProviderUnavailable(
                     f"Gemini Canvas proxy token missing or wrong ({e.status_code}). Fix: put "
@@ -44,8 +61,12 @@ class CanvasProxyBackend(OpenAICompatibleBackend):
                     continue
                 raise
             except (openai.APIConnectionError, openai.APITimeoutError) as e:
+                timed_out = isinstance(e, openai.APITimeoutError)
+                why = "timed out" if timed_out else "not reachable"
                 if attempt < attempts:
-                    print(f"  ⏳ Gemini Canvas proxy not reachable ({e}); retrying ({attempt}/{attempts - 1}) in {wait}s...")
+                    print(f"  ⏳ Gemini Canvas proxy {why} ({e}); retrying ({attempt}/{attempts - 1}) in {wait}s...")
                     time.sleep(wait)
                     continue
+                if timed_out:
+                    raise StepTimeout(f"the Gemini Canvas proxy timed out {attempts} times ({e})")
                 raise ProviderUnavailable(f"cannot reach the Gemini Canvas proxy at {self.cfg['base_url']}: {e}")

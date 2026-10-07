@@ -20,7 +20,7 @@ CUE RULES (the editor finds every event by searching for its cue words, so they 
 MANDATORY DETAIL FORMAT (no abbreviations):
 - TRANSITION: `[Type] | Dir: [direction or None] | Easing: [e.g. ease-in-expo] | Dur: [Xms]`
 - ZOOM/REFRAME: `Scale [X%->Y%] | Anchor: [center/face/object] | Easing: [e.g. ease-out-back] | Dur: [Xms]`
-- B-ROLL: `[🎬 Video / 🖼️ Image] | [FULL AI GENERATION PROMPT - subject, setting, lighting, lens, composition, color grade, negative prompts. NEVER write shortcut cross-references. Write the complete prompt here - at least 3 sentences.] | Dur: [Xs]`
+- B-ROLL: `[🎬 Video / 🖼️ Image] | B-roll #[N from the AI B-ROLL GENERATION PROMPTS table] | Dur: [Xs]` — write only the number; code copies the full approved prompt into the row (never retype or shorten the prompt).
 - TOP-RIGHT POPUP: `"[English Term → Arabic translation]" | Entry: [anim, Xms, easing] | Hold: [Xs] | Exit: [anim, Xms] | Pos: Top-right`
 - TEXT OVERLAY TITLE: `"[Arabic headline]" | Entry: [anim, Xms, easing] | Hold: [Xs] | Exit: [anim, Xms] | Pos: Center-frame (dark overlay)`
 - WARNING/ALERT BOX: `"⚠️ [Arabic warning text]" | Entry: [anim, Xms, easing] | Hold: [Xs] | Exit: [anim, Xms] | Pos: Center-bottom`
@@ -37,14 +37,14 @@ COVERAGE: Full video 0:00 to outro. 25-40 rows minimum. EVERY event from Transit
 ---
 
 ### 📐 TRANSITION MAP (Detail Reference)
-Reproduce the full Transition Map. Include: philosophy statement + complete table (#, Timestamp, From->To, Type, Direction, Easing, Duration, Range, Rationale, -> SB#) + act-level density summary.
+[[APPROVED TRANSITION MAP — inserted by code]]
 
 ---
 
 ### 🎨 TEXT ANIMATION & OVERLAY GUIDE (Detail Reference)
-Reproduce the full Text Animation & Overlay Guide. Include: visual design system + complete element table with columns: #, Timestamp, Element Type (one of: TOP-RIGHT POPUP / TEXT OVERLAY TITLE / WARNING/ALERT BOX / QUOTE BOX / KINETIC TEXT / Lower-third), Content (text), ▶️ START CUE (Arabic), ⏹️ END CUE (Arabic), Screen Position, Entry Animation, Hold, Exit Animation, SB#. Include drawing animations specs + density map per act.
+[[APPROVED TEXT ANIMATION & OVERLAY GUIDE — inserted by code]]
 
-MANDATORY: Every English technical term in the script MUST have a TOP-RIGHT POPUP entry with its Arabic translation. Every section headline should have a TEXT OVERLAY TITLE. Medical disclaimers use WARNING/ALERT BOX. Very impactful sentences use QUOTE BOX (max 2-3 per video). Stats and key terms use KINETIC TEXT.
+(For these two sections and the B-roll section below, write ONLY the heading and its placeholder line: the approved versions are inserted in full by code after you answer. Spend your answer on a complete storyboard.)
 
 ---
 

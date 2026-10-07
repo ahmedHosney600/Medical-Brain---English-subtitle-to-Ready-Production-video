@@ -28,7 +28,8 @@ def with_heading(heading: str, content: str) -> str:
 
 def stop_run(error, checkpoint_path: str = ""):
     """Ends the run with the fix, not a traceback."""
-    print(f"\n❌ Stopped: {error}")
+    kind = "" if isinstance(error, (ProviderUnavailable, ValueError)) else f"{type(error).__name__}: "
+    print(f"\n❌ Stopped: {kind}{error}")
     if checkpoint_path:
         print(f"   Steps finished so far are saved in: {checkpoint_path}")
     print("   Check your models with: python3 setup_models.py")
@@ -77,7 +78,10 @@ def main():
                 break
             print("Please type 1, 2 or 3.")
         cli_provider = {"1": "main", "2": "single", "3": "hybrid"}[_choice]
-    llm_router = LLMRouter(llm_config, provider=cli_provider)
+    try:
+        llm_router = LLMRouter(llm_config, provider=cli_provider)
+    except ValueError as e:      # unknown --provider / LLM_PROVIDER value
+        stop_run(e)
     set_router(llm_router)
 
     script_file = sys.argv[1]
@@ -139,7 +143,8 @@ def main():
                 output = next(stream)
             except StopIteration:
                 break
-            except ProviderUnavailable as e:
+            except Exception as e:
+                # Any failure a model fallback couldn't absorb: keep what was done and stop cleanly.
                 log_file.flush()
                 with open(checkpoint_path, "w", encoding="utf-8") as cf:
                     json.dump(cumulative_state, cf, ensure_ascii=False, indent=2)
@@ -170,7 +175,8 @@ def main():
                 except Exception as e:
                     print(f"  [warning] Could not save checkpoint: {e}")
 
-    for warning in (ew.quality_warning(cumulative_state), ew.production_warning(cumulative_state)):
+    for warning in (ew.quality_warning(cumulative_state), ew.production_warning(cumulative_state),
+                    ew.package_warning(cumulative_state)):
         if warning:
             print(f"\n{warning}")
 
@@ -221,7 +227,8 @@ def main():
             fallback_broll=cumulative_state.get("broll_prompts", ""),
             output_dir=output_dir
         )
-        export_whiteboard_prompt_files(longform_deliverable, output_dir=output_dir)
+        export_whiteboard_prompt_files(longform_deliverable, output_dir=output_dir,
+                                       overlay_guide=cumulative_state.get("text_animation_overlay", ""))
 
         # Automatically generate responsive HTML, PDF, and DOCX exports
         try:

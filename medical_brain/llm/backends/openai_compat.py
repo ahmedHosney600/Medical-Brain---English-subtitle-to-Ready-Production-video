@@ -3,7 +3,7 @@ import re
 from typing import Optional
 
 from ..config import KEYS_PATH, provider_headers, provider_key, thinking_mode
-from ..errors import ProviderUnavailable, _LimitTooHigh, _limit_refused, _looks_unavailable, _thinking_refused
+from ..errors import ProviderUnavailable, _LimitTooHigh, _limit_refused, _thinking_refused, api_failure
 from ..progress import _Progress, _client_timeout, _step_timeout, current_node
 from .base import _OutputLimits
 
@@ -87,14 +87,11 @@ class OpenAICompatibleBackend(_OutputLimits):
             if _limit_refused(e):
                 raise _LimitTooHigh(str(e))
             raise
-        except (openai.AuthenticationError, openai.PermissionDeniedError, openai.RateLimitError) as e:
-            raise ProviderUnavailable(str(e))
-        except openai.APIStatusError as e:
-            if e.status_code in (402, 429, 529) or _looks_unavailable(str(e)):
-                raise ProviderUnavailable(str(e))
-            raise
-        except openai.APIConnectionError as e:
-            raise ProviderUnavailable(f"cannot reach {self.cfg['base_url']}: {e}")
+        except openai.APIError as e:
+            mapped = api_failure(e, openai, self.cfg["base_url"])
+            if mapped is None:
+                raise
+            raise mapped from e
 
     def _once(self, system_prompt, user_prompt, temperature, limit) -> tuple:
         """Streams the answer so progress can be shown and a too-slow call stopped."""

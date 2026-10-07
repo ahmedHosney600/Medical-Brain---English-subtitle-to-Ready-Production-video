@@ -6,18 +6,47 @@ class ProviderUnavailable(Exception):
     """The provider can't serve requests at all right now (limit, auth, billing, missing tool)."""
 
 
+# Phrases that mean the provider can't serve anything for a while (quota, billing,
+# login). Kept specific on purpose: a generic "limit" (e.g. "context limit exceeded")
+# or a short-lived rate limit only fails the step, not the provider for the whole run.
 _UNAVAILABLE_MARKERS = (
-    "usage limit", "limit reached", "weekly limit", "daily limit", "session limit", "hit your",
-    "resets ", "out of extra usage", "rate limit", "rate_limit", "overloaded", "insufficient",
-    "credit balance", "balance", "billing", "subscription", "not logged in", "please run /login",
-    "invalid api key", "api key", "authentication", "unauthorized", "permission", "forbidden",
-    "401", "402", "403", "429", "529", "quota",
+    "usage limit", "weekly limit", "daily limit", "monthly limit", "session limit",
+    "hit your", "resets ", "out of extra usage", "insufficient balance", "insufficient_quota",
+    "insufficient credit", "credit balance", "billing", "subscription", "not logged in",
+    "please run /login", "invalid api key", "incorrect api key", "invalid x-api-key", "api key not valid",
+    "authentication", "unauthorized", "quota", "error code: 401", "error code: 402", "error code: 403",
 )
 
 
 def _looks_unavailable(message: str) -> bool:
     m = (message or "").lower()
-    return any(marker in m for marker in _UNAVAILABLE_MARKERS) or bool(re.search(r"\blimit\b", m))
+    return any(marker in m for marker in _UNAVAILABLE_MARKERS)
+
+
+class StepFailed(RuntimeError):
+    """This call failed in a way that may not repeat (rate limit, overload, server
+    error): the router tries another model for this step, the provider stays in use."""
+
+
+def api_failure(e, sdk, where: str = ""):
+    """The exception to raise for an SDK error (openai or anthropic), or None to re-raise
+    it as is. Only lasting problems (auth, billing, quota) take a provider out of the run."""
+    message = str(e)
+    if isinstance(e, (sdk.AuthenticationError, sdk.PermissionDeniedError)):
+        return ProviderUnavailable(message)
+    if isinstance(e, sdk.RateLimitError):
+        return ProviderUnavailable(message) if _looks_unavailable(message) else \
+            StepFailed(f"rate-limited ({_short(e)})")
+    if isinstance(e, sdk.APITimeoutError):
+        return StepTimeout(f"no answer from {where or 'the API'} in time ({_short(e)})")
+    if isinstance(e, sdk.APIConnectionError):
+        return ProviderUnavailable(f"cannot reach {where or 'the API'}: {e}")
+    if isinstance(e, sdk.APIStatusError):
+        if e.status_code == 402 or _looks_unavailable(message):
+            return ProviderUnavailable(message)
+        if e.status_code in (429, 500, 502, 503, 504, 529):
+            return StepFailed(f"server error {e.status_code} ({_short(e)})")
+    return None
 
 
 class _LimitTooHigh(Exception):

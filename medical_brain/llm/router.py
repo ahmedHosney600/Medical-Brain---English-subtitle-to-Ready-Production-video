@@ -5,7 +5,7 @@ from typing import Optional
 from .backends import make_backend
 from .checks import test_model
 from .config import MODE_ALIASES, MODES, parse_spec
-from .errors import AnswerCutOff, ProviderUnavailable, _short
+from .errors import AnswerCutOff, ProviderUnavailable, StepFailed, _short
 from .progress import _node_state, current_node
 
 
@@ -22,7 +22,8 @@ class LLMRouter:
         if self.backup == self.main:
             self.backup = ""
         self.routes = dict(config["hybrid_routes"])
-        self.down = {}          # provider -> reason, for the rest of the run
+        self.down = {}          # provider -> reason (auth/billing/quota), for the rest of the run
+        self.down_specs = {}    # provider:model -> reason (e.g. unknown model), for the rest of the run
         self.events = []
         self.calls = {}
         self.node_models = {}
@@ -52,6 +53,15 @@ class LLMRouter:
         backup = f"; backup {self.backup}" if self.backup else ""
         return f"{self.main} writes; {routed}{backup}"
 
+    def _is_down(self, spec: str) -> bool:
+        return spec in self.down_specs or parse_spec(spec)[0] in self.down
+
+    def _ask(self, spec: str, system_prompt, user_prompt, temperature, max_tokens) -> str:
+        result = self._backend(spec).call(system_prompt, user_prompt, temperature, max_tokens)
+        if not (result or "").strip():
+            raise StepFailed(f"{spec} returned an empty answer")
+        return result
+
     def _backend(self, spec: str):
         if spec not in self._backends:
             self._backends[spec] = make_backend(spec, self.config["providers"])
@@ -66,8 +76,7 @@ class LLMRouter:
         that fails here is simply skipped and its steps run on the main model."""
         self._log(f"Mode: {self.mode} · {self.describe()}")
         for spec in self.models_in_use():
-            provider = parse_spec(spec)[0]
-            if provider in self.down:
+            if self._is_down(spec):
                 continue
             ok, detail = test_model(spec, self.config["providers"])
             if ok:
@@ -80,7 +89,9 @@ class LLMRouter:
                 self._log(f"⚠️ main model {spec} did not answer ({detail}). Each step will still try it first; "
                           f"if it fails, {then}.")
             else:
-                self.down[provider] = detail
+                # Only this model is taken out: another model of the same provider
+                # (another judge, or the backup) may still work.
+                self.down_specs[spec] = detail
                 self._log(f"⚠️ {spec} unavailable ({detail}). Its steps will run on {self.main}.")
 
     def _count(self, node, spec):
@@ -96,13 +107,13 @@ class LLMRouter:
         state = _node_state.get()
         if node and state is not None and not state["announced"]:
             state["announced"] = True
-            target = spec if parse_spec(spec)[0] not in self.down else self.main
+            target = spec if not self._is_down(spec) else self.main
             print(f"▶ {node} … ({target})", flush=True)
         if spec != self.main:
             provider = parse_spec(spec)[0]
-            if provider not in self.down:
+            if not self._is_down(spec):
                 try:
-                    result = self._backend(spec).call(system_prompt, user_prompt, temperature, max_tokens)
+                    result = self._ask(spec, system_prompt, user_prompt, temperature, max_tokens)
                     self._count(node, spec)
                     return result
                 except ProviderUnavailable as e:
@@ -114,20 +125,22 @@ class LLMRouter:
                         cut_text = e.text
                     self._log(f"⚠️ {node}: {spec} failed ({_short(e)}). Running this step on {self.main}.")
         try:
-            result = self._backend(self.main).call(system_prompt, user_prompt, temperature, max_tokens)
+            result = self._ask(self.main, system_prompt, user_prompt, temperature, max_tokens)
             self._count(node, self.main)
             return result
         except Exception as e:
             if isinstance(e, AnswerCutOff) and not cut_text:
                 cut_text = e.text
-            if not self.backup or parse_spec(self.backup)[0] in self.down:
+            if isinstance(e, ProviderUnavailable):
+                self.down[parse_spec(self.main)[0]] = _short(e)
+            if not self.backup or self._is_down(self.backup):
                 if cut_text:
                     self._log(f"⚠️ {node}: no model gave a complete answer; using the cut-off one.")
                     return cut_text
                 raise
             self._log(f"⚠️ {node}: main model {self.main} failed ({_short(e)}). Running this step on the backup {self.backup}.")
         try:
-            result = self._backend(self.backup).call(system_prompt, user_prompt, temperature, max_tokens)
+            result = self._ask(self.backup, system_prompt, user_prompt, temperature, max_tokens)
         except Exception as e:
             if isinstance(e, AnswerCutOff):
                 cut_text = cut_text or e.text
@@ -147,6 +160,6 @@ class LLMRouter:
             "setup": self.describe(),
             "calls": dict(self.calls),
             "node_models": dict(self.node_models),
-            "unavailable": dict(self.down),
+            "unavailable": {**self.down, **self.down_specs},
             "events": list(self.events),
         }

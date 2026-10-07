@@ -350,12 +350,81 @@ def replace_section(text: str, key: str, body: str, before: str = "WHAT CHANGED"
     return "\n".join(out)
 
 
-def approved_broll_table(broll_prompts: str) -> str:
-    """broll_prompt_generator's output without its own top heading (the document has one)."""
-    lines = (broll_prompts or "").strip().splitlines()
-    while lines and (not lines[0].strip() or lines[0].strip() == "---" or _is_part_heading(lines[0])):
+def embedded_part(text: str) -> str:
+    """A step's own output placed inside the document: its top heading dropped (the
+    document has one) and its other headings demoted to ####, so none of them can
+    start a new top-level part."""
+    lines = (text or "").strip().splitlines()
+    while lines and (not lines[0].strip() or lines[0].strip() == "---" or re.match(r"^#{1,3}\s", lines[0])):
         lines.pop(0)
+    lines = [re.sub(r"^#{1,3}\s+", "#### ", l) for l in lines]
     return "\n".join(lines).strip()
+
+
+def approved_broll_table(broll_prompts: str) -> str:
+    """broll_prompt_generator's output, ready to sit under the document's B-roll heading."""
+    return embedded_part(broll_prompts)
+
+
+def _cells(line: str) -> list:
+    return [c.strip() for c in re.split(r"(?<!\\)\|", line.strip())[1:-1]]
+
+
+def broll_rows(text: str) -> list:
+    """Rows of the B-roll prompt table (the first table with a PROMPT column), as
+    [{num, time, start, end, kind ('image'/'video'/'drawing'/''), prompt}]."""
+    lines = (text or "").splitlines()
+    out, cols = [], None
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if not s.startswith("|"):
+            if cols and out:
+                break
+            continue
+        cells = _cells(s)
+        if all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
+            if cols is None and i:
+                head = [c.upper() for c in _cells(lines[i - 1])]
+                if any("PROMPT" in h for h in head):
+                    def col(*names, head=head):
+                        return next((k for k, h in enumerate(head) if any(n in h for n in names)), None)
+                    cols = {"num": col("#"), "time": col("TIMESTAMP", "TIME"), "start": col("START"),
+                            "end": col("END"), "type": col("TYPE", "LAYER"), "prompt": col("PROMPT")}
+            continue
+        if not cols or i + 1 < len(lines) and re.fullmatch(r"\|?[\s:|-]+\|?", lines[i + 1].strip() or "x"):
+            continue                         # a header row
+        get = lambda k: cells[cols[k]] if cols.get(k) is not None and cols[k] < len(cells) else ""
+        kind_cell = get("type")
+        kind = ("drawing" if "DRAW" in kind_cell.upper() else "image" if ("🖼" in kind_cell or "IMAGE" in kind_cell.upper())
+                else "video" if ("🎬" in kind_cell or "VIDEO" in kind_cell.upper()) else "")
+        prompt = get("prompt") or max(cells, key=len, default="")
+        out.append({"num": re.sub(r"\D", "", get("num")), "time": get("time"), "start": get("start"),
+                    "end": get("end"), "kind": kind, "prompt": prompt})
+    return out
+
+
+def plain_prompt(prompt: str) -> str:
+    """A generator-ready prompt: no markdown marks, <br> tags or escaped pipes."""
+    p = prompt.replace("\\|", "/").replace('\\"', '"').strip().strip('"\'`')
+    p = re.sub(r"^(?:🎬|🖼️)?\s*(?:Video|Image)\s*\|?\s*", "", p, flags=re.IGNORECASE)
+    p = re.sub(r"\*\*|__|<br\s*/?>", " ", p)
+    return re.sub(r"\s{2,}", " ", p).replace(" :", ":").strip()
+
+
+def fill_broll_rows(package_text: str, broll_table: str) -> str:
+    """Storyboard B-ROLL rows that name "B-roll #N" get the approved prompt N copied in."""
+    prompts = {r["num"]: plain_prompt(r["prompt"]).replace("|", "/") for r in broll_rows(broll_table) if r["num"]}
+    if not prompts:
+        return package_text
+    out, in_storyboard = [], False
+    for line in package_text.splitlines(keepends=True):
+        if _is_part_heading(line.rstrip("\n")):
+            in_storyboard = "INTEGRATED PRODUCTION STORYBOARD" in line.upper()
+        elif in_storyboard and line.lstrip().startswith("|") and "B-ROLL" in line.upper():
+            line = re.sub(r"B-?roll\s*#\s*(\d+)",
+                          lambda m: prompts.get(m.group(1), m.group(0)), line, flags=re.IGNORECASE)
+        out.append(line)
+    return "".join(out)
 
 
 _META_LINE = re.compile(r"^\s*[*_]*[A-Za-z][A-Za-z0-9 /&()\-]{1,40}[*_]*\s*:")
@@ -383,22 +452,30 @@ def filming_script(script: str) -> str:
 
 
 def table_rows(block: str) -> list:
-    """Data rows of the first markdown table in block, as lists of cells."""
-    rows, seen_header = [], False
+    """Data rows of the first markdown table in block, as lists of cells. A table the
+    model split with blank lines, sub-headings (#### ACT 2) or a repeated header row
+    is read as one; a different table after it is not."""
+    rows, header, last_pipe = [], None, None
     for line in (block or "").splitlines():
         s = line.strip()
         if not s.startswith("|"):
-            if seen_header and rows:
-                break
             continue
         # Split on unescaped pipes only; models often escape pipes inside a cell as \|
         cells = [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", s.strip().strip("|"))]
         if all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
-            seen_header = True
+            this_header = [c.lower() for c in (last_pipe or [])]
+            if header is None:
+                header = this_header
+            else:
+                if rows and rows[-1] is last_pipe:
+                    rows.pop()              # that line was the next table's header, not data
+                if this_header != header:
+                    break                   # a different table starts here
+            last_pipe = None
             continue
-        if not seen_header:
-            continue  # header row
-        rows.append(cells)
+        if header is not None and [c.lower() for c in cells] != header:
+            rows.append(cells)
+        last_pipe = cells
     return rows
 
 
@@ -435,14 +512,23 @@ def parse_video_sections(text: str) -> list:
     return out
 
 
+_AR_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+
+
 def _parse_duration(s: str) -> int:
-    s = (s or "").lower()
+    """'1:30', '1m 40s', '1.5 min', '90 sec', '45 ثانية', 'دقيقة ونص' → seconds."""
+    s = (s or "").lower().translate(_AR_DIGITS)
     m = re.search(r"(\d+):(\d{1,2})", s)
     if m:
         return int(m.group(1)) * 60 + int(m.group(2))
-    mins = re.search(r"(\d+)\s*m", s)
-    secs = re.search(r"(\d+)\s*s", s)
-    return (int(mins.group(1)) * 60 if mins else 0) + (int(secs.group(1)) if secs else 0)
+    mins = re.search(r"(\d+(?:\.\d+)?)\s*(?:m\b|min|mins|minute|minutes|دقيقة|دقائق|دقايق|د\b)", s)
+    secs = re.search(r"(\d+(?:\.\d+)?)\s*(?:s\b|sec|secs|second|seconds|ثانية|ثواني|ثوان|ث\b)", s)
+    total = (float(mins.group(1)) * 60 if mins else 0) + (float(secs.group(1)) if secs else 0)
+    if not mins and re.search(r"دقيقة\s*و\s*نص", s):
+        total += 90
+    elif not mins and re.search(r"(?<!\d\s)دقيقة", s) and not secs:
+        total += 60
+    return int(round(total))
 
 
 def check_chapter_titles(sections: list) -> list:
@@ -474,6 +560,10 @@ def chapter_lines(sections: list) -> list:
     return lines
 
 
+# An old chapter line in any form: "0:00 …", "- 0:00 …", "**0:00** …", "[00:00]", Arabic digits.
+_CHAPTER_LINE = re.compile(r"^\s*(?:[-*•]\s*)?(?:\*\*)?\[?[\d٠-٩]{1,2}:[\d٠-٩]{2}")
+
+
 def rebuild_description_chapters(text: str) -> str:
     """Replaces the chapter list inside the SEO description with one built from
     the VIDEO SECTIONS table, so titles always match and the first is 0:00."""
@@ -484,7 +574,7 @@ def rebuild_description_chapters(text: str) -> str:
     for i, line in enumerate(lines):
         if "(Chapters)" in line or "الفصول" in line and line.strip().startswith("⏱"):
             j = i + 1
-            while j < len(lines) and (not lines[j].strip() or re.match(r"^\s*\[?\d{1,2}:\d{2}", lines[j]) or lines[j].strip().startswith("[")):
+            while j < len(lines) and (not lines[j].strip() or _CHAPTER_LINE.match(lines[j]) or lines[j].strip().startswith("[")):
                 if lines[j].strip() == "" and j > i + 1:
                     break
                 j += 1
@@ -618,6 +708,15 @@ def production_warning(state: Optional[dict]) -> str:
             + (". Still to fix by hand: " + " · ".join(left) if left else "."))
 
 
+def package_warning(state: Optional[dict]) -> str:
+    """One line when the assembled document still failed its own checks after the retries."""
+    left = (state or {}).get("final_package_issues") or []
+    if not left:
+        return ""
+    return ("⚠️ The final document still has problems after its retries (fix by hand or re-run): "
+            + " · ".join(str(i)[:220] for i in left[:6]))
+
+
 def build_editing_workbook(final_package: str, state: Optional[dict] = None) -> str:
     """Reorders final_package into the editing workflow. Raises on unexpected
     structure; the caller falls back to the original package."""
@@ -645,8 +744,10 @@ def build_editing_workbook(final_package: str, state: Optional[dict] = None) -> 
     text_guide = take("TEXT ANIMATION")
     broll_detail = take("AI B-ROLL")
     integration = take("INTEGRATION DATA")
-    leftovers = [(h, _strip_rules(b)) for i, (h, b) in enumerate(sections)
-                 if i not in used and h and _strip_rules(b)]
+    # Anything not placed above stays in the appendix — including text the model
+    # put before the first part heading.
+    leftovers = [(h or "### OTHER NOTES", _strip_rules(b)) for i, (h, b) in enumerate(sections)
+                 if i not in used and len(_strip_rules(b)) > 20]
 
     if not script[1] or not storyboard[1]:
         raise ValueError("production script or storyboard section missing")
@@ -672,7 +773,7 @@ def build_editing_workbook(final_package: str, state: Optional[dict] = None) -> 
               "A ⚠️ before a cue means it was not found word-for-word in the script: search for the nearest sentence.")
 
     # ── Overview
-    for warning in (quality_warning(state), production_warning(state)):
+    for warning in (quality_warning(state), production_warning(state), package_warning(state)):
         if warning:
             md += ["", f"> {warning}"]
     md += ["", "## 0 · OVERVIEW", "", re.sub(r"^#{1,3}(?=\s)", "####", meta[1], flags=re.MULTILINE) or _empty()]

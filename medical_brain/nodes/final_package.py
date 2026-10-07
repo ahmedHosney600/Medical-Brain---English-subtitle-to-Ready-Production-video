@@ -229,18 +229,7 @@ def _audit_part2(text: str, script: str = "") -> list:
     if "INTEGRATED PRODUCTION STORYBOARD" not in text:
         issues.append("MISSING: The INTEGRATED PRODUCTION STORYBOARD section is absent entirely.")
     else:
-        start_idx = text.find("INTEGRATED PRODUCTION STORYBOARD")
-        end_idx = text.find("TRANSITION MAP", start_idx)
-        if end_idx == -1:
-            end_idx = start_idx + 8000
-        storyboard_block = text[start_idx:end_idx]
-        data_rows = [
-            line for line in storyboard_block.split("\n")
-            if line.startswith("|")
-            and not line.startswith("|---|")
-            and "Timecode" not in line
-            and "START CUE" not in line
-        ]
+        data_rows = ew.parse_storyboard(text)
         if len(data_rows) < 15:
             issues.append(
                 f"THIN STORYBOARD: Only {len(data_rows)} rows found. "
@@ -376,7 +365,7 @@ CRITICAL: Copy the APPROVED TITLE OPTIONS and APPROVED THUMBNAIL CONCEPTS throug
         part1 = _repair_cues(part1, ew.production_script(part1), "Part1")
         issues_1 = _audit_part1(part1, script_is_verified=bool(verified_script))
         if best_1 is None or len(issues_1) < best_1[0]:
-            best_1 = (len(issues_1), part1)
+            best_1 = (len(issues_1), part1, issues_1)
         if not issues_1:
             print(f"  [final_package Part1] OK on attempt {attempt + 1}")
             break
@@ -402,13 +391,13 @@ CRITICAL: Copy the APPROVED TITLE OPTIONS and APPROVED THUMBNAIL CONCEPTS throug
 PRODUCTION SCRIPT (copy START CUE / END CUE words exactly from here — spoken words only):
 {filmed_script}
 
-TRANSITION DESIGN MAP (reproduce in full, add SB# cross-references):
+TRANSITION DESIGN MAP (put every transition in the storyboard; the map itself is inserted by code):
 {state.get("transition_design", "")}
 
-TEXT ANIMATION & OVERLAY GUIDE (reproduce in full, add SB# cross-references):
+TEXT ANIMATION & OVERLAY GUIDE (put every element and drawing in the storyboard; the guide itself is inserted by code):
 {state.get("text_animation_overlay", "")}
 
-AI B-ROLL GENERATION PROMPTS (copy the FULL prompt into each storyboard B-ROLL row; the detail table itself is inserted by code):
+AI B-ROLL GENERATION PROMPTS (each storyboard B-ROLL row names its B-roll #; code copies the approved prompt in):
 {state.get("broll_prompts", "")}
 
 PRODUCTION QUALITY CRITIQUE: {state.get("production_critique_output", "")}
@@ -419,12 +408,15 @@ PLATFORM: {state.get("target_platform", "")}
 RULES:
 1. Storyboard: 25-40 rows, full video 0:00 to outro.
 2. START CUE / END CUE: 4-8 consecutive spoken words copied exactly from the Production Script above, unique in the script, never stage directions or placeholders.
-3. B-ROLL storyboard rows: write FULL AI prompt inline - NEVER "[Full Prompt in SB]" or any shortcut.
-4. B-Roll detail section: write only its heading and the placeholder line — the approved table is inserted by code."""
+3. B-ROLL storyboard rows: write "B-roll #N" (the number in the B-roll table) — code copies the full approved prompt into the row.
+4. TRANSITION MAP, TEXT ANIMATION & OVERLAY GUIDE and AI B-ROLL GENERATION PROMPTS: write only each heading and its placeholder line — the approved versions are inserted by code."""
 
     # The B-roll table the production loop approved goes in whole: a retyped copy
     # lost half its rows in one run (and the export files are built from it).
     approved_broll = ew.approved_broll_table(state.get("broll_prompts", ""))
+    approved_parts = [("TRANSITION MAP", ew.embedded_part(state.get("transition_design", ""))),
+                      ("TEXT ANIMATION & OVERLAY GUIDE", ew.embedded_part(state.get("text_animation_overlay", ""))),
+                      ("AI B-ROLL GENERATION PROMPTS", approved_broll)]
     part2 = ""
     best_2 = None
     correction_note_2 = ""
@@ -433,12 +425,14 @@ RULES:
         if correction_note_2:
             user_prompt_2 += f"\n\n⚠️ CORRECTION REQUIRED (attempt {attempt + 1}):\n{correction_note_2}"
         part2 = call_llm(system_prompt_2, user_prompt_2, temperature=0.3, max_tokens=12000)
-        if approved_broll:
-            part2 = ew.replace_section(part2, "AI B-ROLL GENERATION PROMPTS", approved_broll, before="INTEGRATION DATA")
+        for key, body in approved_parts:
+            if body:
+                part2 = ew.replace_section(part2, key, body, before="INTEGRATION DATA")
+        part2 = ew.fill_broll_rows(part2, approved_broll)
         part2 = _repair_cues(part2, filmed_script, "Part2")
         issues_2 = _audit_part2(part2, filmed_script)
         if best_2 is None or len(issues_2) < best_2[0]:
-            best_2 = (len(issues_2), part2)
+            best_2 = (len(issues_2), part2, issues_2)
         if not issues_2:
             print(f"  [final_package Part2] OK on attempt {attempt + 1}")
             break
@@ -452,4 +446,6 @@ RULES:
     final_package = part1 + "\n\n---\n\n" + part2
     # Models sometimes double a heading's marks ("#### #### A/B Test Set").
     final_package = re.sub(r"^(#{1,6})\s+#{1,6}\s+", r"\1 ", final_package, flags=re.MULTILINE)
-    return {"final_package": final_package}
+    # What the best attempts still got wrong, for the warning at the top of the workbook.
+    left = [f"Part 1: {i}" for i in best_1[2]] + [f"Part 2: {i}" for i in best_2[2]]
+    return {"final_package": final_package, "final_package_issues": left}

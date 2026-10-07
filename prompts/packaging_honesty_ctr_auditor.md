@@ -32,6 +32,7 @@ OUTPUT — ONLY valid JSON:
   "recommended_title": "The single strongest title",
   "ab_test_titles": ["title 1", "title 2", "title 3"],
   "ab_test_thumbnails": ["Concept N — one-line reason", "Concept N — ...", "Concept N — ..."],
-  "top_promise_delivery_score": 0
+  "lowest_ab_promise_delivery_score": 0
 }
 ```
+lowest_ab_promise_delivery_score = the LOWEST promise-delivery score among the 3 A/B test titles (the gate needs every one ≥ 9).
