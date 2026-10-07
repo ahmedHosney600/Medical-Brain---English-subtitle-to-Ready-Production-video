@@ -1,3 +1,4 @@
-llm_keys.env
-__pycache__/
+*.pyc
 .DS_Store
+__pycache__/
+llm_keys.env
