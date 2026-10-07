@@ -1,0 +1,40 @@
+{
+  "mode": "hybrid",
+  "setup": "gemini:gemini-3-flash-preview writes; medical_truth_verifier → deepseek:deepseek-flash, fidelity_auditor → deepseek:deepseek-flash, self_critique → deepseek:deepseek-flash, packaging_honesty_ctr_auditor → deepseek:deepseek-flash, production_quality_critique → deepseek:deepseek-flash",
+  "calls": {
+    "gemini:gemini-3-flash-preview": 32,
+    "deepseek:deepseek-flash": 12
+  },
+  "node_models": {
+    "source_script_analyzer": "gemini:gemini-3-flash-preview",
+    "seo_keyword_researcher": "gemini:gemini-3-flash-preview",
+    "strategy_planner": "gemini:gemini-3-flash-preview",
+    "hook_writer": "gemini:gemini-3-flash-preview",
+    "body_restructurer": "gemini:gemini-3-flash-preview",
+    "translation_fidelity_auditor": "gemini:gemini-3-flash-preview",
+    "cta_retention_writer": "gemini:gemini-3-flash-preview",
+    "dialect_warmth_layer": "gemini:gemini-3-flash-preview",
+    "fidelity_auditor": "deepseek:deepseek-flash",
+    "script_refinement": "gemini:gemini-3-flash-preview",
+    "medical_truth_verifier": "deepseek:deepseek-flash",
+    "self_critique": "deepseek:deepseek-flash",
+    "packaging_creative_director": "gemini:gemini-3-flash-preview",
+    "packaging_generator": "gemini:gemini-3-flash-preview",
+    "packaging_honesty_ctr_auditor": "deepseek:deepseek-flash",
+    "transition_designer": "gemini:gemini-3-flash-preview",
+    "text_animation_overlay_designer": "gemini:gemini-3-flash-preview",
+    "broll_prompt_generator": "gemini:gemini-3-flash-preview",
+    "production_quality_critique": "deepseek:deepseek-flash",
+    "final_script_package": "gemini:gemini-3-flash-preview",
+    "shorts_moment_identifier": "gemini:gemini-3-flash-preview",
+    "shorts_script_extractor": "gemini:gemini-3-flash-preview",
+    "shorts_caption_packager": "gemini:gemini-3-flash-preview",
+    "shorts_quality_gate": "gemini:gemini-3-flash-preview"
+  },
+  "unavailable": {},
+  "events": [
+    "Mode: hybrid · gemini:gemini-3-flash-preview writes; medical_truth_verifier → deepseek:deepseek-flash, fidelity_auditor → deepseek:deepseek-flash, self_critique → deepseek:deepseek-flash, packaging_honesty_ctr_auditor → deepseek:deepseek-flash, production_quality_critique → deepseek:deepseek-flash",
+    "✅ gemini:gemini-3-flash-preview",
+    "✅ deepseek:deepseek-flash"
+  ]
+}

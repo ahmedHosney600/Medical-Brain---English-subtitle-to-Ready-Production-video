@@ -1,0 +1,5 @@
+a hand with a black marker draws the axes, then the curve, then the blue shading, then the red boundary lines, static camera, white background, no text appears, 10s
+
+a hand with a black marker draws the horizontal axis, then the tick marks, then the irregular wave stopping at the 28s mark, static camera, white background, no text appears, 12s
+
+a hand with a black marker draws the dashed red line, then the whistle shape, then the large blue question mark, static camera, white background, no text appears, 10s
