@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nlmSearchResult>
+  <term>staying hydrated during Ramadan to avoid cramps site:who.int</term>
+  <count>0</count>
+  <spellingCorrection>staying dehydrated during Ramadan to avoid cramps host:"who.int"</spellingCorrection>
+</nlmSearchResult>

@@ -1,0 +1,1 @@
+{"version":"6.9","hitCount":0,"request":{"queryString":"(stretch duration force protocol abort acute muscle cramp trial) AND PUB_YEAR:[2016 TO 2026] AND HAS_ABSTRACT:y","resultType":"core","cursorMark":"*","pageSize":6,"sort":"","synonym":false},"resultList":{"result":[]}}

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nlmSearchResult>
+  <term>sports drinks electrolytes sweating cramps ACSM</term>
+  <count>0</count>
+  <spellingCorrection>sports drinks electrolytes sweating cramps sacs</spellingCorrection>
+</nlmSearchResult>

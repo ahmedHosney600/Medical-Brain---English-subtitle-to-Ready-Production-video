@@ -1,0 +1,1 @@
+{"version":"6.9","hitCount":0,"request":{"queryString":"(nocturnal leg cramps pathophysiology sleep posture plantarflexion shortened muscle) AND PUB_YEAR:[2016 TO 2026] AND HAS_ABSTRACT:y","resultType":"core","cursorMark":"*","pageSize":6,"sort":"","synonym":false},"resultList":{"result":[]}}

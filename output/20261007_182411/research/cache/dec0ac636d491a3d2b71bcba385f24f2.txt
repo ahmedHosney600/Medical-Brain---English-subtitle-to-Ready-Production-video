@@ -1,0 +1,1 @@
+{"version":"6.9","hitCount":0,"request":{"queryString":"(antagonist muscle contraction versus passive stretching acute cramp relief randomized trial) AND PUB_YEAR:[2016 TO 2026] AND HAS_ABSTRACT:y","resultType":"core","cursorMark":"*","pageSize":6,"sort":"","synonym":false},"resultList":{"result":[]}}

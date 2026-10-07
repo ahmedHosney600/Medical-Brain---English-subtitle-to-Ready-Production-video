@@ -1,0 +1,1 @@
+{"version":"6.9","hitCount":0,"request":{"queryString":"(quinine leg cramps FDA boxed warning MHRA safety recommendation) AND PUB_YEAR:[2016 TO 2026] AND HAS_ABSTRACT:y","resultType":"core","cursorMark":"*","pageSize":6,"sort":"","synonym":false},"resultList":{"result":[]}}

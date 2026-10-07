@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nlmSearchResult>
+  <term>difference between muscle cramp and muscle spasm site:mayoclinic.org</term>
+  <count>0</count>
+</nlmSearchResult>

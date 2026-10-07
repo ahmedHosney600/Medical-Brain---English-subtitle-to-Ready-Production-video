@@ -1,0 +1,305 @@
+<?xml version="1.0" ?>
+<!DOCTYPE PubmedArticleSet PUBLIC "-//NLM//DTD PubMedArticle, 1st January 2025//EN" "https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_250101.dtd">
+<PubmedArticleSet>
+<PubmedArticle><MedlineCitation Status="MEDLINE" Owner="NLM" IndexingMethod="Manual"><PMID Version="1">27159592</PMID><DateCompleted><Year>2017</Year><Month>06</Month><Day>27</Day></DateCompleted><DateRevised><Year>2022</Year><Month>04</Month><Day>08</Day></DateRevised><Article PubModel="Print-Electronic"><Journal><ISSN IssnType="Electronic">1097-4598</ISSN><JournalIssue CitedMedium="Internet"><Volume>54</Volume><Issue>2</Issue><PubDate><Year>2016</Year><Month>Aug</Month></PubDate></JournalIssue><Title>Muscle &amp; nerve</Title><ISOAbbreviation>Muscle Nerve</ISOAbbreviation></Journal><ArticleTitle>A narrative review of exercise-associated muscle cramps: Factors that contribute to neuromuscular fatigue and management implications.</ArticleTitle><Pagination><StartPage>177</StartPage><EndPage>185</EndPage><MedlinePgn>177-85</MedlinePgn></Pagination><ELocationID EIdType="doi" ValidYN="Y">10.1002/mus.25176</ELocationID><Abstract><AbstractText>Although exercise-associated muscle cramps (EAMC) are highly prevalent among athletic populations, the etiology and most effective management strategies are still unclear. The aims of this narrative review are 3-fold: (1) briefly summarize the evidence regarding EAMC etiology; (2) describe the risk factors and possible physiological mechanisms associated with neuromuscular fatigue and EAMC; and (3) report the current evidence regarding prevention of, and treatment for, EAMC. Based on the findings of several large prospective and experimental investigations, the available evidence indicates that EAMC is multifactorial in nature and stems from an imbalance between excitatory drive from muscle spindles and inhibitory drive from Golgi tendon organs to the alpha motor neurons rather than dehydration or electrolyte deficits. This imbalance is believed to stem from neuromuscular overload and fatigue. In concert with these findings, the most successful treatment for an acute bout of EAMC is stretching, whereas auspicious methods of prevention include efforts that delay exercise-induced fatigue. Muscle Nerve 54: 177-185, 2016.</AbstractText><CopyrightInformation>&#xa9; 2016 Wiley Periodicals, Inc.</CopyrightInformation></Abstract><AuthorList CompleteYN="Y"><Author ValidYN="Y"><LastName>Nelson</LastName><ForeName>Nicole L</ForeName><Initials>NL</Initials><AffiliationInfo><Affiliation>Clinical and Applied Movement Sciences, Brooks College of Health, University of North Florida, 1 UNF Drive, Jacksonville, Florida, 32224-2673, USA.</Affiliation></AffiliationInfo></Author><Author ValidYN="Y"><LastName>Churilla</LastName><ForeName>James R</ForeName><Initials>JR</Initials><AffiliationInfo><Affiliation>Clinical and Applied Movement Sciences, Brooks College of Health, University of North Florida, 1 UNF Drive, Jacksonville, Florida, 32224-2673, USA.</Affiliation></AffiliationInfo></Author></AuthorList><Language>eng</Language><PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType><PublicationType UI="D016454">Review</PublicationType></PublicationTypeList><ArticleDate DateType="Electronic"><Year>2016</Year><Month>05</Month><Day>27</Day></ArticleDate></Article><MedlineJournalInfo><Country>United States</Country><MedlineTA>Muscle Nerve</MedlineTA><NlmUniqueID>7803146</NlmUniqueID><ISSNLinking>0148-639X</ISSNLinking></MedlineJournalInfo><CitationSubset>IM</CitationSubset><MeshHeadingList><MeshHeading><DescriptorName UI="D000367" MajorTopicYN="N">Age Factors</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D049628" MajorTopicYN="N">Body Size</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D019468" MajorTopicYN="Y">Disease Management</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D006801" MajorTopicYN="N">Humans</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D009120" MajorTopicYN="Y">Muscle Cramp</DescriptorName><QualifierName UI="Q000175" MajorTopicYN="N">diagnosis</QualifierName><QualifierName UI="Q000453" MajorTopicYN="N">epidemiology</QualifierName><QualifierName UI="Q000628" MajorTopicYN="N">therapy</QualifierName></MeshHeading><MeshHeading><DescriptorName UI="D018763" MajorTopicYN="N">Muscle Fatigue</DescriptorName><QualifierName UI="Q000502" MajorTopicYN="Y">physiology</QualifierName></MeshHeading><MeshHeading><DescriptorName UI="D012737" MajorTopicYN="N">Sex Factors</DescriptorName></MeshHeading></MeshHeadingList><KeywordList Owner="NOTNLM"><Keyword MajorTopicYN="N">dehydration</Keyword><Keyword MajorTopicYN="N">electrolyte deficit</Keyword><Keyword MajorTopicYN="N">muscle fatigue</Keyword><Keyword MajorTopicYN="N">muscular cramps</Keyword><Keyword MajorTopicYN="N">neuromuscular control</Keyword></KeywordList></MedlineCitation><PubmedData><History><PubMedPubDate PubStatus="accepted"><Year>2016</Year><Month>5</Month><Day>3</Day></PubMedPubDate><PubMedPubDate PubStatus="entrez"><Year>2016</Year><Month>5</Month><Day>10</Day><Hour>6</Hour><Minute>0</Minute></PubMedPubDate><PubMedPubDate PubStatus="pubmed"><Year>2016</Year><Month>5</Month><Day>10</Day><Hour>6</Hour><Minute>0</Minute></PubMedPubDate><PubMedPubDate PubStatus="medline"><Year>2017</Year><Month>6</Month><Day>28</Day><Hour>6</Hour><Minute>0</Minute></PubMedPubDate></History><PublicationStatus>ppublish</PublicationStatus><ArticleIdList><ArticleId IdType="pubmed">27159592</ArticleId><ArticleId IdType="doi">10.1002/mus.25176</ArticleId></ArticleIdList></PubmedData></PubmedArticle><PubmedArticle><MedlineCitation Status="MEDLINE" Owner="NLM" IndexingMethod="Manual"><PMID Version="1">28796278</PMID><DateCompleted><Year>2019</Year><Month>02</Month><Day>12</Day></DateCompleted><DateRevised><Year>2019</Year><Month>02</Month><Day>15</Day></DateRevised><Article PubModel="Print-Electronic"><Journal><ISSN IssnType="Electronic">1097-4598</ISSN><JournalIssue CitedMedium="Internet"><Volume>57</Volume><Issue>3</Issue><PubDate><Year>2018</Year><Month>Mar</Month></PubDate></JournalIssue><Title>Muscle &amp; nerve</Title><ISOAbbreviation>Muscle Nerve</ISOAbbreviation></Journal><ArticleTitle>Prophylactic stretching does not reduce cramp susceptibility.</ArticleTitle><Pagination><StartPage>473</StartPage><EndPage>477</EndPage><MedlinePgn>473-477</MedlinePgn></Pagination><ELocationID EIdType="doi" ValidYN="Y">10.1002/mus.25762</ELocationID><Abstract><AbstractText Label="INTRODUCTION">Some clinicians advocate stretching to prevent muscle cramps. It is unknown whether static or proprioceptive neuromuscular facilitation (PNF) stretching increases cramp threshold frequency (TF<sub>c</sub> ), a quantitative measure of cramp susceptibility.</AbstractText><AbstractText Label="METHODS">Fifteen individuals completed this randomized, counterbalanced, cross-over study. We measured passive hallux range of motion (ROM) and then performed 3 minutes of either static stretching, PNF stretching (hold-relax-with agonist contraction), or no stretching. ROM was reassessed and TF<sub>c</sub> was measured.</AbstractText><AbstractText Label="RESULTS">PNF stretching increased hallux extension (pre-PNF 81 &#xb1; 11&#xb0;, post-PNF 90 &#xb1; 10&#xb0;; P &lt; 0.05) but not hallux flexion (pre-PNF 40 &#xb1; 7&#xb0;, post-PNF 40 &#xb1; 7&#xb0;; P &gt; 0.05). Static stretching increased hallux extension (pre-static 80 &#xb1; 11&#xb0;, post-static 88 &#xb1; 9&#xb0;; P &lt; 0.05) but not hallux flexion (pre-static 38 &#xb1; 9&#xb0;, post-static 39 &#xb1; 8&#xb0;; P &gt; 0.05). No ROM changes occurred with no stretching (P &gt; 0.05). TF<sub>c</sub> was unaffected by stretching (no stretching 18 &#xb1; 7 Hz, PNF 16 &#xb1; 4 Hz, static 16 &#xb1; 5 Hz; P = 0.37).</AbstractText><AbstractText Label="DISCUSSION">Static and PNF stretching increased hallux extension, but neither increased TF<sub>c</sub> . Acute stretching may not prevent muscle cramping. Muscle Nerve 57: 473-477, 2018.</AbstractText><CopyrightInformation>&#xa9; 2017 Wiley Periodicals, Inc.</CopyrightInformation></Abstract><AuthorList CompleteYN="Y"><Author ValidYN="Y"><LastName>Miller</LastName><ForeName>Kevin C</ForeName><Initials>KC</Initials><AffiliationInfo><Affiliation>School of Rehabilitation and Medical Sciences, Central Michigan University, 1208 Health Professions Building, Mount Pleasant, Michigan, 48859, USA.</Affiliation></AffiliationInfo></Author><Author ValidYN="Y"><LastName>Harsen</LastName><ForeName>James D</ForeName><Initials>JD</Initials><AffiliationInfo><Affiliation>School of Rehabilitation and Medical Sciences, Central Michigan University, 1208 Health Professions Building, Mount Pleasant, Michigan, 48859, USA.</Affiliation></AffiliationInfo></Author><Author ValidYN="Y"><LastName>Long</LastName><ForeName>Blaine C</ForeName><Initials>BC</Initials><AffiliationInfo><Affiliation>School of Rehabilitation and Medical Sciences, Central Michigan University, 1208 Health Professions Building, Mount Pleasant, Michigan, 48859, USA.</Affiliation></AffiliationInfo></Author></AuthorList><Language>eng</Language><PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType><PublicationType UI="D016449">Randomized Controlled Trial</PublicationType><PublicationType UI="D013485">Research Support, Non-U.S. Gov't</PublicationType></PublicationTypeList><ArticleDate DateType="Electronic"><Year>2017</Year><Month>08</Month><Day>23</Day></ArticleDate></Article><MedlineJournalInfo><Country>United States</Country><MedlineTA>Muscle Nerve</MedlineTA><NlmUniqueID>7803146</NlmUniqueID><ISSNLinking>0148-639X</ISSNLinking></MedlineJournalInfo><CitationSubset>IM</CitationSubset><MeshHeadingList><MeshHeading><DescriptorName UI="D000328" MajorTopicYN="N">Adult</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D018592" MajorTopicYN="N">Cross-Over Studies</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D005260" MajorTopicYN="N">Female</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D006801" MajorTopicYN="N">Humans</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D008297" MajorTopicYN="N">Male</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D009120" MajorTopicYN="N">Muscle Cramp</DescriptorName><QualifierName UI="Q000517" MajorTopicYN="Y">prevention &amp; control</QualifierName></MeshHeading><MeshHeading><DescriptorName UI="D052580" MajorTopicYN="Y">Muscle Stretching Exercises</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D018482" MajorTopicYN="N">Muscle, Skeletal</DescriptorName><QualifierName UI="Q000502" MajorTopicYN="Y">physiology</QualifierName></MeshHeading><MeshHeading><DescriptorName UI="D016059" MajorTopicYN="N">Range of Motion, Articular</DescriptorName><QualifierName UI="Q000502" MajorTopicYN="Y">physiology</QualifierName></MeshHeading><MeshHeading><DescriptorName UI="D016896" MajorTopicYN="N">Treatment Outcome</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D055815" MajorTopicYN="N">Young Adult</DescriptorName></MeshHeading></MeshHeadingList><KeywordList Owner="NOTNLM"><Keyword MajorTopicYN="N">electrical stimulation</Keyword><Keyword MajorTopicYN="N">flexor hallucis brevis</Keyword><Keyword MajorTopicYN="N">inhibition</Keyword><Keyword MajorTopicYN="N">proprioceptive neuromuscular facilitation</Keyword><Keyword MajorTopicYN="N">range of motion</Keyword><Keyword MajorTopicYN="N">static stretching</Keyword><Keyword MajorTopicYN="N">threshold frequency</Keyword></KeywordList></MedlineCitation><PubmedData><History><PubMedPubDate PubStatus="received"><Year>2017</Year><Month>1</Month><Day>19</Day></PubMedPubDate><PubMedPubDate PubStatus="revised"><Year>2017</Year><Month>7</Month><Day>22</Day></PubMedPubDate><PubMedPubDate PubStatus="accepted"><Year>2017</Year><Month>8</Month><Day>5</Day></PubMedPubDate><PubMedPubDate PubStatus="pubmed"><Year>2017</Year><Month>8</Month><Day>11</Day><Hour>6</Hour><Minute>0</Minute></PubMedPubDate><PubMedPubDate PubStatus="medline"><Year>2019</Year><Month>2</Month><Day>13</Day><Hour>6</Hour><Minute>0</Minute></PubMedPubDate><PubMedPubDate PubStatus="entrez"><Year>2017</Year><Month>8</Month><Day>11</Day><Hour>6</Hour><Minute>0</Minute></PubMedPubDate></History><PublicationStatus>ppublish</PublicationStatus><ArticleIdList><ArticleId IdType="pubmed">28796278</ArticleId><ArticleId IdType="doi">10.1002/mus.25762</ArticleId></ArticleIdList></PubmedData></PubmedArticle><PubmedArticle><MedlineCitation Status="MEDLINE" Owner="NLM" IndexingMethod="Manual"><PMID Version="1">28796528</PMID><DateCompleted><Year>2018</Year><Month>06</Month><Day>04</Day></DateCompleted><DateRevised><Year>2022</Year><Month>04</Month><Day>08</Day></DateRevised><Article PubModel="Print-Electronic"><Journal><ISSN IssnType="Electronic">1938-162X</ISSN><JournalIssue CitedMedium="Internet"><Volume>52</Volume><Issue>10</Issue><PubDate><Year>2017</Year><Month>Oct</Month></PubDate></JournalIssue><Title>Journal of athletic training</Title><ISOAbbreviation>J Athl Train</ISOAbbreviation></Journal><ArticleTitle>Acute Passive Static Stretching and Cramp Threshold Frequency.</ArticleTitle><Pagination><StartPage>918</StartPage><EndPage>924</EndPage><MedlinePgn>918-924</MedlinePgn></Pagination><ELocationID EIdType="doi" ValidYN="Y">10.4085/1062-6050-52.7.03</ELocationID><Abstract><AbstractText Label="CONTEXT" NlmCategory="BACKGROUND">&#x2003; Exercise-associated muscle cramps are a common clinical problem for athletes.</AbstractText><AbstractText Label="OBJECTIVE" NlmCategory="OBJECTIVE">&#x2003; To determine whether acute passive static stretching altered cramp threshold frequency (CTF) of electrically induced muscle cramps.</AbstractText><AbstractText Label="DESIGN" NlmCategory="METHODS">&#x2003; Crossover study.</AbstractText><AbstractText Label="SETTING" NlmCategory="METHODS">&#x2003; Laboratory.</AbstractText><AbstractText Label="PATIENTS OR OTHER PARTICIPANTS" NlmCategory="METHODS">&#x2003; Seventeen healthy college-aged individuals.</AbstractText><AbstractText Label="INTERVENTION(S)" NlmCategory="METHODS">&#x2003; Stretching or no stretching.</AbstractText><AbstractText Label="MAIN OUTCOME MEASURE(S)" NlmCategory="METHODS">&#x2003; The independent variable was the static stretch versus the no-stretch condition, and the dependent variable was the CTF.</AbstractText><AbstractText Label="RESULTS" NlmCategory="RESULTS">&#x2003; The CTF increased in both the control (pretest: 18.12 &#xb1; 6.46 Hz, posttest: 19.65 &#xb1; 7.25 Hz; P = .033) and stretching (pretest: 18.94 &#xb1; 5.96 Hz, posttest: 20.47 &#xb1; 7.12 Hz; P = .049) groups. No difference between the groups was found (t<sub>15</sub> = 0.035, P = .97).</AbstractText><AbstractText Label="CONCLUSIONS" NlmCategory="CONCLUSIONS">&#x2003; Acute passive static stretching did not seem to increase the CTF.</AbstractText></Abstract><AuthorList CompleteYN="Y"><Author ValidYN="Y"><LastName>Panza</LastName><ForeName>Gino</ForeName><Initials>G</Initials><AffiliationInfo><Affiliation>George Mason University, Fairfax, VA.</Affiliation></AffiliationInfo></Author><Author ValidYN="Y"><LastName>Stadler</LastName><ForeName>Justin</ForeName><Initials>J</Initials><AffiliationInfo><Affiliation>Central Michigan University, Mount Pleasant.</Affiliation></AffiliationInfo></Author><Author ValidYN="Y"><LastName>Murray</LastName><ForeName>Donal</ForeName><Initials>D</Initials><AffiliationInfo><Affiliation>George Mason University, Fairfax, VA.</Affiliation></AffiliationInfo></Author><Author ValidYN="Y"><LastName>Lerma</LastName><ForeName>Nicholas</ForeName><Initials>N</Initials><AffiliationInfo><Affiliation>University of Wisconsin, Milwaukee.</Affiliation></AffiliationInfo></Author><Author ValidYN="Y"><LastName>Barrett</LastName><ForeName>Tomas</ForeName><Initials>T</Initials><AffiliationInfo><Affiliation>Central Michigan University, Mount Pleasant.</Affiliation></AffiliationInfo></Author><Author ValidYN="Y"><LastName>Pettit-Mee</LastName><ForeName>Ryan</ForeName><Initials>R</Initials><AffiliationInfo><Affiliation>Central Michigan University, Mount Pleasant.</Affiliation></AffiliationInfo></Author><Author ValidYN="Y"><LastName>Edwards</LastName><ForeName>Jeffrey E</ForeName><Initials>JE</Initials><AffiliationInfo><Affiliation>Central Michigan University, Mount Pleasant.</Affiliation></AffiliationInfo></Author></AuthorList><Language>eng</Language><PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType><PublicationType UI="D016449">Randomized Controlled Trial</PublicationType></PublicationTypeList><ArticleDate DateType="Electronic"><Year>2017</Year><Month>08</Month><Day>10</Day></ArticleDate></Article><MedlineJournalInfo><Country>United States</Country><MedlineTA>J Athl Train</MedlineTA><NlmUniqueID>9301647</NlmUniqueID><ISSNLinking>1062-6050</ISSNLinking></MedlineJournalInfo><CitationSubset>IM</CitationSubset><MeshHeadingList><MeshHeading><DescriptorName UI="D000328" MajorTopicYN="N">Adult</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D018592" MajorTopicYN="N">Cross-Over Studies</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D005260" MajorTopicYN="N">Female</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D006801" MajorTopicYN="N">Humans</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D008297" MajorTopicYN="N">Male</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D008465" MajorTopicYN="N">Mechanoreceptors</DescriptorName><QualifierName UI="Q000502" MajorTopicYN="N">physiology</QualifierName></MeshHeading><MeshHeading><DescriptorName UI="D009119" MajorTopicYN="N">Muscle Contraction</DescriptorName><QualifierName UI="Q000502" MajorTopicYN="Y">physiology</QualifierName></MeshHeading><MeshHeading><DescriptorName UI="D009120" MajorTopicYN="N">Muscle Cramp</DescriptorName><QualifierName UI="Q000503" MajorTopicYN="N">physiopathology</QualifierName><QualifierName UI="Q000517" MajorTopicYN="Y">prevention &amp; control</QualifierName></MeshHeading><MeshHeading><DescriptorName UI="D052580" MajorTopicYN="N">Muscle Stretching Exercises</DescriptorName><QualifierName UI="Q000379" MajorTopicYN="Y">methods</QualifierName></MeshHeading><MeshHeading><DescriptorName UI="D018482" MajorTopicYN="N">Muscle, Skeletal</DescriptorName><QualifierName UI="Q000502" MajorTopicYN="Y">physiology</QualifierName></MeshHeading></MeshHeadingList><KeywordList Owner="NOTNLM"><Keyword MajorTopicYN="N">Golgi tendon organ reflex response</Keyword><Keyword MajorTopicYN="N">electrically induced muscle cramps</Keyword><Keyword MajorTopicYN="N">&#x2003;exercise-associated muscle cramps</Keyword></KeywordList></MedlineCitation><PubmedData><History><PubMedPubDate PubStatus="pubmed"><Year>2017</Year><Month>8</Month><Day>11</Day><Hour>6</Hour><Minute>0</Minute></PubMedPubDate><PubMedPubDate PubStatus="medline"><Year>2018</Year><Month>6</Month><Day>5</Day><Hour>6</Hour><Minute>0</Minute></PubMedPubDate><PubMedPubDate PubStatus="entrez"><Year>2017</Year><Month>8</Month><Day>11</Day><Hour>6</Hour><Minute>0</Minute></PubMedPubDate><PubMedPubDate PubStatus="pmc-release"><Year>2018</Year><Month>10</Month><Day>1</Day></PubMedPubDate></History><PublicationStatus>ppublish</PublicationStatus><ArticleIdList><ArticleId IdType="pubmed">28796528</ArticleId><ArticleId IdType="pmc">PMC5687236</ArticleId><ArticleId IdType="doi">10.4085/1062-6050-52.7.03</ArticleId><ArticleId IdType="sici">attr-52-07-03</ArticleId></ArticleIdList><ReferenceList><Reference><Citation>
+Schwellnus MP, Derman EW, Noakes TD.
+Aetiology of skeletal muscle &#x201c;cramps&#x201d; during exercise: a novel hypothesis.
+<i>J Sports Sci</i>.
+1997;
+15
+3:
+277&#x2013;
+285.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">9232553</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Kantorowski PG, Hiller WDB, Garrett WE, Jr, Douglas PS, Smith R, O'Toole M.
+Cramping studies in 2600 endurance athletes [abstract].
+<i>Med Sci Sports Exerc</i>.
+1990;
+22
+2:
+S104.
+</Citation></Reference><Reference><Citation>
+Miller KC, Knight KL.
+Electrical stimulation cramp threshold frequency correlates well with the occurrence of skeletal muscle cramps.
+<i>Muscle Nerve</i>.
+2009;
+39
+3:
+364&#x2013;
+368.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">19208394</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Stone MB, Edwards JE, Babington JP, Ingersoll CD, Palmieri RM.
+Reliability of an electrical method to induce muscle cramp.
+<i>Muscle Nerve</i>.
+2003;
+27
+1:
+122&#x2013;
+123.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">12508307</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Miller KC, Knight KL.
+Pain and soreness associated with a percutaneous electrical stimulation muscle cramping protocol.
+<i>Muscle Nerve</i>.
+2007;
+36
+5:
+711&#x2013;
+714.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">17654560</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Miller KC, Mack GW, Knight KL., et al. 
+Three percent hypohydration does not affect threshold frequency of electrically induced cramps.
+<i>Med Sci Sports Exerc</i>.
+2010;
+42
+11:
+2056&#x2013;
+2063.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">20351595</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Braulick KW, Miller KC, Albrecht JM, Tucker JM, Deal JE.
+Significant and serious dehydration does not affect skeletal muscle cramp threshold frequency.
+<i>Br J Sports Med</i>.
+2013;
+47
+11:
+710&#x2013;
+714.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">23222192</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Miller KC, Mack GW, Knight KL.
+Gastric emptying after pickle-juice ingestion in rested, euhydrated humans.
+<i>J Athl Train</i>.
+2010;
+45
+6:
+601&#x2013;
+608.
+</Citation><ArticleIdList><ArticleId IdType="pmc">PMC2978012</ArticleId><ArticleId IdType="pubmed">21062184</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Miller KC, Mack G, Knight KL.
+Electrolyte and plasma changes after ingestion of pickle juice, water, and a common carbohydrate-electrolyte solution.
+<i>J Athl Train</i>.
+2009;
+44
+5:
+454&#x2013;
+461.
+</Citation><ArticleIdList><ArticleId IdType="pmc">PMC2742453</ArticleId><ArticleId IdType="pubmed">19771282</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Murray D, Miller KC, Edwards JE.
+Does a reduction in serum sodium concentration or serum potassium concentration increase the prevalence of exercise-associated muscle cramps?
+<i>J Sport Rehabil</i>.
+2016;
+25
+3:
+301&#x2013;
+304.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">25945453</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Miller KC, Stone MS, Huxel KC, Edwards JE.
+Exercise-associated muscle cramps: causes, treatment, and prevention.
+<i>Sports Health</i>.
+2010;
+2
+4:
+279&#x2013;
+283.
+</Citation><ArticleIdList><ArticleId IdType="pmc">PMC3445088</ArticleId><ArticleId IdType="pubmed">23015948</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Schwellnus MP.
+Cause of exercise associated muscle cramps (EAMC): altered neuromuscular control, dehydration or electrolyte depletion?
+<i>Br J Sports Med</i>.
+2009;
+43
+6:
+401&#x2013;
+408.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">18981039</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Jansen PH, Joosten EM, Vingerhoets HM.
+Muscle cramp: main theories as to aetiology.
+<i>Eur Arch Psychiatry Neurol Sci</i>.
+1990;
+239
+5:
+337&#x2013;
+342.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">2140785</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Layzer RB.
+The origin of muscle fasciculations and cramps.
+<i>Muscle Nerve</i>.
+1994;
+17
+11:
+1243&#x2013;
+1249.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">7935546</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Hutton RS, Nelson DL.
+Stretch sensitivity of Golgi tendon organs in fatigued gastrocnemius muscle.
+<i>Med Sci Sports Exerc</i>.
+1986;
+18
+1:
+69&#x2013;
+74.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">3959867</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Sulzer NU, Schwellnus MP, Noakes TD.
+Serum electrolytes in Ironman triathletes with exercise-associated muscle cramping.
+<i>Med Sci Sports Exerc</i>.
+2005;
+37
+7:
+1081&#x2013;
+1085.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">16015122</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Behm DG, Chaouachi A.
+A review of the acute effects of static and dynamic stretching on performance.
+<i>Eur J Appl Physiol</i>.
+2011;
+111
+11:
+2633&#x2013;
+2651.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">21373870</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Hayes BT, Harter RA, Widrick JJ, Williams DP, Hoffman MA, Hicks-Little CA.
+Lack of neuromuscular origins of adaptation after a long-term stretching program.
+<i>J Sport Rehabil</i>.
+2012;
+21
+2:
+99&#x2013;
+106.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">22387809</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Palmieri RM, Ingersoll CD, Hoffman MA.
+The Hoffmann reflex: methodologic considerations and applications for use in sports medicine and athletic training research.
+<i>J Athl Train</i>.
+2004;
+39
+3:
+268&#x2013;
+277.
+</Citation><ArticleIdList><ArticleId IdType="pmc">PMC522151</ArticleId><ArticleId IdType="pubmed">16558683</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Weir DE, Tingley J, Elder GCB.
+Acute passive stretching alters the mechanical properties of human plantar flexors and the optimal angle for maximal voluntary contraction.
+<i>Eur J Appl Physiol</i>.
+2005;
+93
+5&#x2013;6:
+614&#x2013;
+623.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">15578204</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Guissard N, Duchateau J.
+Effect of static stretch training on neural and mechanical properties of the human plantar-flexor muscles.
+<i>Muscle Nerve</i>.
+2004;
+29
+2:
+248&#x2013;
+255.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">14755490</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Avela J, Finni T, Liikavainio T, Niemel&#xe4; E, Komi PV.
+Neural and mechanical responses of the triceps surae muscle group after 1 h of repeated fast passive stretches.
+<i>J Appl Physiol (1985)</i>.
+2004;
+96
+6:
+2325&#x2013;
+2332.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">14966020</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Fowles JR, Sale DG, MacDougall JD.
+Reduced strength after passive stretch of the human plantarflexors.
+<i>J Appl Physiol (1985)</i>.
+2000;
+89
+3:
+1179&#x2013;
+1188.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">10956367</ArticleId></ArticleIdList></Reference><Reference><Citation>
+ACSM news releases.
+American College of Sports Medicine Web site.
+http://www.acsm.org/about-acsm/media-room/news-releases/2011/08/01/acsm-issues-new-recommendations-on-quantity-and-quality-of-exercise. Accessed July 14,
+2017.
+</Citation></Reference><Reference><Citation>
+Griffin LY.
+Neuromuscular training and injury prevention in sports.
+<i>Clin Orthop Relat Res</i>.
+2003;
+409:
+53&#x2013;
+60.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">12671485</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Bertolasi L, De Grandis D, Bongiovanni LG, Zanette GP, Gasperini M.
+The influence of muscular lengthening on cramps.
+<i>Ann Neurol</i>.
+1993;
+33
+2:
+176&#x2013;
+180.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">8434879</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Magnusson SP.
+Passive properties of human skeletal muscle during stretch maneuvers: a review.
+<i>Scand J Med Sci Sports</i>.
+1998;
+8
+2:
+65&#x2013;
+77.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">9564710</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Miller KC, Knight KL.
+Initial electrical stimulation frequency and cramp threshold frequency and force.
+<i>J Athl Train</i>.
+2012;
+47
+6:
+643&#x2013;
+647.
+</Citation><ArticleIdList><ArticleId IdType="pmc">PMC3499888</ArticleId><ArticleId IdType="pubmed">23182012</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Miller KC, Knight KL, Wilding SR, Stone MB.
+Duration of electrically induced muscle cramp increased by increasing stimulation frequency.
+<i>J Sport Rehabil</i>.
+2012;
+21
+2:
+182&#x2013;
+185.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">22104040</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Stone MB, Edwards JE, Huxel KC, Cordova ML, Ingersoll CD, Babington JP.
+Threshold frequency of an electrically induced cramp increases following a repeated, localized fatiguing exercise.
+<i>J Sports Sci</i>.
+2010;
+28
+4:
+399&#x2013;
+405.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">20131142</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Wellek S, Blettner M.
+On the proper use of the crossover design in clinical trials: part 18 of a series on evaluation of scientific publications.
+<i>Dtsch &#xc4;rztebl Int</i>.
+2012;
+109
+15:
+276&#x2013;
+281.
+</Citation><ArticleIdList><ArticleId IdType="pmc">PMC3345345</ArticleId><ArticleId IdType="pubmed">22567063</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Kraemer HC, Stice E, Kazdin A, Offord D, Kupfer D.
+How do risk factors work together? Mediators, moderators, and independent, overlapping, and proxy risk factors.
+<i>Am J Psychiatry</i>.
+2001;
+158
+6:
+848&#x2013;
+856.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">11384888</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Miller KC, Burne JA.
+Golgi tendon organ reflex inhibition following manually applied acute static stretching.
+<i>J Sports Sci</i>.
+2014;
+32
+15:
+1491&#x2013;
+1497.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">24716521</ArticleId></ArticleIdList></Reference><Reference><Citation>
+Minetto MA, Botter A, Ravenni R, Merletti R, De Grandis D.
+Reliability of a novel neurostimulation method to study involuntary muscle phenomena.
+<i>Muscle Nerve</i>.
+2008;
+37
+1:
+90&#x2013;
+100.
+</Citation><ArticleIdList><ArticleId IdType="pubmed">17912751</ArticleId></ArticleIdList></Reference></ReferenceList></PubmedData></PubmedArticle><PubmedArticle><MedlineCitation Status="MEDLINE" Owner="NLM" IndexingMethod="Automated"><PMID Version="1">38366084</PMID><DateCompleted><Year>2024</Year><Month>10</Month><Day>03</Day></DateCompleted><DateRevised><Year>2026</Year><Month>05</Month><Day>21</Day></DateRevised><Article PubModel="Print-Electronic"><Journal><ISSN IssnType="Electronic">1432-0460</ISSN><JournalIssue CitedMedium="Internet"><Volume>39</Volume><Issue>5</Issue><PubDate><Year>2024</Year><Month>Oct</Month></PubDate></JournalIssue><Title>Dysphagia</Title><ISOAbbreviation>Dysphagia</ISOAbbreviation></Journal><ArticleTitle>Pilot Study of Intensive Trismus Intervention Using Restorabite&#x2122; During Unilateral Adjuvant Radiation for Head and Neck Cancer.</ArticleTitle><Pagination><StartPage>864</StartPage><EndPage>871</EndPage><MedlinePgn>864-871</MedlinePgn></Pagination><ELocationID EIdType="doi" ValidYN="Y">10.1007/s00455-024-10668-4</ELocationID><Abstract><AbstractText>Trismus commonly arises after surgery for head and neck cancer (HNC) and its severity is potentiated by postoperative radiotherapy. While the benefit of trismus rehabilitation after surgery and radiotherapy is well established, the evidence during radiotherapy is less clear. This may be due to poor adherence to trismus exercises secondary to acute mucositis. This study assessed the feasibility of using a novel trismus device during adjuvant radiotherapy for HNC in patients with acute postoperative trismus. Prospective single-arm cohort feasibility study. Eligible patients had undergone surgery with curative intent for HNC, planned for adjuvant radiotherapy, and were suitable for trismus rehabilitation. Participants completed a 10-week exercise program using a novel jaw stretching device. Study outcomes were adherence, maximal incisal opening (MIO), and trismus-related function and quality of life scores, assessed at baseline, 10&#xa0;weeks, and 6&#xa0;months after commencing exercises. Nine patients diagnosed with trismus after primary surgery were recruited. The mean increase in MIO at 10&#xa0;weeks was 7.8&#xa0;mm (range -4 to 15&#xa0;mm, p&#x2009;=&#x2009;0.03), and at 6&#xa0;months was 10.6&#xa0;mm (range 1-26&#xa0;mm, p&#x2009;=&#x2009;0.03). Significant improvements were observed in trismus-related quality of life (Gothenburg Trismus Questionnaire; p&#x2009;=&#x2009;0.04). Adherence to the exercises was 100% in week 1-2, 67% in weeks 3-6, and 100% at 10&#xa0;weeks (1&#xa0;month post radiation). This study demonstrates the feasibility of using a novel jaw stretching device during adjuvant radiotherapy. Further evaluation is warranted to assess the effectiveness of early intervention and prevention of trismus during HNC radiotherapy.Level of Evidence: IV.</AbstractText><CopyrightInformation>&#xa9; 2024. The Author(s).</CopyrightInformation></Abstract><AuthorList CompleteYN="Y"><Author ValidYN="Y"><LastName>Charters</LastName><ForeName>Emma</ForeName><Initials>E</Initials><Identifier Source="ORCID">0000-0001-8246-210X</Identifier><AffiliationInfo><Affiliation>Department of Head and Neck Surgery, Chris O'Brien Lifehouse, 119-143 Missenden Road, Sydney, NSW, 2050, Australia. Emma.Charters@lh.org.au.</Affiliation></AffiliationInfo><AffiliationInfo><Affiliation>School of Health Sciences, Faculty of Medicine and Health, The University of Sydney, Sydney, NSW, Australia. Emma.Charters@lh.org.au.</Affiliation></AffiliationInfo></Author><Author ValidYN="Y"><LastName>Loy</LastName><ForeName>Jamie</ForeName><Initials>J</Initials><AffiliationInfo><Affiliation>Department of Head and Neck Surgery, Chris O'Brien Lifehouse, 119-143 Missenden Road, Sydney, NSW, 2050, Australia.</Affiliation></AffiliationInfo></Author><Author ValidYN="Y"><LastName>Wu</LastName><ForeName>Raymond</ForeName><Initials>R</Initials><AffiliationInfo><Affiliation>Department of Radiation Oncology, Chris O'Brien Lifehouse, Sydney, NSW, Australia.</Affiliation></AffiliationInfo><AffiliationInfo><Affiliation>Sydney Medical School, Faculty of Medicine and Health Sciences, The University of Sydney, Sydney, NSW, Australia.</Affiliation></AffiliationInfo></Author><Author ValidYN="Y"><LastName>Cheng</LastName><ForeName>Kai</ForeName><Initials>K</Initials><AffiliationInfo><Affiliation>Department of Head and Neck Surgery, Chris O'Brien Lifehouse, 119-143 Missenden Road, Sydney, NSW, 2050, Australia.</Affiliation></AffiliationInfo><AffiliationInfo><Affiliation>Royal Prince Alfred Institute of Academic Surgery, Sydney Local Health District, Sydney, NSW, Australia.</Affiliation></AffiliationInfo></Author><Author ValidYN="Y"><LastName>Dunn</LastName><ForeName>Masako</ForeName><Initials>M</Initials><AffiliationInfo><Affiliation>Department of Head and Neck Surgery, Chris O'Brien Lifehouse, 119-143 Missenden Road, Sydney, NSW, 2050, Australia.</Affiliation></AffiliationInfo></Author><Author ValidYN="Y"><LastName>Davies</LastName><ForeName>Sarah</ForeName><Initials>S</Initials><AffiliationInfo><Affiliation>Department of Head and Neck Surgery, Chris O'Brien Lifehouse, 119-143 Missenden Road, Sydney, NSW, 2050, Australia.</Affiliation></AffiliationInfo></Author><Author ValidYN="Y"><LastName>Clark</LastName><ForeName>Jonathan</ForeName><Initials>J</Initials><AffiliationInfo><Affiliation>Department of Head and Neck Surgery, Chris O'Brien Lifehouse, 119-143 Missenden Road, Sydney, NSW, 2050, Australia.</Affiliation></AffiliationInfo><AffiliationInfo><Affiliation>Royal Prince Alfred Institute of Academic Surgery, Sydney Local Health District, Sydney, NSW, Australia.</Affiliation></AffiliationInfo><AffiliationInfo><Affiliation>Sydney Medical School, Faculty of Medicine and Health Sciences, The University of Sydney, Sydney, NSW, Australia.</Affiliation></AffiliationInfo></Author></AuthorList><Language>eng</Language><GrantList CompleteYN="Y"><Grant><GrantID>CINSW 2020/2081</GrantID><Agency>Cancer Institute NSW</Agency><Country/></Grant></GrantList><PublicationTypeList><PublicationType UI="D016428">Journal Article</PublicationType><PublicationType UI="D013485">Research Support, Non-U.S. Gov't</PublicationType></PublicationTypeList><ArticleDate DateType="Electronic"><Year>2024</Year><Month>02</Month><Day>16</Day></ArticleDate></Article><MedlineJournalInfo><Country>United States</Country><MedlineTA>Dysphagia</MedlineTA><NlmUniqueID>8610856</NlmUniqueID><ISSNLinking>0179-051X</ISSNLinking></MedlineJournalInfo><CitationSubset>IM</CitationSubset><MeshHeadingList><MeshHeading><DescriptorName UI="D006801" MajorTopicYN="N">Humans</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D014313" MajorTopicYN="Y">Trismus</DescriptorName><QualifierName UI="Q000209" MajorTopicYN="N">etiology</QualifierName><QualifierName UI="Q000517" MajorTopicYN="N">prevention &amp; control</QualifierName></MeshHeading><MeshHeading><DescriptorName UI="D010865" MajorTopicYN="N">Pilot Projects</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D006258" MajorTopicYN="Y">Head and Neck Neoplasms</DescriptorName><QualifierName UI="Q000532" MajorTopicYN="N">radiotherapy</QualifierName><QualifierName UI="Q000150" MajorTopicYN="N">complications</QualifierName><QualifierName UI="Q000601" MajorTopicYN="N">surgery</QualifierName></MeshHeading><MeshHeading><DescriptorName UI="D008297" MajorTopicYN="N">Male</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D008875" MajorTopicYN="N">Middle Aged</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D005260" MajorTopicYN="N">Female</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D000368" MajorTopicYN="N">Aged</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D011446" MajorTopicYN="N">Prospective Studies</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D018714" MajorTopicYN="N">Radiotherapy, Adjuvant</DescriptorName><QualifierName UI="Q000009" MajorTopicYN="N">adverse effects</QualifierName></MeshHeading><MeshHeading><DescriptorName UI="D005240" MajorTopicYN="Y">Feasibility Studies</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D011788" MajorTopicYN="Y">Quality of Life</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D005081" MajorTopicYN="N">Exercise Therapy</DescriptorName><QualifierName UI="Q000379" MajorTopicYN="N">methods</QualifierName></MeshHeading><MeshHeading><DescriptorName UI="D016896" MajorTopicYN="N">Treatment Outcome</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D010349" MajorTopicYN="N">Patient Compliance</DescriptorName></MeshHeading><MeshHeading><DescriptorName UI="D000328" MajorTopicYN="N">Adult</DescriptorName></MeshHeading></MeshHeadingList><KeywordList Owner="NOTNLM"><Keyword MajorTopicYN="N">Medical device</Keyword><Keyword MajorTopicYN="N">Oral neoplasm</Keyword><Keyword MajorTopicYN="N">Radiation oncology</Keyword><Keyword MajorTopicYN="N">Surgical oncology</Keyword><Keyword MajorTopicYN="N">Trismus</Keyword></KeywordList><CoiStatement>The authors declare that they have a potential conflict of interest given the device has been manufactured at the treating hospital, and the authors hold a patent for Restorabite&#x2122;.</CoiStatement></MedlineCitation><PubmedData><History><PubMedPubDate PubStatus="received"><Year>2023</Year><Month>8</Month><Day>17</Day></PubMedPubDate><PubMedPubDate PubStatus="accepted"><Year>2024</Year><Month>1</Month><Day>2</Day></PubMedPubDate><PubMedPubDate PubStatus="medline"><Year>2024</Year><Month>10</Month><Day>3</Day><Hour>20</Hour><Minute>42</Minute></PubMedPubDate><PubMedPubDate PubStatus="pubmed"><Year>2024</Year><Month>2</Month><Day>17</Day><Hour>12</Hour><Minute>43</Minute></PubMedPubDate><PubMedPubDate PubStatus="entrez"><Year>2024</Year><Month>2</Month><Day>17</Day><Hour>0</Hour><Minute>3</Minute></PubMedPubDate><PubMedPubDate PubStatus="pmc-release"><Year>2024</Year><Month>2</Month><Day>16</Day></PubMedPubDate></History><PublicationStatus>ppublish</PublicationStatus><ArticleIdList><ArticleId IdType="pubmed">38366084</ArticleId><ArticleId IdType="pmc">PMC11449986</ArticleId><ArticleId IdType="doi">10.1007/s00455-024-10668-4</ArticleId><ArticleId IdType="pii">10.1007/s00455-024-10668-4</ArticleId></ArticleIdList><ReferenceList><Reference><Citation>Dijkstra PU, Huisman PM, Roodenburg JL. Criteria for trismus in head and neck oncology. Int J Oral Maxillofac Surg. 2006;35:337&#x2013;42.</Citation><ArticleIdList><ArticleId IdType="doi">10.1016/j.ijom.2005.08.001</ArticleId><ArticleId IdType="pubmed">16280237</ArticleId></ArticleIdList></Reference><Reference><Citation>Johnson J, van As-Brooks CJ, Fagerberg-Mohlin B, Finizia C. Trismus in head and neck cancer patients in Sweden: incidence and risk factors. Med Sci Monit. 2010;16(6):278&#x2013;82.</Citation><ArticleIdList><ArticleId IdType="pubmed">20512090</ArticleId></ArticleIdList></Reference><Reference><Citation>Pauli N, Johnson J, Finizia C, Andrell P. The incidence of trismus and long-term impact on health-related quality of life in patients with head and neck cancer. Acta Oncol. 2013;52(6):1137&#x2013;45.</Citation><ArticleIdList><ArticleId IdType="doi">10.3109/0284186X.2012.744466</ArticleId><ArticleId IdType="pubmed">23193958</ArticleId></ArticleIdList></Reference><Reference><Citation>Lyons AJ, Crichton S, Pezier T. Trismus following radiotherapy to the head and neck is likely to have distinct genotype dependent cause. Oral Oncol. 2013;49(9):932&#x2013;6.</Citation><ArticleIdList><ArticleId IdType="doi">10.1016/j.oraloncology.2013.05.009</ArticleId><ArticleId IdType="pubmed">23891529</ArticleId></ArticleIdList></Reference><Reference><Citation>Fischer DJ, Epstein JB. Management of patients who have undergone head and neck cancer therapy. Dent Clin North Am. 2009;52:39&#x2013;60.</Citation><ArticleIdList><ArticleId IdType="doi">10.1016/j.cden.2007.09.004</ArticleId><ArticleId IdType="pubmed">18154864</ArticleId></ArticleIdList></Reference><Reference><Citation>Hiseh LC, Chen JW, Wang LY, Tsang YM, Shueng PW, Liao LJ, et al. Predicting the severity and prognosis of trismus after intensity-modulated radiation therapy for oral cancer patients by magnetic resonance imaging. PLoS ONE. 2014;9(3): e92561.</Citation><ArticleIdList><ArticleId IdType="doi">10.1371/journal.pone.0092561</ArticleId><ArticleId IdType="pmc">PMC3962418</ArticleId><ArticleId IdType="pubmed">24658376</ArticleId></ArticleIdList></Reference><Reference><Citation>Vissink A, Jansma J, Spijkervet FK, Burlage FR, Coppes RP. Oral sequelae of head and neck radiotherapy. Crit Rev Oral Biol Med. 2003;14(3):199&#x2013;212.</Citation><ArticleIdList><ArticleId IdType="doi">10.1177/154411130301400305</ArticleId><ArticleId IdType="pubmed">12799323</ArticleId></ArticleIdList></Reference><Reference><Citation>Bragante KC, Groisman S, Carboni C, et al. Efficacy of exercise therapy during radiotherapy to prevent reduction in mouth opening in patients with head and neck cancer: a randomized controlled trial. Oral Surg Oral Med Oral Pathol Oral Radiol. 2020;129:27&#x2013;38.</Citation><ArticleIdList><ArticleId IdType="doi">10.1016/j.oooo.2019.09.011</ArticleId><ArticleId IdType="pubmed">31685429</ArticleId></ArticleIdList></Reference><Reference><Citation>van der Molen L, van Rossum MA, Burkhead LM, Smeele LE, Rasch CR, Hilgers FJ. A randomized preventive rehabilitation trial in advanced head and neck cancer patients treated with chemoradiotherapy: feasibility, compliance, and short-term effects. Dysphagia. 2011;26(2):155&#x2013;70.</Citation><ArticleIdList><ArticleId IdType="doi">10.1007/s00455-010-9288-y</ArticleId><ArticleId IdType="pmc">PMC3098976</ArticleId><ArticleId IdType="pubmed">20623305</ArticleId></ArticleIdList></Reference><Reference><Citation>Gondivkar SM, Gadbail AR, Sarode SC, Dasgupta S, Sharma B, Hedaoo A, et al. Prevalence of trismus and its impact on oral health-related quality of life in patients treated for oral squamous cell carcinoma. Asian Pac J Cancer Prev. 2021;22(8):2437&#x2013;44.</Citation><ArticleIdList><ArticleId IdType="doi">10.31557/APJCP.2021.22.8.2437</ArticleId><ArticleId IdType="pmc">PMC8629467</ArticleId><ArticleId IdType="pubmed">34452556</ArticleId></ArticleIdList></Reference><Reference><Citation>Dijkstra PU, Kalk WW, Roodenburg JL. Trismus in head and neck oncology: a systematic review. Oral Oncol. 2004;40(9):879&#x2013;89.</Citation><ArticleIdList><ArticleId IdType="doi">10.1016/j.oraloncology.2004.04.003</ArticleId><ArticleId IdType="pubmed">15380165</ArticleId></ArticleIdList></Reference><Reference><Citation>Loorents V, Rosell J, Karlsson C, Lidb&#xe4;ck M, Hultman K, B&#xf6;rjeson S. Prophylactic training for the prevention of radiotherapy-induced trismus&#x2014;a randomised study. Acta Oncol. 2014;53(4):530&#x2013;8.</Citation><ArticleIdList><ArticleId IdType="doi">10.3109/0284186X.2014.892211</ArticleId><ArticleId IdType="pubmed">24635110</ArticleId></ArticleIdList></Reference><Reference><Citation>Ichimura K, Tanaka T. Trismus in patients with malignant tumours in the head and neck. J Laryngol Otol. 1993;107:1017&#x2013;20.</Citation><ArticleIdList><ArticleId IdType="doi">10.1017/S0022215100125149</ArticleId><ArticleId IdType="pubmed">8288970</ArticleId></ArticleIdList></Reference><Reference><Citation>Kulbersh B, Rosenthal E, McGrew B, Duncan R, McColloch N, Carroll W, Magnuson J. Pretreatment preoperative swallowing exercises may improve dysphagia quality of life. Laryngoscope. 2006;116:883&#x2013;6.</Citation><ArticleIdList><ArticleId IdType="doi">10.1097/01.mlg.0000217278.96901.fc</ArticleId><ArticleId IdType="pubmed">16735913</ArticleId></ArticleIdList></Reference><Reference><Citation>Greco E, Simic T, Ringash J, Tomlinson G, Inamoto Y, Martino R. Dysphagia treatment for patients with head and neck cancer undergoing radiation therapy: a meta-analysis review. Int J Radiat Oncol Biol Phys. 2018;101(2):421&#x2013;44.</Citation><ArticleIdList><ArticleId IdType="doi">10.1016/j.ijrobp.2018.01.097</ArticleId><ArticleId IdType="pubmed">29726363</ArticleId></ArticleIdList></Reference><Reference><Citation>Charters E, Dunn M, Cheng K, Aung V, Mukherjee P, Froggatt C, Dusseldorp J, Clark J. Trismus therapy devices: a systematic review. Oral Oncology. 2022;126: 105728.</Citation><ArticleIdList><ArticleId IdType="doi">10.1016/j.oraloncology.2022.105728</ArticleId><ArticleId IdType="pubmed">35104753</ArticleId></ArticleIdList></Reference><Reference><Citation>Melchers LJ, Van Weert E, Beurskens CH. Exercise adherence in patients with trismus due to head and neck oncology: a qualitative study into the use of the Therabite. Int J Oral Maxillofac Surg. 2009;38:947&#x2013;54.</Citation><ArticleIdList><ArticleId IdType="doi">10.1016/j.ijom.2009.04.003</ArticleId><ArticleId IdType="pubmed">19414238</ArticleId></ArticleIdList></Reference><Reference><Citation>Lee R, Yeo ST, Rogers SN, et al. Randomised feasibility study to compare the use of Therabite<sup>&#xae;</sup> with wooden spatulas to relieve and prevent trismus in patients with cancer of the head and neck. Br J Oral Maxillofac Surg. 2018;56(4):283&#x2013;91.
+</Citation><ArticleIdList><ArticleId IdType="doi">10.1016/j.bjoms.2018.02.012</ArticleId><ArticleId IdType="pmc">PMC5948182</ArticleId><ArticleId IdType="pubmed">29526341</ArticleId></ArticleIdList></Reference><Reference><Citation>Amplification, Resistance &amp; Kinetics of the Jaw (ARK-J), Head &amp; Neck Rehab LLC. https://www.headneckrehab.com/ark-j-program. Accessed 17 May 2023.</Citation></Reference><Reference><Citation>Robertson RJ, Goss FL, Rutowski J, Lenz B, Dixon C, Timmer J, Frazee K, Dube J, Andreacci J. Concurrent validation of the OMNI perceived exertion scale for resistance exercise. Med Sci Sports Exerc. 2003;35(2):333&#x2013;41.</Citation><ArticleIdList><ArticleId IdType="doi">10.1249/01.MSS.0000048831.15016.2A</ArticleId><ArticleId IdType="pubmed">12569225</ArticleId></ArticleIdList></Reference><Reference><Citation>Koc D, Dogan A, Bek B. Bite force and influential factors on bite force meaurements: a literature review. Eur J Dent. 2010;4(2):223&#x2013;32.</Citation><ArticleIdList><ArticleId IdType="doi">10.1055/s-0039-1697833</ArticleId><ArticleId IdType="pmc">PMC2853825</ArticleId><ArticleId IdType="pubmed">20396457</ArticleId></ArticleIdList></Reference><Reference><Citation>Shetty K, Kumar M, Palagiri K, Amanna S, Shetty S. Facial measurements as predictors of the length of the maxillary central incisor in a cross section of the Indian population&#x2014;a clinical study. J Oral Hyg Health. 2013;1:106.</Citation><ArticleIdList><ArticleId IdType="doi">10.4172/2332-0702.1000106</ArticleId></ArticleIdList></Reference><Reference><Citation>Johnson J, Carlsson S, Johansson M, Pauli N, Ryden A, Fagerberg-Mohlin B, et al. Development and validation of the Gothenburg Trismus Questionnaire (GTQ). Oral Oncol. 2012;48:730&#x2013;6.</Citation><ArticleIdList><ArticleId IdType="doi">10.1016/j.oraloncology.2012.02.013</ArticleId><ArticleId IdType="pmc">PMC5479349</ArticleId><ArticleId IdType="pubmed">22418239</ArticleId></ArticleIdList></Reference><Reference><Citation>Chen AY, Frankowski R, Bishop-Leone J, Hebert T, Leyk S, Lewin J, Goepfert H. The development and validation of a dysphagia-specific quality-of-life questionnaire for patients with head and neck cancer: the MD Anderson Dysphagia Inventory. Arch Otolaryngol Head Neck Surg. 2001;127(7):870&#x2013;6.</Citation><ArticleIdList><ArticleId IdType="pubmed">11448365</ArticleId></ArticleIdList></Reference><Reference><Citation>Belafsky PC, Mouadeb DA, Rees CJ, Pryor JC, Postma GN, Allen J, Leonard RJ. Validity and reliability of the eating assessment tool (EAT-10). Ann Otol Rhinol Laryngol. 2008;117(12):919&#x2013;24.</Citation><ArticleIdList><ArticleId IdType="pubmed">19140539</ArticleId></ArticleIdList></Reference><Reference><Citation>Dwivedi RC, Rose S, Roe JWG, Chishlm E, Elmiyeh B, Nutting CM, et al. First report on the reliability and validity of Speech Handicap Index in native English&#x2014;speaking patients with head and neck cancer. Head Neck. 2011;33(3):341&#x2013;8.</Citation><ArticleIdList><ArticleId IdType="doi">10.1002/hed.21450</ArticleId><ArticleId IdType="pubmed">20629082</ArticleId></ArticleIdList></Reference><Reference><Citation>Hawker GA, Mian S, Kendzerska T, French M. Measures of adult pain: Visual Analog Scale for Pain (VAS Pain), Numeric Rating Scale for Pain (NRS Pain), McGill Pain Questionnaire (MPQ), Short-Form McGill Pain Questionnaire (SF-MPQ), Chronic Pain Grade Scale (CPGS), Short Form-36 Bodily Pain Scale (SF-36 BPS), and Measure of Intermittent and Constant Osteoarthritis Pain (ICOAP). Arthritis Care Res (Hoboken). 2011;63 Suppl 11: S240&#x2013;52</Citation><ArticleIdList><ArticleId IdType="pubmed">22588748</ArticleId></ArticleIdList></Reference><Reference><Citation>van der Geer J, Kamstra J, Roodenburg J, van Leeuwen M, Reintsema H, Langendijk J, Dikjstra P. Predictors for trismus in patients receiving radiotherapy. Acta Oncol. 2016;55(11):1318&#x2013;23.</Citation><ArticleIdList><ArticleId IdType="doi">10.1080/0284186X.2016.1223341</ArticleId><ArticleId IdType="pubmed">27627138</ArticleId></ArticleIdList></Reference><Reference><Citation>van der Geer SJ, Reintsema H, Kamstra JI, Roodenburg JLN, Dijkstra PU. The use of stretching devices for treatment of trismus in head and neck cancer patients: a randomized controlled trial. Support Care Cancer. 2020;28(1):9&#x2013;11.</Citation><ArticleIdList><ArticleId IdType="doi">10.1007/s00520-019-05075-7</ArticleId><ArticleId IdType="pmc">PMC6892373</ArticleId><ArticleId IdType="pubmed">31701267</ArticleId></ArticleIdList></Reference><Reference><Citation>Hawley-Hague H, Horne M, Skelton DA, Todd C. Review of how we should define (and measure) adherence in studies examining older adults&#x2019; participation in exercise classes. BMJ Open. 2016;6(6): e011560.</Citation><ArticleIdList><ArticleId IdType="doi">10.1136/bmjopen-2016-011560</ArticleId><ArticleId IdType="pmc">PMC4932302</ArticleId><ArticleId IdType="pubmed">27338884</ArticleId></ArticleIdList></Reference><Reference><Citation>Marunick MT, Garcia-Gazaui S, Hildebrand JM. Mandibular pathological fracture during treatment with a dynamic mouth opening device: a clinical report. J Prosthet Dent. 2016;116(4):488&#x2013;91.</Citation><ArticleIdList><ArticleId IdType="doi">10.1016/j.prosdent.2016.02.024</ArticleId><ArticleId IdType="pubmed">27158035</ArticleId></ArticleIdList></Reference><Reference><Citation>Charters E, Cheng K, Dunn M, Wu R, Palme C, Howes D, Low TH, Heng C, Ricketts V, Kneebone K, Loy J, Clark JR. A pilot study of intensive intervention using a novel trismus device. Int J Speech Lang Pathol. 2022;13:1&#x2013;8.</Citation><ArticleIdList><ArticleId IdType="pubmed">36511636</ArticleId></ArticleIdList></Reference></ReferenceList></PubmedData></PubmedArticle></PubmedArticleSet>

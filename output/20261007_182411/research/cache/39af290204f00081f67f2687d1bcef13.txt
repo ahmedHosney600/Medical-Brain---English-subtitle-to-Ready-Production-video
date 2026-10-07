@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nlmSearchResult>
+  <term>staying hydrated in hot weather WHO</term>
+  <count>0</count>
+  <spellingCorrection>staying dehydrated in hot weather WHO</spellingCorrection>
+</nlmSearchResult>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nlmSearchResult>
+  <term>difference between charley horse and muscle cramp MedlinePlus</term>
+  <count>0</count>
+  <spellingCorrection>difference between charge horse muscle cramp MedlinePlus</spellingCorrection>
+</nlmSearchResult>
