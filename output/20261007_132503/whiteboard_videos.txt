@@ -1,0 +1,3 @@
+A hand with a black marker draws a bell curve on a white background, then shades the middle section with a blue marker, static camera, no text, 8 seconds.
+
+A marker draws a heart rhythm line, hesitates at a gap, then draws a large spike, white background, no text, 6 seconds.
