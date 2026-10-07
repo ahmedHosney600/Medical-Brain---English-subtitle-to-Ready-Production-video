@@ -82,11 +82,16 @@ class _ScriptIndex:
 
     def __init__(self, script: str):
         self.orig, self.norm = [], []
-        for tok in spoken_text(script).split():
-            n = normalize_ar(tok)
-            if n:
-                self.orig.append(tok)
-                self.norm.append(n)
+        self.brackets = []   # (normalized text of a [cue], index of the next spoken word)
+        for piece in re.split(r"(\[[^\]]*\])", script or ""):
+            if piece.startswith("["):
+                self.brackets.append((normalize_ar(piece), len(self.norm)))
+                continue
+            for tok in spoken_text(piece).split():
+                n = normalize_ar(tok)
+                if n:
+                    self.orig.append(tok)
+                    self.norm.append(n)
 
     def occurrences(self, words: list) -> list:
         k = len(words)
@@ -127,6 +132,11 @@ class _ScriptIndex:
         return text.strip(" ,،.؛:")
 
 
+# Common short words (normalized) that say nothing about where a cue is.
+_FILLER = set(normalize_ar("""في من علي على عن ما زي ده دي دا اللي الي و يا ان إن لو مش هو هي انت إنت انا أنا
+احنا إحنا كده كدة بس او أو ولا لا مع بقى بقي كمان عشان علشان يعني كل حاجة ايه إيه هل اي أي ال ب ل""").split())
+
+
 def _locate(cue_words: list, idx: _ScriptIndex, after: int, length: int, max_length: int,
             end_anchor: bool = False):
     """Best place for a cue: exact match (first at/after `after`), else the window
@@ -135,32 +145,45 @@ def _locate(cue_words: list, idx: _ScriptIndex, after: int, length: int, max_len
     hits = idx.occurrences(cue_words)
     if hits:
         start = next((h for h in hits if h >= after), hits[0])
-        if end_anchor and len(cue_words) < length:
+        if end_anchor and (len(cue_words) < length or len(hits) > 1):
             grow = length - len(cue_words)
             new_start = max(0, start - grow)
             return idx.grow_back(new_start, len(cue_words) + (start - new_start), max_length) + (True,)
         return idx.unique_window(start, max(length, len(cue_words)), max_length) + (False,)
-    wanted = set(cue_words)
+    # Cue copied from a [VISUAL NOTE: …] / [KINETIC TEXT: …]: the event sits where
+    # that note is, so take the spoken words right after it (or right before, for END).
+    cue_text = " ".join(cue_words)
+    spots = [at for text, at in idx.brackets if cue_text and cue_text in text]
+    if spots:
+        at = next((a for a in spots if a >= after), spots[0])
+        if end_anchor and at > 0:
+            start = max(0, at - length)
+            return idx.grow_back(start, at - start, max_length) + (True,)
+        if at < len(idx.norm):
+            return idx.unique_window(at, length, max_length) + (False,)
+    # Fuzzy match on content words only: filler like "زي ما في" matches anywhere.
+    wanted = set(cue_words) - _FILLER
     if len(wanted) < 2:
         return None
+    need = max(2, (len(wanted) + 1) // 2)
     best, best_score = None, 0
     span = max(len(cue_words), length) + 2
     for order in (range(after, len(idx.norm)), range(0, after)):
         for s in order:
             window = idx.norm[s:s + span]
-            if not window or window[0] not in wanted:
+            if not window or window[0] not in set(cue_words):
                 continue
             score = len(wanted & set(window))
             if score > best_score:
                 best, best_score = s, score
-        if best_score >= max(2, (len(wanted) + 1) // 2):
+        if best_score >= need:
             break
-    if best is None or best_score < max(2, (len(wanted) + 1) // 2):
+    if best is None or best_score < need:
         return None
     return idx.unique_window(best, max(length, min(len(cue_words), max_length)), max_length) + (False,)
 
 
-def repair_cue_table(text: str, section_key: str, start_col: int, end_col: int, script: str,
+def repair_cue_table(text: str, section_key: str, start_col: int, end_col, script: str,
                      length: int = 5, max_length: int = 9) -> tuple:
     """Replaces START/END cues that aren't exact, unique script words with the matching
     words from the script (closest match, in timeline order). Returns
@@ -182,9 +205,10 @@ def repair_cue_table(text: str, section_key: str, start_col: int, end_col: int, 
         if all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
             header_seen = True
             continue
-        if not header_seen or len(cells) <= end_col:
+        cols = [c for c in (start_col, end_col) if c is not None]
+        if not header_seen or len(cells) <= max(cols):
             continue
-        for col in (start_col, end_col):
+        for col in cols:
             cue = cells[col]
             end = col == end_col
             if cue_problem(cue, norm_script, min_words=3) is None:
@@ -206,10 +230,12 @@ def repair_cue_table(text: str, section_key: str, start_col: int, end_col: int, 
 
 
 def repair_cues(package_text: str, script: str) -> tuple:
-    """Repairs the storyboard and VIDEO SECTIONS cues. Returns (text, fixed, examples)."""
+    """Repairs the storyboard, VIDEO SECTIONS and retention-table cues. Returns (text, fixed, examples)."""
     text, n1, ex1 = repair_cue_table(package_text, "INTEGRATED PRODUCTION STORYBOARD", 3, 4, script)
     text, n2, ex2 = repair_cue_table(text, "VIDEO SECTIONS", 2, 3, script, length=8, max_length=25)
-    return text, n1 + n2, ex1 + ex2
+    # RETENTION ARCHITECTURE: | Element | Timestamp | Line (first Arabic words) |
+    text, n3, ex3 = repair_cue_table(text, "RETENTION ARCHITECTURE", 2, None, script)
+    return text, n1 + n2 + n3, ex1 + ex2 + ex3
 
 
 def check_cue_rows(rows: list, script: str, min_words: int = 3) -> list:
@@ -276,6 +302,50 @@ def find_section(text: str, key: str) -> str:
         if key.upper() in heading.upper():
             return body
     return ""
+
+
+def replace_section(text: str, key: str, body: str, before: str = "WHAT CHANGED") -> str:
+    """Swaps the body of the part whose heading names `key` (heading kept). If there is
+    no such part, adds '### key' before the `before` part, or at the end."""
+    parts = split_sections(text)
+    for i, (heading, _) in enumerate(parts):
+        if heading and key.upper() in heading.upper():
+            parts[i] = (heading, "\n" + body.strip() + "\n\n---\n")
+            break
+    else:
+        new = (f"### {key}", "\n" + body.strip() + "\n\n---\n")
+        at = next((i for i, (h, _) in enumerate(parts) if h and before.upper() in h.upper()), len(parts))
+        parts.insert(at, new)
+    out = []
+    for heading, part_body in parts:
+        if heading:
+            out.append(heading)
+        out.append(part_body)
+    return "\n".join(out)
+
+
+_META_LINE = re.compile(r"^\s*[*_]*[A-Za-z][A-Za-z0-9 /&()\-]{1,40}[*_]*\s*:")
+_SUMMARY_HEAD = re.compile(r"^\s*[#*_ ]*[A-Z][A-Z /&\-]{2,40}(SUMMARY|NOTES|LOG|CHANGES)[*_ ]*:?\s*[*_]*\s*$")
+
+
+def filming_script(script: str) -> str:
+    """The script the presenter reads: script_refinement's output without its
+    metadata block (title, word count, self-given scores) and its closing summary."""
+    lines = (script or "").strip().splitlines()
+    # Leading "Key: value" block, up to the first '---'.
+    if "---" in [l.strip() for l in lines]:
+        first_rule = [l.strip() for l in lines].index("---")
+        head = [l for l in lines[:first_rule] if l.strip()]
+        if head and all(_META_LINE.match(l) or l.lstrip().startswith("#") for l in head):
+            lines = lines[first_rule + 1:]
+    # Closing "POLISH SUMMARY:" (or similar) block.
+    for i, line in enumerate(lines):
+        if _SUMMARY_HEAD.match(line):
+            lines = lines[:i]
+            break
+    # A part heading inside the script would split the document; keep it as bold text.
+    lines = [f"**{re.sub(r'^#+\s*', '', l).strip()}**" if _is_part_heading(l) else l for l in lines]
+    return _strip_rules("\n".join(lines))
 
 
 def table_rows(block: str) -> list:

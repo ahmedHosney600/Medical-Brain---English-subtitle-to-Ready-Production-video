@@ -64,11 +64,9 @@ DESCRIPTION SEO RULE: weave the SEO SECONDARY KEYWORDS below naturally through t
 ---
 
 ### 🎬 PRODUCTION SCRIPT (Teleprompter & Filming Ready)
-- Deep, complete spoken dialogue matching the target duration (~1,200–1,350 words for 9 minutes). Do NOT compress into high-level summaries.
-- Every open loop planted in the hook MUST be explicitly sustained/referenced in Act 3 and resolved in Act 4 as spoken dialogue.
-- Dialect Register: Strictly use Educated, Moderate Egyptian Arabic (العامية المصرية المثقفة البيضاء المعتدلة). Smooth, clear, dignified, and effortless to understand and pronounce for all viewers. Context-appropriate vocabulary without unnecessary slang stuffing (بدون حشو ألفاظ عامية فجة وخلاص). The audience must feel peer-to-peer warmth from an educated doctor, NOT that they are sitting with someone from the street using low-brow slang. Strictly ZERO vulgar slang (ممنوع: كلبشت، بتكلبش، قفشت، موضوع ناشف، بتغلس، بيتجنن، حتة لحمة، وجع رخم، مابتخرفش، قرصت عليها) and ZERO mechanic-shop jargon (ممنوع: فيوزات، تجنزر، تصدي، ماس كهربائي في الضفيرة). Use clean, natural phrasing (شَدّت فجأة، قفلت، انقبضت، ألم مفاجئ، موضوع معقد، زرار النور، جرس الإنذار، فرامل العضلة).
-[Complete final script with all cues: [نبرة دافئة], [ميل للأمام], [نظرة مباشرة], [VISUAL NOTE], [SFX], [ON-SCREEN TEXT]]
+[[VERIFIED SCRIPT — inserted by code]]
 
+(Write ONLY the heading above and that one placeholder line. Do NOT retype, shorten, summarize or rewrite the script here: the fact-checked FINAL SCRIPT is inserted word for word by code after you answer. Read the FINAL SCRIPT input for the retention table, VIDEO SECTIONS, description and adaptation log — every line you quote must be copied exactly from it.)
 ---
 
 ### WHAT CHANGED FROM THE ORIGINAL (Adaptation Log)
@@ -93,7 +91,7 @@ DESCRIPTION SEO RULE: weave the SEO SECONDARY KEYWORDS below naturally through t
 | Loop Resolution | | |
 | CTA | | |
 | Outro | | |
-*MANDATORY SYNCHRONIZATION RULE*: In the 'Line (first Arabic words)' column, write the exact first 3 to 5 Arabic words that literally start that spoken sentence in the PRODUCTION SCRIPT above. Do NOT combine multiple phrases together or paraphrase.
+*MANDATORY SYNCHRONIZATION RULE*: In the 'Line (first Arabic words)' column, write the exact first 3 to 5 Arabic words that literally start that spoken sentence in the FINAL SCRIPT input. Do NOT combine multiple phrases together or paraphrase.
 
 ---
 
@@ -141,7 +139,7 @@ SECTION TITLE RULES (= YouTube chapter titles):
 - At least 3 rows; every section at least 10 seconds. Use the SEO primary or a secondary keyword naturally in 1–2 titles.
 - Duration Estimate in the form "Xm Ys".
 
-SENTENCE RULES: Start/End Sentence must be copied character-for-character from the PRODUCTION SCRIPT above (spoken words only — never stage directions in parentheses or [cues]). If a sentence appears more than once in the script, add the neighbouring words so it is unique.
+SENTENCE RULES: Start/End Sentence must be copied character-for-character from the FINAL SCRIPT input (spoken words only — never stage directions in parentheses or [cues]). If a sentence appears more than once in the script, add the neighbouring words so it is unique.
 
 | # | Section Title (Arabic) | ▶️ Start Sentence (exact first Arabic sentence of this section from the script) | ⏹️ End Sentence (exact last Arabic sentence of this section from the script) | Duration Estimate | Notes for Editor |
 |---|---|---|---|---|---|

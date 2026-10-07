@@ -140,7 +140,10 @@ def dialect_warmth_layer(state: PipelineState) -> dict:
         # Later passes start from the fact-checked script, so the medical truth
         # verifier's corrections survive the rewrite.
         script_block = f"""CURRENT SCRIPT (already fact-checked — keep every medical correction; use this as the base):
-{state.get("refined_script", "")}"""
+{state.get("refined_script", "")}
+
+REVISED RETENTION, DISCLAIMER & CTA LINES (from this pass — apply them where the critique flagged open loops, the disclaimer or the CTA):
+{state.get("cta_output", "")}"""
     else:
         script_block = f"""HOOK:
 {state.get("hook", "")}

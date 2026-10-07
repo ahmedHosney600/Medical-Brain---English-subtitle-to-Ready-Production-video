@@ -25,7 +25,22 @@ def _repair_cues(text: str, script: str, part: str) -> str:
     return text
 
 
-def _audit_part1(text: str) -> list:
+# Checks on the script's own wording. When code inserted the verified script, a
+# retry can't change it (and the quality loop already gated it): warn only.
+_SCRIPT_WORDING_ISSUES = ("SENSATIONALIST", "VULGAR", "PRODUCTION SCRIPT TOO SHORT", "MISSING PRODUCTION SCRIPT")
+
+
+def _audit_part1(text: str, script_is_verified: bool = False) -> list:
+    issues = _audit_part1_all(text)
+    if not script_is_verified:
+        return issues
+    for issue in issues:
+        if issue.startswith(_SCRIPT_WORDING_ISSUES):
+            print(f"  [final_package Part1] ⚠️ note on the verified script (not retried): {issue[:200]}")
+    return [i for i in issues if not i.startswith(_SCRIPT_WORDING_ISSUES)]
+
+
+def _audit_part1_all(text: str) -> list:
     """Audit Part 1 (Script + Packaging) for quality issues.
 
     NOTE: title/thumbnail quality (count, completeness, anti-cliché, honesty)
@@ -292,11 +307,14 @@ def _audit_part2(text: str, script: str = "") -> list:
 def final_script_package(state: PipelineState) -> dict:
 
     system_prompt_1 = load_prompt("final_script_package_part1")
+    # The script that passed the medical checks is what gets filmed: code puts it
+    # into the document word for word, so the assembly model can't rewrite it.
+    verified_script = ew.filming_script(state.get("refined_script", ""))
 
     base_user_prompt_1 = f"""Compile Part 1 of the YouTube Production Deliverable.
 
-FINAL SCRIPT (definitive version):
-{state.get("refined_script", "")}
+FINAL SCRIPT (definitive, fact-checked version — inserted into the PRODUCTION SCRIPT section by code; quote it exactly):
+{verified_script}
 
 HOOK VARIATIONS:
 {state.get("hook", "")}
@@ -353,8 +371,10 @@ CRITICAL: Copy the APPROVED TITLE OPTIONS and APPROVED THUMBNAIL CONCEPTS throug
         if correction_note_1:
             user_prompt_1 += f"\n\n\u26a0\ufe0f CORRECTION REQUIRED (attempt {attempt + 1}):\n{correction_note_1}"
         part1 = call_llm(system_prompt_1, user_prompt_1, temperature=0.3, max_tokens=10000)
+        if verified_script:
+            part1 = ew.replace_section(part1, "PRODUCTION SCRIPT", verified_script)
         part1 = _repair_cues(part1, ew.production_script(part1), "Part1")
-        issues_1 = _audit_part1(part1)
+        issues_1 = _audit_part1(part1, script_is_verified=bool(verified_script))
         if best_1 is None or len(issues_1) < best_1[0]:
             best_1 = (len(issues_1), part1)
         if not issues_1:

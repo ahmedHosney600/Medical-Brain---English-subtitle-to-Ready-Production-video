@@ -8,7 +8,7 @@ import unittest
 from medical_brain import llm
 from medical_brain.cli import with_heading
 from medical_brain.exports import workbook as ew
-from medical_brain.nodes.final_package import whiteboard_problems
+from medical_brain.nodes.final_package import final_script_package, whiteboard_problems
 from medical_brain.nodes.quality import self_critique
 from medical_brain.nodes.script_writing import dialect_warmth_layer
 
@@ -65,6 +65,53 @@ class CueTest(unittest.TestCase):
         self.assertNotIn('"', text.split("INTEGRATED")[1])
 
 
+    def test_cue_copied_from_a_visual_note_goes_next_to_it(self):
+        script = ("### 🎬 PRODUCTION SCRIPT\nالعلم بيحدد الطبيعي بطريقة إحصائية واضحة جداً.\n"
+                  "[KINETIC TEXT: الطبيعي = اختيار إحصائي]\n"
+                  "المشكلة بقى إن الفحوصات اللي متعودين عليها مجرد لقطة سريعة.\n")
+        table = ("## INTEGRATED PRODUCTION STORYBOARD\n| # | Act | Time | START CUE | END CUE | Layer | Detail |\n"
+                 "|---|---|---|---|---|---|---|\n| 1 | 1 | 0:00 | الطبيعي = اختيار إحصائي | الطبيعي = اختيار إحصائي | KINETIC | x |\n")
+        row = ew.parse_storyboard(ew.repair_cues(table, script)[0])[0]
+        self.assertTrue(row["start"].startswith("المشكلة بقى"))
+        self.assertTrue(row["end"].endswith("واضحة جداً"))
+
+    def test_filler_words_alone_do_not_place_a_cue(self):
+        idx = ew._ScriptIndex("تحس فجأة إن قلبك خبط في صدرك، زي ما تكون زغطة بسيطة.")
+        self.assertIsNone(ew._locate(ew.normalize_ar("زي ما شفنا في قصة").split(), idx, 0, 5, 9))
+
+
+class VerifiedScriptTest(unittest.TestCase):
+    REFINED = ("SCRIPT: عنوان\nWord Count: 1620 words\nMedical Fidelity Score: 10/10\n\n---\n\n[HOOK]\n"
+               "تخيل كدة وإنت قاعد في أمان الله وساعتك بتزن في إيدك.\n\n---\n\n"
+               "POLISH SUMMARY:\n- Word count: ~1620\n")
+
+    def test_filming_script_drops_metadata_and_summary(self):
+        script = ew.filming_script(self.REFINED)
+        self.assertTrue(script.startswith("[HOOK]"))
+        self.assertIn("ساعتك بتزن", script)
+        for gone in ("Word Count", "POLISH", "Fidelity Score"):
+            self.assertNotIn(gone, script)
+
+    def test_replace_section_with_and_without_heading(self):
+        with_heading = "### Script Metadata\nm\n### 🎬 PRODUCTION SCRIPT\nREWRITTEN\n### WHAT CHANGED\nw\n"
+        out = ew.replace_section(with_heading, "PRODUCTION SCRIPT", "VERIFIED")
+        self.assertIn("### 🎬 PRODUCTION SCRIPT", out)
+        self.assertEqual(ew._strip_rules(ew.production_script(out)), "VERIFIED")
+        self.assertNotIn("REWRITTEN", out)
+        out = ew.replace_section("### Script Metadata\nm\n### WHAT CHANGED\nw\n", "PRODUCTION SCRIPT", "VERIFIED")
+        self.assertLess(out.index("VERIFIED"), out.index("WHAT CHANGED"))
+
+    def test_final_package_films_the_verified_script(self):
+        part1 = ("## SCRIPT PACKAGE\n### 🎬 PRODUCTION SCRIPT\nسكريبت تاني خالص كتبه الموديل من دماغه.\n"
+                 "### WHAT CHANGED FROM THE ORIGINAL\n- x\n")
+        router = use_router(self, Canned(part1))
+        router.call = lambda system, user, *a, **k: part1 if "Compile Part 1" in user else "Part 2"
+        out = final_script_package({"refined_script": self.REFINED})["final_package"]
+        self.assertIn("ساعتك بتزن في إيدك", ew.production_script(out))
+        self.assertNotIn("كتبه الموديل", out)
+        self.assertNotIn("POLISH SUMMARY", out)
+
+
 class QualityLoopTest(unittest.TestCase):
     def test_critique_cannot_raise_the_auditor_verdict(self):
         use_router(self, Canned(json.dumps({
@@ -89,7 +136,7 @@ class QualityLoopTest(unittest.TestCase):
         revision = router.prompts[-1]
         self.assertIn("FACT-CHECKED SCRIPT", revision)
         self.assertNotIn("OLD BODY", revision)
-        for report in ("TRUTH REPORT", "FIDELITY REPORT", "CRITIQUE"):
+        for report in ("TRUTH REPORT", "FIDELITY REPORT", "CRITIQUE", "OLD CTA"):   # CTA revision kept
             self.assertIn(report, revision)
 
 
