@@ -1,0 +1,3 @@
+A hand with a black marker draws a bell curve on a white background, then shades the middle blue and the ends red, static camera, no text, 8 seconds.
+
+A hand draws a speedometer dial, then the needle moves from 100 to 120 and back to 100, white background, no text, 6 seconds.
