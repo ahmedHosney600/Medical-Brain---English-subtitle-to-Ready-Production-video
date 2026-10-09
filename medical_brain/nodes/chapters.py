@@ -237,6 +237,143 @@ def first_lines(text: str, n_words: int = 120) -> str:
     return " ".join(words[:n_words])
 
 
+def ensure_header(text: str, title: str) -> str:
+    """Guarantees a "=== title ===" header on a chapter text the model returned."""
+    text = (text or "").strip()
+    if re.match(r"^\s*===", text):
+        return text
+    return f"=== {title} ===\n{text}" if title else text
+
+
+# --------------------------------------------------------------------------
+# chapter timing (used by the whole-script production steps and the package)
+# --------------------------------------------------------------------------
+def fmt_time(seconds) -> str:
+    """Seconds -> "M:SS" for prompts."""
+    try:
+        total = int(round(float(seconds or 0)))
+    except (TypeError, ValueError):
+        total = 0
+    if total < 0:
+        total = 0
+    return f"{total // 60}:{total % 60:02d}"
+
+
+def chapter_spans(script: str, blueprint) -> list:
+    """[{id, title, text, start_s, end_s}] — one span per "=== title ===" chapter in
+    `script`. The preamble (hook) joins the first chapter's span and trailing text
+    (CTA/closing) joins the last, so the spans cover the whole spoken script. Start/end
+    times come from cumulative word counts at the blueprint's words_per_minute."""
+    parts = split_by_chapters(script or "")
+    chapters_list = [c for c in ((blueprint or {}).get("chapters") or []) if isinstance(c, dict)]
+
+    preamble, segments = "", []
+    for title, text in parts:
+        if title:
+            segments.append([title, text])
+        else:
+            preamble = (preamble + "\n\n" + text).strip() if preamble else text
+    if not segments:
+        if (script or "").strip():
+            segments = [["", script or ""]]
+        else:
+            return []
+    if preamble and segments:
+        segments[0][1] = (preamble.strip() + "\n\n" + segments[0][1]).strip()
+
+    try:
+        wpm = float((blueprint or {}).get("words_per_minute", 135) or 135)
+    except (TypeError, ValueError):
+        wpm = 135
+    if wpm <= 0:
+        wpm = 135
+
+    spans, cum = [], 0
+    for i, (title, text) in enumerate(segments):
+        chapter = next((c for c in chapters_list
+                        if str(c.get("title", "") or "").strip() == title), None)
+        if chapter is None and i < len(chapters_list):
+            chapter = chapters_list[i]
+        title = title or str((chapter or {}).get("title", "") or "").strip()
+        cid = str((chapter or {}).get("id", "") or "").strip() or f"C{i + 1}"
+        words = len(text.split())
+        start, cum = cum, cum + words
+        spans.append({"id": cid, "title": title or cid, "text": text,
+                      "start_s": start / wpm * 60.0, "end_s": cum / wpm * 60.0})
+    return spans
+
+
+def chapter_section(joined: str, title: str) -> str:
+    """The "=== title ===" section of a joined per-chapter step output ("" if absent)."""
+    if not title:
+        return ""
+    for name, text in split_by_chapters(joined or ""):
+        if name == title:
+            return text.strip()
+    return ""
+
+
+# --------------------------------------------------------------------------
+# markdown table joining: one header row, "#" renumbered globally
+# --------------------------------------------------------------------------
+def split_pipes(line: str) -> list:
+    return re.split(r"(?<!\\)\|", line)
+
+
+def is_separator_row(line: str) -> bool:
+    cells = split_pipes(line.strip())
+    cells = [c for c in cells if c.strip()]
+    return bool(cells) and all(re.fullmatch(r":?-{2,}:?", c.strip()) for c in cells)
+
+
+def renumber_tables(text: str, row_callback=None) -> str:
+    """Dedupes repeated markdown table header/separator rows (the first one wins) and
+    renumbers the "#" column 1..N globally per distinct table header. `row_callback`
+    (header_signature, new_number, original_line_index) is called for every numbered
+    data row, so callers can map global numbers back to their chapter."""
+    lines = (text or "").splitlines()
+    out, next_num = [], {}
+    i, n = 0, len(lines)
+    while i < n:
+        line = lines[i]
+        if not line.strip().startswith("|"):
+            out.append(line)
+            i += 1
+            continue
+        j = i
+        while j < n and lines[j].strip().startswith("|"):
+            j += 1
+        block = lines[i:j]
+        separator = len(block) > 1 and is_separator_row(block[1])
+        data_start = 2 if separator else 1
+        raw_cells = split_pipes(block[0])
+        cells = raw_cells[1:-1] if (len(raw_cells) > 1 and not raw_cells[0].strip()
+                                    and not raw_cells[-1].strip()) else raw_cells
+        sig = tuple(c.strip() for c in cells)
+        has_num = any(c == "#" for c in sig)
+        num_col = next((k for k, c in enumerate(sig) if c == "#"), None)
+        first_seen = sig not in next_num
+        if first_seen:
+            next_num[sig] = 1
+            out.extend(block[:data_start])
+        for k in range(data_start, len(block)):
+            row = block[k]
+            if has_num and not is_separator_row(row):
+                split = split_pipes(row)
+                offset = 1 if (split and not split[0].strip()) else 0
+                pos = offset + num_col
+                if pos < len(split):
+                    number = next_num[sig]
+                    split[pos] = f" {number} "
+                    row = "|".join(split)
+                    next_num[sig] = number + 1
+                    if row_callback:
+                        row_callback(sig, number, i + k)
+            out.append(row)
+        i = j
+    return "\n".join(out)
+
+
 # --------------------------------------------------------------------------
 # chapter / segment text
 # --------------------------------------------------------------------------

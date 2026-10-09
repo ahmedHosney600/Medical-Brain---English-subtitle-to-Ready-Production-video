@@ -101,6 +101,8 @@ class PipelineState(TypedDict):
     production_grade: str
     production_revision_count: int
     max_production_revision_count: int
+    production_chapter_outputs: dict   # {step: {chapter_id: text}} (chapter mode)
+    broll_by_chapter: dict             # {chapter_id: [global B-roll numbers]}
 
     # Reels/Shorts Extraction Pipeline (Loop 4)
     shorts_moments: str
@@ -155,7 +157,8 @@ def apply_defaults(state: dict) -> dict:
             state[field] = default
 
     # Dict-valued fields a step may read before it is written.
-    for field in ("blueprint", "script_memory", "chapter_memory", "chapter_drafts"):
+    for field in ("blueprint", "script_memory", "chapter_memory", "chapter_drafts",
+                  "production_chapter_outputs", "broll_by_chapter"):
         if not isinstance(state.get(field), dict):
             state[field] = {}
     if "chapter_drafts_key" not in state:

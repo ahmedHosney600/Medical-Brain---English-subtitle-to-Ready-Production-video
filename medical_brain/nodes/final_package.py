@@ -8,6 +8,7 @@ from ..llm import call_llm
 from ..prompts import load_prompt
 from ..state import PipelineState
 from ..exports import workbook as ew
+from . import chapters
 
 
 MAX_FINAL_PACKAGE_RETRIES = 2
@@ -27,11 +28,12 @@ def _repair_cues(text: str, script: str, part: str) -> str:
 
 # Checks on the script's own wording. When code inserted the verified script, a
 # retry can't change it (and the quality loop already gated it): warn only.
-_SCRIPT_WORDING_ISSUES = ("SENSATIONALIST", "VULGAR", "PRODUCTION SCRIPT TOO SHORT", "MISSING PRODUCTION SCRIPT")
+_SCRIPT_WORDING_ISSUES = ("SENSATIONALIST", "VULGAR", "PRODUCTION SCRIPT TOO SHORT",
+                          "PRODUCTION SCRIPT TOO LONG", "MISSING PRODUCTION SCRIPT")
 
 
-def _audit_part1(text: str, script_is_verified: bool = False) -> list:
-    issues = _audit_part1_all(text)
+def _audit_part1(text: str, script_is_verified: bool = False, blueprint=None) -> list:
+    issues = _audit_part1_all(text, blueprint)
     if not script_is_verified:
         return issues
     for issue in issues:
@@ -40,7 +42,7 @@ def _audit_part1(text: str, script_is_verified: bool = False) -> list:
     return [i for i in issues if not i.startswith(_SCRIPT_WORDING_ISSUES)]
 
 
-def _audit_part1_all(text: str) -> list:
+def _audit_part1_all(text: str, blueprint=None) -> list:
     """Audit Part 1 (Script + Packaging) for quality issues.
 
     NOTE: title/thumbnail quality (count, completeness, anti-cliché, honesty)
@@ -165,7 +167,7 @@ def _audit_part1_all(text: str) -> list:
     except Exception:
         pass
 
-    # Check spoken script length against target duration
+    # Check spoken script length against target duration (blueprint-aware in chapter mode)
     try:
         script_match = re.search(r"###\s*🎬?\s*PRODUCTION SCRIPT.*?\n(.*?)(\n###\s*WHAT CHANGED|\Z)", text, re.DOTALL)
         if script_match:
@@ -175,14 +177,46 @@ def _audit_part1_all(text: str) -> list:
             cleaned = re.sub(r"===.*?===", "", cleaned)
             cleaned = re.sub(r"\*\*\[.*?\]\*\*", "", cleaned)
             spoken_words = len(cleaned.split())
-            
-            duration_match = re.search(r"Target Duration\s*\|\s*(\d+)", text, re.IGNORECASE)
-            target_min = int(duration_match.group(1)) if duration_match else 0
-            if target_min >= 8 and spoken_words < 1000:
-                issues.append(
-                    f"PRODUCTION SCRIPT TOO SHORT: Spoken dialogue has only {spoken_words} words (~{spoken_words // 140} minutes), but the target duration is {target_min} minutes (needs ~1,150–1,350 words). "
-                    "You must expand the biological explanations, physiological mechanisms, and clinical case study details."
-                )
+
+            bp = blueprint if isinstance(blueprint, dict) else {}
+            if chapters.chapter_mode_on(bp):
+                try:
+                    minutes = float(bp.get("target_minutes", 0) or 0)
+                except (TypeError, ValueError):
+                    minutes = 0
+                try:
+                    wpm = float(bp.get("words_per_minute", 135) or 135)
+                except (TypeError, ValueError):
+                    wpm = 135
+                target_words = int(minutes * wpm) if minutes > 0 else 0
+                if not target_words:
+                    try:
+                        target_words = sum(int(float(c.get("words", 0) or 0))
+                                           for c in (bp.get("chapters") or []) if isinstance(c, dict))
+                    except (TypeError, ValueError):
+                        target_words = 0
+                if target_words:
+                    low, high = int(target_words * 0.85), int(target_words * 1.15)
+                    if spoken_words < low:
+                        issues.append(
+                            f"PRODUCTION SCRIPT TOO SHORT: Spoken dialogue has only {spoken_words} words, but the "
+                            f"blueprint targets ~{target_words} words (±15% = {low}–{high}). Expand the biological "
+                            "explanations, physiological mechanisms, and clinical case study details."
+                        )
+                    elif spoken_words > high:
+                        issues.append(
+                            f"PRODUCTION SCRIPT TOO LONG: Spoken dialogue has {spoken_words} words, but the "
+                            f"blueprint targets ~{target_words} words (±15% = {low}–{high}). Tighten the "
+                            "explanations so each chapter lands near its word budget."
+                        )
+            else:
+                duration_match = re.search(r"Target Duration\s*\|\s*(\d+)", text, re.IGNORECASE)
+                target_min = int(duration_match.group(1)) if duration_match else 0
+                if target_min >= 8 and spoken_words < 1000:
+                    issues.append(
+                        f"PRODUCTION SCRIPT TOO SHORT: Spoken dialogue has only {spoken_words} words (~{spoken_words // 140} minutes), but the target duration is {target_min} minutes (needs ~1,150–1,350 words). "
+                        "You must expand the biological explanations, physiological mechanisms, and clinical case study details."
+                    )
     except Exception:
         pass
 
@@ -293,6 +327,225 @@ def _audit_part2(text: str, script: str = "") -> list:
     return issues
 
 
+# --------------------------------------------------------------------------
+# Part 2 in chapter mode: one storyboard per chapter, stitched by code
+# --------------------------------------------------------------------------
+_STORYBOARD_HEADER = ("| # | Act | ⏱️ Timecode | ▶️ START CUE (exact first Arabic words from script) | "
+                      "⏹️ END CUE (exact last Arabic words) | Layer | Detail |")
+_STORYBOARD_SEPARATOR = "|---|---|---|---|---|---|---|"
+
+
+def _storyboard_rows(answer: str) -> list:
+    """Storyboard rows of one chapter's answer, tolerant of a missing heading."""
+    rows = ew.parse_storyboard(answer or "")
+    if rows:
+        return rows
+    out = []
+    for cells in ew.table_rows(answer or ""):
+        if len(cells) < 7:
+            continue
+        out.append({"num": cells[0], "act": cells[1], "time": cells[2], "start": cells[3],
+                    "end": cells[4], "layer": cells[5].upper().strip("* "),
+                    "detail": " | ".join(cells[6:]).strip()})
+    return out
+
+
+def _stitch_storyboard(spans: list, rows_by_index: dict) -> tuple:
+    """One heading's worth of rows, in chapter order, "#" renumbered 1..N globally.
+    Returns (table_markdown, {global_number: chapter_index})."""
+    lines = [_STORYBOARD_HEADER, _STORYBOARD_SEPARATOR]
+    number_to_chapter, number = {}, 0
+    for i, _ in enumerate(spans):
+        for row in rows_by_index.get(i) or []:
+            number += 1
+            number_to_chapter[number] = i
+            lines.append(f"| {number} | {row['act']} | {row['time']} | {row['start']} | "
+                         f"{row['end']} | {row['layer']} | {row['detail']} |")
+    return "\n".join(lines), number_to_chapter
+
+
+def _attributed_chapters(issues: list, number_to_chapter: dict, rows_by_index: dict, n: int) -> list:
+    """Chapters a retry can fix: those named by SB# in an issue, plus any that came
+    back with no rows at all. Empty ⇒ the caller re-runs every chapter."""
+    flagged = set()
+    for issue in issues or []:
+        for match in re.finditer(r"SB#(\d+)", str(issue)):
+            chapter = number_to_chapter.get(int(match.group(1)))
+            if chapter is not None:
+                flagged.add(chapter)
+    for i in range(n):
+        if not rows_by_index.get(i):
+            flagged.add(i)
+    return sorted(flagged)
+
+
+def _expected_storyboard_rows(span: dict) -> int:
+    minutes = max(0.5, (span["end_s"] - span["start_s"]) / 60.0)
+    return max(6, int(round(minutes * 4)))
+
+
+def _broll_items_block(rows: list, numbers: set) -> str:
+    selected = [r for r in rows if r.get("num", "").isdigit() and int(r["num"]) in numbers]
+    if not selected:
+        return "(no B-roll items assigned to this chapter)"
+    lines = ["| # | Timestamp | Type | AI Generation Prompt |", "|---|---|---|---|"]
+    for row in selected:
+        prompt = ew.plain_prompt(row.get("prompt", "")).replace("|", "/")
+        lines.append(f"| {row['num']} | {row.get('time', '')} | {row.get('kind', '')} | {prompt} |")
+    return "\n".join(lines)
+
+
+def _part2_skeleton(storyboard_table: str) -> str:
+    return f"""### 🎬 INTEGRATED PRODUCTION STORYBOARD
+
+{storyboard_table}
+
+---
+
+### 📐 TRANSITION MAP (Detail Reference)
+[[APPROVED TRANSITION MAP — inserted by code]]
+
+---
+
+### 🎨 TEXT ANIMATION & OVERLAY GUIDE (Detail Reference)
+[[APPROVED TEXT ANIMATION & OVERLAY GUIDE — inserted by code]]
+
+---
+
+### 🖼️ AI B-ROLL GENERATION PROMPTS (Detail Reference)
+[[APPROVED B-ROLL TABLE — inserted by code]]
+
+---
+
+### INTEGRATION DATA
+```
+Section covered by chapter mode: the storyboard above.
+```
+"""
+
+
+def _part2_chapter_mode(state: PipelineState, system_prompt_2: str, filmed_script: str,
+                        approved_parts: list, approved_broll: str):
+    """One storyboard call per chapter, stitched into a single Part 2 document."""
+    blueprint = state.get("blueprint") or {}
+    spans = chapters.chapter_spans(filmed_script, blueprint)
+    if len(spans) < 2:
+        return None
+
+    system_prompt_2 = system_prompt_2 + "\n\n" + load_prompt("production_chapter_mode")
+    workers = int(state.get("chapter_workers", 4) or 4)
+    broll_by_chapter = state.get("broll_by_chapter") or {}
+    all_broll_rows = ew.broll_rows(state.get("broll_prompts", ""))
+
+    def build_prompt(i: int, correction: str) -> tuple:
+        span = spans[i]
+        transitions = chapters.chapter_section(state.get("transition_design", ""), span["title"])
+        overlays = chapters.chapter_section(state.get("text_animation_overlay", ""), span["title"])
+        numbers = set(broll_by_chapter.get(span["id"], []) or [])
+        broll_block = _broll_items_block(all_broll_rows, numbers)
+        expected = _expected_storyboard_rows(span)
+        start, end = chapters.fmt_time(span["start_s"]), chapters.fmt_time(span["end_s"])
+        prompt = f"""Compile the storyboard for ONE CHAPTER of the Part 2 YouTube Production Deliverable (Post-Production Guide).
+
+THIS CHAPTER: id: {span['id']} | title: {span['title']} | chapter {i + 1} of {len(spans)} | from {start} to {end}
+CHAPTER TIME SPAN: {start}–{end}
+
+PRODUCTION SCRIPT (this chapter — copy START CUE / END CUE words exactly from here; spoken words only):
+{span['text']}
+
+TRANSITION DESIGN MAP for this chapter (put every transition in the storyboard; the map itself is inserted by code):
+{transitions or "(none provided)"}
+
+TEXT ANIMATION & OVERLAY GUIDE for this chapter (put every element and drawing in the storyboard; the guide itself is inserted by code):
+{overlays or "(none provided)"}
+
+AI B-ROLL GENERATION PROMPTS for this chapter (each storyboard B-ROLL row names its B-roll #; code copies the approved prompt in):
+{broll_block}
+
+PRODUCTION QUALITY CRITIQUE: {state.get("production_critique_output", "")}
+PRODUCTION GRADE: {state.get("production_grade", "")}
+MEDICAL TOPIC: {state.get("medical_topic", "")}
+PLATFORM: {state.get("target_platform", "")}
+
+RULES:
+1. Storyboard: about {expected} rows covering ONLY this chapter's span ({start}–{end}), at the usual density per minute.
+2. START CUE / END CUE: 4-8 consecutive spoken words copied exactly from this chapter's Production Script, unique in the whole script (add neighbouring words if they repeat), never stage directions or placeholders.
+3. B-ROLL storyboard rows: write "B-roll #N" using the GLOBAL numbers given above — code copies the full approved prompt into the row.
+4. Return ONLY this chapter's "### 🎬 INTEGRATED PRODUCTION STORYBOARD" heading and its rows; do NOT write the Transition Map, Text Animation & Overlay Guide, B-roll table or Integration Data sections (code assembles them)."""
+        if correction:
+            prompt += f"\n\n⚠️ CORRECTION REQUIRED:\n{correction}"
+        return prompt, expected
+
+    rows_by_index, issues_2 = {}, []
+    best = None
+    correction = ""
+    for attempt in range(MAX_FINAL_PACKAGE_RETRIES + 1):
+        if attempt == 0:
+            todo = list(range(len(spans)))
+        else:
+            todo = _attributed_chapters(issues_2, number_to_chapter, rows_by_index, len(spans))
+            if not todo:
+                todo = list(range(len(spans)))
+
+        def run_chapter(i, note=correction):
+            prompt, expected = build_prompt(i, note)
+            answer = call_llm(system_prompt_2, prompt, temperature=0.3,
+                              max_tokens=4000 + 150 * expected)
+            return i, _storyboard_rows(answer)
+
+        for i, rows in chapters.parallel_map(run_chapter, todo, workers):
+            rows_by_index[i] = rows
+
+        table, number_to_chapter = _stitch_storyboard(spans, rows_by_index)
+        part2 = _part2_skeleton(table)
+        for key, body in approved_parts:
+            if body:
+                part2 = ew.replace_section(part2, key, body, before="INTEGRATION DATA")
+        part2 = ew.fill_broll_rows(part2, approved_broll)
+        part2 = _repair_cues(part2, filmed_script, "Part2")
+        issues_2 = _audit_part2(part2, filmed_script)
+        if best is None or len(issues_2) < best[0]:
+            best = (len(issues_2), part2, issues_2)
+        if not issues_2:
+            print(f"  [final_package Part2] OK on attempt {attempt + 1}")
+            break
+        print(f"  [final_package Part2] Retry {attempt + 1}: {issues_2}")
+        correction = "The previous output had these problems - fix ALL of them:\n"
+        for i, issue in enumerate(issues_2, 1):
+            correction += f"  {i}. {issue}\n"
+        correction += "Regenerate this chapter's storyboard rows fixing every issue above (keep cues exact)."
+    return best[1], best
+
+
+def _part2_single_call(system_prompt_2: str, base_user_prompt_2: str, approved_parts: list,
+                       approved_broll: str, filmed_script: str) -> tuple:
+    part2 = ""
+    best_2 = None
+    correction_note_2 = ""
+    for attempt in range(MAX_FINAL_PACKAGE_RETRIES + 1):
+        user_prompt_2 = base_user_prompt_2
+        if correction_note_2:
+            user_prompt_2 += f"\n\n⚠️ CORRECTION REQUIRED (attempt {attempt + 1}):\n{correction_note_2}"
+        part2 = call_llm(system_prompt_2, user_prompt_2, temperature=0.3, max_tokens=12000)
+        for key, body in approved_parts:
+            if body:
+                part2 = ew.replace_section(part2, key, body, before="INTEGRATION DATA")
+        part2 = ew.fill_broll_rows(part2, approved_broll)
+        part2 = _repair_cues(part2, filmed_script, "Part2")
+        issues_2 = _audit_part2(part2, filmed_script)
+        if best_2 is None or len(issues_2) < best_2[0]:
+            best_2 = (len(issues_2), part2, issues_2)
+        if not issues_2:
+            print(f"  [final_package Part2] OK on attempt {attempt + 1}")
+            break
+        print(f"  [final_package Part2] Retry {attempt + 1}: {issues_2}")
+        correction_note_2 = "The previous output had these problems - fix ALL of them:\n"
+        for i, issue in enumerate(issues_2, 1):
+            correction_note_2 += f"  {i}. {issue}\n"
+        correction_note_2 += "Regenerate the COMPLETE output fixing every issue above."
+    return part2, best_2
+
+
 def final_script_package(state: PipelineState) -> dict:
 
     system_prompt_1 = load_prompt("final_script_package_part1")
@@ -363,7 +616,8 @@ CRITICAL: Copy the APPROVED TITLE OPTIONS and APPROVED THUMBNAIL CONCEPTS throug
         if verified_script:
             part1 = ew.replace_section(part1, "PRODUCTION SCRIPT", verified_script)
         part1 = _repair_cues(part1, ew.production_script(part1), "Part1")
-        issues_1 = _audit_part1(part1, script_is_verified=bool(verified_script))
+        issues_1 = _audit_part1(part1, script_is_verified=bool(verified_script),
+                                blueprint=state.get("blueprint"))
         if best_1 is None or len(issues_1) < best_1[0]:
             best_1 = (len(issues_1), part1, issues_1)
         if not issues_1:
@@ -417,31 +671,15 @@ RULES:
     approved_parts = [("TRANSITION MAP", ew.embedded_part(state.get("transition_design", ""))),
                       ("TEXT ANIMATION & OVERLAY GUIDE", ew.embedded_part(state.get("text_animation_overlay", ""))),
                       ("AI B-ROLL GENERATION PROMPTS", approved_broll)]
-    part2 = ""
-    best_2 = None
-    correction_note_2 = ""
-    for attempt in range(MAX_FINAL_PACKAGE_RETRIES + 1):
-        user_prompt_2 = base_user_prompt_2
-        if correction_note_2:
-            user_prompt_2 += f"\n\n⚠️ CORRECTION REQUIRED (attempt {attempt + 1}):\n{correction_note_2}"
-        part2 = call_llm(system_prompt_2, user_prompt_2, temperature=0.3, max_tokens=12000)
-        for key, body in approved_parts:
-            if body:
-                part2 = ew.replace_section(part2, key, body, before="INTEGRATION DATA")
-        part2 = ew.fill_broll_rows(part2, approved_broll)
-        part2 = _repair_cues(part2, filmed_script, "Part2")
-        issues_2 = _audit_part2(part2, filmed_script)
-        if best_2 is None or len(issues_2) < best_2[0]:
-            best_2 = (len(issues_2), part2, issues_2)
-        if not issues_2:
-            print(f"  [final_package Part2] OK on attempt {attempt + 1}")
-            break
-        print(f"  [final_package Part2] Retry {attempt + 1}: {issues_2}")
-        correction_note_2 = "The previous output had these problems - fix ALL of them:\n"
-        for i, issue in enumerate(issues_2, 1):
-            correction_note_2 += f"  {i}. {issue}\n"
-        correction_note_2 += "Regenerate the COMPLETE output fixing every issue above."
-    part2 = best_2[1]
+
+    if chapters.chapter_mode_on(state.get("blueprint")):
+        result = _part2_chapter_mode(state, system_prompt_2, filmed_script, approved_parts, approved_broll)
+    else:
+        result = None
+    if result is None:
+        result = _part2_single_call(system_prompt_2, base_user_prompt_2, approved_parts,
+                                    approved_broll, filmed_script)
+    part2, best_2 = result
 
     final_package = part1 + "\n\n---\n\n" + part2
     # Models sometimes double a heading's marks ("#### #### A/B Test Set").

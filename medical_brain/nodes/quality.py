@@ -8,11 +8,11 @@ from ..llm import call_llm_json
 from ..prompts import load_prompt
 from ..state import PipelineState
 from ..utils.llm_json import UnreadableAnswer, pick
+from . import chapters
 
 
-def translation_fidelity_auditor(state: PipelineState) -> dict:
-    system_prompt = load_prompt("translation_fidelity_auditor")
-
+def _translation_single_call(state: PipelineState, system_prompt: str) -> dict:
+    """The original whole-body audit (also the fallback when the body isn't chaptered)."""
     user_prompt = f"""Audit this restructured body for translation risk and contextual alignment against the original.
 
 CURRENT SCRIPT BODY:
@@ -71,6 +71,106 @@ Output ONLY the JSON object. Check every sentence for calque risk and every sect
             "contextual_alignment_score": 0,
             "translation_revision_count": state.get("translation_revision_count", 0) + 1,
         }
+
+
+def _translation_chapter_user(state: PipelineState, span: dict, k: int, n: int) -> str:
+    return f"""Audit this chapter of a restructured body for translation risk and contextual alignment against the original.
+
+THIS CHAPTER: id: {span['id']} | title: {span['title']} | chapter {k} of {n} | from {chapters.fmt_time(span['start_s'])} to {chapters.fmt_time(span['end_s'])}
+
+CURRENT SCRIPT BODY (this chapter only — audit ONLY these words):
+{span['text']}
+
+ORIGINAL ENGLISH SCRIPT (ground truth for intent/emphasis/correspondence):
+{state.get("original_script", "")}
+
+SOURCE SCRIPT ANALYSIS (structural map — use to see what each section was originally doing):
+{state.get("source_analysis", "")}
+
+RESTRUCTURE STRATEGY PLAN (act breakdown — use to tell intentional restructuring from accidental drift; terminology retention table — use to avoid false-flagging kept English terms):
+{state.get("strategy_plan", "")}
+
+CODE-SWITCHING LEVEL: {state.get("code_switching_level", "")}
+
+AVOID LIST:
+{state.get("avoid_list", "")}
+
+Output ONLY the JSON object. Check every sentence in THIS CHAPTER for calque risk and its sections for contextual correspondence to their counterparts in the original script; timecodes above are absolute video time and other chapters are audited separately."""
+
+
+def _translation_chapter_verdict(system_prompt: str, user_prompt: str, max_tokens: int) -> dict:
+    try:
+        data, llm_response = call_llm_json(system_prompt, user_prompt, temperature=0.2, max_tokens=max_tokens,
+                                           required=["translation_grade", "naturalness_score", "contextual_alignment_score"])
+    except UnreadableAnswer as e:
+        data, llm_response = None, e.raw
+    text = (llm_response or "").strip()
+    if data is None:
+        return {"grade": "NEEDS_REVISION", "naturalness": 0, "contextual": 0,
+                "report": text, "revised": ""}
+    try:
+        grade = str(pick(data, "translation_grade", "grade", default="")).strip().upper()
+        if grade not in ["PASS", "NEEDS_REVISION"]:
+            grade = "NEEDS_REVISION"
+        naturalness = pick(data, "naturalness_score", default=0, kind=int)
+        contextual = pick(data, "contextual_alignment_score", default=0, kind=int)
+        if naturalness < 8 or contextual < 8:
+            grade = "NEEDS_REVISION"
+        return {"grade": grade, "naturalness": naturalness, "contextual": contextual,
+                "report": data.get("translation_report", "") or text,
+                "revised": (data.get("revised_body", "") or "").strip()}
+    except Exception:
+        return {"grade": "NEEDS_REVISION", "naturalness": 0, "contextual": 0,
+                "report": text, "revised": ""}
+
+
+def _translation_chapter_mode(state: PipelineState, system_prompt: str, blueprint: dict) -> dict:
+    spans = chapters.chapter_spans(state.get("revised_body", ""), blueprint)
+    if len(spans) < 2:                       # body wasn't written chapter by chapter
+        return _translation_single_call(state, system_prompt)
+
+    system_prompt = system_prompt + "\n\n" + load_prompt("production_chapter_mode")
+    workers = int(state.get("chapter_workers", 4) or 4)
+
+    def audit(job):
+        k, span = job
+        user_prompt = _translation_chapter_user(state, span, k + 1, len(spans))
+        max_tokens = chapters.budget_for_words(len(span["text"].split())) + 2000
+        return _translation_chapter_verdict(system_prompt, user_prompt, max_tokens)
+
+    verdicts = chapters.parallel_map(audit, list(enumerate(spans)), workers)
+
+    revised_parts, reports = [], []
+    naturalness, contextual, failed = None, None, False
+    for span, verdict in zip(spans, verdicts):
+        body = chapters.ensure_header(verdict["revised"] or span["text"], span["title"])
+        revised_parts.append(body)
+        grade = verdict["grade"]
+        failed = failed or grade != "PASS"
+        naturalness = verdict["naturalness"] if naturalness is None else min(naturalness, verdict["naturalness"])
+        contextual = verdict["contextual"] if contextual is None else min(contextual, verdict["contextual"])
+        label = f"[{span['id']} · {span['title']}]"
+        reports.append(f"{label}\n{verdict['report']}")
+
+    naturalness = naturalness or 0
+    contextual = contextual or 0
+    grade = "NEEDS_REVISION" if (failed or naturalness < 8 or contextual < 8) else "PASS"
+    return {
+        "translation_grade": grade,
+        "translation_report": "\n\n".join(reports),
+        "revised_body": chapters.join_chapters(revised_parts),
+        "naturalness_score": naturalness,
+        "contextual_alignment_score": contextual,
+        "translation_revision_count": state.get("translation_revision_count", 0) + 1,
+    }
+
+
+def translation_fidelity_auditor(state: PipelineState) -> dict:
+    system_prompt = load_prompt("translation_fidelity_auditor")
+    blueprint = state.get("blueprint") or {}
+    if chapters.chapter_mode_on(blueprint):
+        return _translation_chapter_mode(state, system_prompt, blueprint)
+    return _translation_single_call(state, system_prompt)
 
 
 def fidelity_auditor(state: PipelineState) -> dict:
