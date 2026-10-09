@@ -278,10 +278,11 @@ def _find_session(arg: str) -> str:
 def run_research(router, state: dict, session_dir: str) -> dict:
     from .research import dossier as rd
     from .research.graph import build_research_app
-    from .research.sources import enabled, http
+    from .research.sources import enabled, google, http
     folder = os.path.join(session_dir, "research")
     os.makedirs(folder, exist_ok=True)
     http.set_cache_dir(os.path.join(folder, "cache"))
+    google.reset_run(max_queries=state.get("settings", {}).get("max_google_queries", 40))
     print(f"\n🔬 Researching: {state['topic']}  (sources: {', '.join(enabled())})")
     state = run_graph(build_research_app(), state, folder, router, label="research")
     state["review"] = {}

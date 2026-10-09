@@ -1,6 +1,8 @@
 """Google source, offline: fixtures for the SERP parser, a fake browser for search/fetch.
 No network, no real Chrome, no LLM."""
+import math
 import os
+import re
 import tempfile
 import unittest
 import urllib.parse
@@ -26,27 +28,49 @@ class Blocked(Exception):
 
 
 class FakeBrowser:
-    """Returns canned page dicts; records every open()."""
+    """Returns canned page dicts; records every open()/search(). A `sequence` overrides
+    `pages`/`default` one response at a time (used for the degraded-then-good restart test).
+    Google result pages go through search(); fetched result pages still go through open()."""
 
-    def __init__(self, pages=None, default=None):
+    def __init__(self, pages=None, default=None, sequence=None):
         self.pages = pages or {}
         self.default = default
+        self.sequence = list(sequence or [])
         self.opens = []
+        self.searches = []
         self.shown = 0
+        self.shown_search = 0
         self.hidden = 0
+        self.restarts = 0
 
-    def open(self, url, wait=6.0):
-        self.opens.append(url)
-        page = self.pages.get(url, self.default)
+    def _respond(self, url):
+        if self.sequence:
+            page = self.sequence.pop(0)
+        else:
+            page = self.pages.get(url, self.default)
         if page is None:
             page = {"url": url, "title": "", "html": "", "text": "", "status": "ok"}
         if isinstance(page, Exception):
             raise page
         return page
 
+    def open(self, url, wait=6.0):
+        self.opens.append(url)
+        return self._respond(url)
+
+    def search(self, url, settle=4.0):
+        self.searches.append(url)
+        return self._respond(url)
+
+    def restart_fresh(self):
+        self.restarts += 1
+
     def show(self, url=None):
         self.shown += 1
         self.shown_url = url
+
+    def show_search(self):
+        self.shown_search += 1
 
     def hide(self):
         self.hidden += 1
@@ -72,11 +96,61 @@ def page(html, url="https://www.mayoclinic.org/x", title="Mayo", status="ok"):
 
 SERP_MIX = """
 <div>
-  <a href="/goto?url=AAA"><h3>Trusted result</h3><cite>https://www.mayoclinic.org/x</cite></a>
+  <a href="/goto?url=AAA"><h3>Trusted cramp result</h3><cite>https://www.mayoclinic.org/x</cite></a>
   <div>This snippet is comfortably longer than the twenty five character floor.</div>
 </div>
 <div>
+  <a href="/goto?url=AAB"><h3>Another trusted cramp result</h3><cite>https://www.nhs.uk/y</cite></a>
+  <div>Another snippet comfortably longer than the twenty five character floor.</div>
+</div>
+<div>
   <a href="/goto?url=BBB"><h3>Untrusted result</h3><cite>https://webmd.com/y</cite></a>
+</div>
+"""
+
+# The generic replay a throttled profile returned in the real run: same trusted hosts, but
+# nothing to do with the query "how to stop a muscle cramp fast".
+GENERIC_SERP = """
+<div>
+  <a href="/goto?url=G1"><h3>Drugs and Supplements</h3><cite>https://www.mayoclinic.org/drugs-supplements</cite></a>
+  <div>Browse prescription and over-the-counter drugs and supplements.</div>
+</div>
+<div>
+  <a href="/goto?url=G2"><h3>U.S. and International Locations</h3><cite>https://www.mayoclinic.org/locations</cite></a>
+  <div>Find a Mayo Clinic location near you.</div>
+</div>
+<div>
+  <a href="/goto?url=G3"><h3>MyChart</h3><cite>https://www.hopkinsmedicine.org/mychart</cite></a>
+  <div>Log in to your patient account to see your records.</div>
+</div>
+<div>
+  <a href="/goto?url=G4"><h3>Acupuncture</h3><cite>https://www.hopkinsmedicine.org/acupuncture</cite></a>
+  <div>Acupuncture may help with some types of pain and nausea.</div>
+</div>
+"""
+
+# PubMed/PMC/Europe PMC are trusted but already covered by the literature sources; two
+# real Mayo results remain so the page still looks healthy after exclusion.
+LITERATURE_SERP = """
+<div>
+  <a href="/goto?url=L1"><h3>Muscle cramp: MedlinePlus</h3><cite>https://pubmed.ncbi.nlm.nih.gov/123</cite></a>
+  <div>A muscle cramp is a sudden tightening of a muscle and can be painful at night.</div>
+</div>
+<div>
+  <a href="/goto?url=L2"><h3>Muscle cramps review</h3><cite>https://pmc.ncbi.nlm.nih.gov/articles/PMC1</cite></a>
+  <div>Muscle cramps are common and usually harmless but can be frequent.</div>
+</div>
+<div>
+  <a href="/goto?url=L3"><h3>Muscle cramps in sport</h3><cite>https://europepmc.org/article/MED/1</cite></a>
+  <div>Exercise-associated muscle cramps affect many athletes during training.</div>
+</div>
+<div>
+  <a href="/goto?url=L4"><h3>Muscle cramp - Symptoms and causes</h3><cite>https://www.mayoclinic.org/muscle-cramp</cite></a>
+  <div>Muscle cramps are sudden involuntary contractions that commonly affect the calf.</div>
+</div>
+<div>
+  <a href="/goto?url=L5"><h3>Muscle cramps: when to see a doctor</h3><cite>https://www.mayoclinic.org/muscle-cramps-doctor</cite></a>
+  <div>Muscle cramps that are frequent or severe may need medical evaluation.</div>
 </div>
 """
 
@@ -85,7 +159,8 @@ class GoogleTest(unittest.TestCase):
     def setUp(self):
         google.reset_run()
         http.log.clear()
-        for name in ("MB_MAX_GOOGLE_QUERIES", "MB_BROWSER_ONLY", "RESEARCH_TRUSTED_DOMAINS"):
+        for name in ("MB_MAX_GOOGLE_QUERIES", "MB_BROWSER_ONLY", "RESEARCH_TRUSTED_DOMAINS",
+                     "MB_GOOGLE_GROUPS"):
             os.environ.pop(name, None)
         self.tmp = tempfile.mkdtemp()
         http.set_cache_dir(self.tmp)
@@ -101,6 +176,12 @@ class GoogleTest(unittest.TestCase):
 
     def use_browser(self, client):
         patcher = mock.patch.object(google, "_load_browser", lambda: FakeBrowserModule(client))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def ignore_degradation(self):
+        """Skip the degraded check: a shared fake SERP can't satisfy the new domain rule."""
+        patcher = mock.patch.object(google, "is_degraded", lambda *a, **k: False)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -138,6 +219,14 @@ class GoogleTest(unittest.TestCase):
                          "cramps also (site:nhs.uk)")
         self.assertEqual(google.build_query("cramps", []), "cramps")
 
+    def test_build_query_strips_paths_and_caps_two_domains(self):
+        # Google ignores paths and only honours two site: domains per query.
+        self.assertEqual(google.build_query("cramps", ["mayoclinic.org/diseases-conditions",
+                                                       "nhs.uk/conditions"]),
+                         "cramps (site:mayoclinic.org OR site:nhs.uk)")
+        self.assertEqual(google.build_query("cramps", ["a.com", "b.com", "c.com"]),
+                         "cramps (site:a.com OR site:b.com)")
+
     # ---------------------------------------------------------------- search
 
     def test_search_uses_cache_on_second_call(self):
@@ -145,24 +234,61 @@ class GoogleTest(unittest.TestCase):
         self.use_browser(browser)
         first = google.search("night leg cramps", sites=["mayoclinic.org"])
         second = google.search("night leg cramps", sites=["mayoclinic.org"])
-        self.assertEqual(len(browser.opens), 1)          # cached the second time
+        self.assertEqual(len(browser.searches), 1)       # cached the second time
+        self.assertEqual(browser.opens, [])              # SERPs never open a fresh tab
         self.assertEqual(first, second)
         self.assertTrue(first)
-        self.assertIn("site:mayoclinic.org", urllib.parse.unquote(browser.opens[0]))
+        self.assertIn("site:mayoclinic.org", urllib.parse.unquote(browser.searches[0]))
+
+    def test_serp_loads_use_search_not_open(self):
+        """Every Google results-page load must reuse the persistent search tab via search()."""
+        browser = FakeBrowser(default=page(fixture("google_serp_mayo.html")))
+        self.use_browser(browser)
+        google.search("night leg cramps", sites=["mayoclinic.org", "nhs.uk"])
+        self.assertTrue(browser.searches, "the SERP was never fetched through search()")
+        self.assertEqual(browser.opens, [], "a SERP must not open a fresh tab")
+
+    def test_captcha_handoff_prefers_show_search(self):
+        """The interactive hand-off shows the long-lived search tab, not a throwaway tab."""
+        client = FakeBrowser(default=page("", status="captcha"))
+        with mock.patch("sys.stdin.isatty", return_value=True), \
+                mock.patch("builtins.input", return_value=""):
+            google._captcha_prompt(client, "https://www.google.com/search?q=x")
+        self.assertEqual(client.shown_search, 1)
+        self.assertEqual(client.shown, 0)
+        self.assertEqual(client.hidden, 1)
 
     def test_search_filters_untrusted_results(self):
         browser = FakeBrowser(default=page(SERP_MIX))
         self.use_browser(browser)
         results = google.search("cramps", sites=["mayoclinic.org"])
-        self.assertEqual([r["title"] for r in results], ["Trusted result"])
+        self.assertEqual([r["title"] for r in results],
+                         ["Trusted cramp result", "Another trusted cramp result"])
 
-    def test_search_limits_sites_to_eight(self):
+    def test_search_groups_two_domains_per_query(self):
         browser = FakeBrowser(default=page(fixture("google_serp_mayo.html")))
         self.use_browser(browser)
+        self.ignore_degradation()
         sites = web.trusted_domains()
-        self.assertGreater(len(sites), 8)
+        self.assertGreater(len(sites), 2)
         google.search("cramps", sites=sites)
-        self.assertEqual(urllib.parse.unquote(browser.opens[0]).count("site:"), 8)
+        self.assertEqual(len(browser.searches), math.ceil(len(sites) / 2))
+        for opened in browser.searches:
+            query = urllib.parse.unquote(opened)
+            self.assertLessEqual(query.count("site:"), 2)
+            for token in re.findall(r"site:(\S+)", query):
+                self.assertNotIn("/", token)             # no paths, domains only
+
+    def test_site_groups_env_override(self):
+        browser = FakeBrowser(default=page(fixture("google_serp_mayo.html")))
+        self.use_browser(browser)
+        self.ignore_degradation()
+        with mock.patch.dict(os.environ, {"MB_GOOGLE_GROUPS": "nhs.uk,mayoclinic.org;medlineplus.gov"}):
+            google.search("cramps")
+        self.assertEqual(len(browser.searches), 2)
+        self.assertIn("site:nhs.uk", urllib.parse.unquote(browser.searches[0]))
+        self.assertIn("site:mayoclinic.org", urllib.parse.unquote(browser.searches[0]))
+        self.assertIn("site:medlineplus.gov", urllib.parse.unquote(browser.searches[1]))
 
     def test_captcha_noninteractive_disables_further_searches(self):
         browser = FakeBrowser(default=page("", status="captcha"))
@@ -170,9 +296,10 @@ class GoogleTest(unittest.TestCase):
         with mock.patch("sys.stdin.isatty", return_value=False):
             self.assertEqual(google.search("a", sites=["mayoclinic.org"]), [])
             self.assertTrue(google._run["disabled"])
-            opened = len(browser.opens)
+            searched = len(browser.searches)
             self.assertEqual(google.search("b", sites=["nhs.uk"]), [])
-        self.assertEqual(len(browser.opens), opened)     # disabled: no more Google traffic
+        self.assertEqual(len(browser.searches), searched)   # disabled: no more Google traffic
+        self.assertEqual(browser.opens, [])
 
     def test_run_cap_limits_queries(self):
         browser = FakeBrowser(default=page(""))
@@ -181,21 +308,123 @@ class GoogleTest(unittest.TestCase):
             google.search("a", sites=["mayoclinic.org"])
             google.search("b", sites=["mayoclinic.org"])
             self.assertEqual(google.search("c", sites=["mayoclinic.org"]), [])
-        self.assertEqual(len(browser.opens), 2)
+        self.assertEqual(len(browser.searches), 2)
+
+    def test_remaining_reports_budget(self):
+        with mock.patch.dict(google._run, {"max": 5, "queries": 0}):
+            self.assertEqual(google.remaining(), 5)
+            google._run["queries"] = 2
+            self.assertEqual(google.remaining(), 3)
+            google._run["queries"] = 99
+            self.assertEqual(google.remaining(), 0)
+
+    # -------------------------------------------------------- exclusion & degradation
+
+    def test_search_excludes_literature_hosts(self):
+        browser = FakeBrowser(default=page(LITERATURE_SERP))
+        self.use_browser(browser)
+        results = google.search("muscle cramps", sites=["mayoclinic.org"])
+        self.assertTrue(results)                                  # healthy page, not degraded
+        self.assertEqual({r["site"] for r in results}, {"mayoclinic.org"})
+        self.assertTrue(google._is_excluded_site("pubmed.ncbi.nlm.nih.gov"))
+        self.assertTrue(google._is_excluded_site("pmc.ncbi.nlm.nih.gov"))
+        self.assertTrue(google._is_excluded_site("europepmc.org"))
+        self.assertFalse(google._is_excluded_site("mayoclinic.org"))
+
+    def test_is_degraded_flags_the_generic_replay(self):
+        query = "how to stop a muscle cramp fast"
+        generic = [{"title": "Orlistat", "snippet": ""},
+                   {"title": "Leptospirosis", "snippet": ""},
+                   {"title": "Cyclospora infection", "snippet": ""},
+                   {"title": "Acupuncture", "snippet": ""},
+                   {"title": "MyChart", "snippet": ""}]
+        self.assertTrue(google.is_degraded(query, generic))
+
+    def test_is_degraded_false_for_relevant_results(self):
+        query = "how to stop a muscle cramp fast"
+        relevant = [{"title": "Muscle cramp - Symptoms and causes",
+                     "snippet": "Muscle cramps are sudden involuntary contractions."},
+                    {"title": "Muscle cramps: First aid",
+                     "snippet": "Learn how to relieve a muscle cramp at night."}]
+        self.assertFalse(google.is_degraded(query, relevant))
+
+    def test_is_degraded_prefix_and_no_content_words(self):
+        # the 5-letter-prefix rule: query "cramps" matches pages that only say "cramp"
+        self.assertFalse(google.is_degraded("cramps", [
+            {"title": "Cramp relief", "snippet": ""},
+            {"title": "Muscle cramp causes", "snippet": ""}]))
+        self.assertFalse(google.is_degraded("how to do it", [{"title": "x", "snippet": "y"}]))
+        self.assertTrue(google.is_degraded("muscle cramps", [{"title": "Acupuncture", "snippet": ""}]))
+
+    def test_is_degraded_flags_relaxed_site_operator(self):
+        # Every result is on-topic, so only the domain rule can catch Google ignoring
+        # site:mayoclinic.org and answering with other trusted hosts.
+        query = "night leg cramps"
+        relaxed = [{"title": "Night leg cramps - Mayo Clinic", "site": "mayoclinic.org",
+                    "snippet": "night leg cramps are common"},
+                   {"title": "Night leg cramps", "site": "nhs.uk", "snippet": "cramps at night"},
+                   {"title": "Leg cramps", "site": "my.clevelandclinic.org", "snippet": "cramps"},
+                   {"title": "Night cramps", "site": "hopkinsmedicine.org", "snippet": "cramps"},
+                   {"title": "Cramp relief", "site": "medlineplus.gov", "snippet": "cramps"}]
+        self.assertTrue(google.is_degraded(query, relaxed, ["mayoclinic.org"]))
+        # Without the requested domains the old content-word behaviour is unchanged.
+        self.assertFalse(google.is_degraded(query, relaxed))
+
+    def test_is_degraded_domain_rule_accepts_a_majority(self):
+        query = "night leg cramps"
+        healthy = [{"title": "Night leg cramps", "site": "mayoclinic.org", "snippet": "cramps"},
+                   {"title": "Night leg cramps", "site": "www.mayoclinic.org", "snippet": "cramps"},
+                   {"title": "Night leg cramps", "site": "mayoclinic.org", "snippet": "cramps"},
+                   {"title": "Night cramps", "site": "nhs.uk", "snippet": "cramps"},
+                   {"title": "Cramp relief", "site": "www.hopkinsmedicine.org", "snippet": "cramps"}]
+        # 3/5 come from the requested domains (the www. subdomain counts) -> not relaxed.
+        self.assertFalse(google.is_degraded(query, healthy, ["mayoclinic.org", "hopkinsmedicine.org"]))
+
+    def test_is_degraded_domain_rule_needs_results(self):
+        self.assertFalse(google.is_degraded("night leg cramps", [], ["mayoclinic.org"]))
+        self.assertFalse(google.is_degraded("night leg cramps", None, ["mayoclinic.org"]))
+
+    def test_is_degraded_domain_rule_ignores_empty_request(self):
+        row = [{"title": "Night leg cramps", "site": "nhs.uk", "snippet": "night cramps"}]
+        self.assertFalse(google.is_degraded("night leg cramps", row, []))
+
+    def test_degraded_page_restarts_once_then_retries(self):
+        good = page(fixture("google_serp_mayo.html"))
+        client = FakeBrowser(sequence=[page(GENERIC_SERP), good])
+        self.use_browser(client)
+        results = google.search("how to stop a muscle cramp fast", sites=["mayoclinic.org"])
+        self.assertEqual(client.restarts, 1)
+        self.assertTrue(results)
+        self.assertFalse(google._run["disabled"])
+
+    def test_degraded_twice_disables_google(self):
+        client = FakeBrowser(default=page(GENERIC_SERP))
+        self.use_browser(client)
+        self.assertEqual(google.search("how to stop a muscle cramp fast", sites=["mayoclinic.org"]), [])
+        self.assertEqual(client.restarts, 1)
+        self.assertTrue(google._run["disabled"])
+        searched = len(client.searches)
+        self.assertEqual(google.search("another muscle cramp query", sites=["mayoclinic.org"]), [])
+        self.assertEqual(len(client.searches), searched)          # disabled: no more traffic
+        self.assertEqual(client.opens, [])
 
     def test_search_never_raises(self):
         self.use_browser(FakeBrowser(default=Blocked("blocked", "x")))
         self.assertEqual(google.search("a", sites=["mayoclinic.org"]), [])
 
-    def test_default_scopes_and_no_num_parameter(self):
+    def test_default_site_groups_one_query_each(self):
         browser = FakeBrowser(default=page(fixture("google_serp_mayo.html")))
         self.use_browser(browser)
-        google.search("night leg cramps")            # sites=None -> DEFAULT_SCOPES
-        url = urllib.parse.unquote(browser.opens[0])
-        self.assertNotIn("num=", url)                # Google removed num in 2025
-        for scope in google.DEFAULT_SCOPES:
-            self.assertIn(f"site:{scope}", url)
-        self.assertEqual(url.count("site:"), 8)
+        self.ignore_degradation()
+        google.search("night leg cramps")            # sites=None -> SITE_GROUPS
+        self.assertEqual(len(browser.searches), len(google.SITE_GROUPS))
+        for opened, group in zip(browser.searches, google.SITE_GROUPS):
+            query = urllib.parse.unquote(opened)
+            self.assertNotIn("num=", query)          # Google removed num in 2025
+            for domain in group:
+                self.assertIn(f"site:{domain}", query)
+            for token in re.findall(r"site:(\S+)", query):
+                self.assertNotIn("/", token)
 
     def test_search_drops_blocked_subdomains(self):
         browser = FakeBrowser(default=page(fixture("google_serp_hopkins.html")))
@@ -306,7 +535,7 @@ class GoogleTest(unittest.TestCase):
         blocks = ["## Heading", "First body block text here.", "Second body block text here."]
         src = google.to_source(page_dict, [3, 1, 99, 0, -2, "nope"], blocks)
         self.assertEqual(src["text"], "## Heading\nSecond body block text here.")
-        self.assertEqual(src["origin"], "Web (Google)")
+        self.assertEqual(src["origin"], "Web")
         self.assertEqual(src["title"], "Mayo")
         self.assertEqual(src["url"], "https://www.mayoclinic.org/x")
 

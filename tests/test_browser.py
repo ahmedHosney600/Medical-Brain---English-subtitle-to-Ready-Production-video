@@ -2,9 +2,11 @@
 end-to-end test really launches Chrome and is skipped unless RUN_BROWSER_TESTS=1."""
 import json
 import os
+import shutil
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 from medical_brain.research.sources import browser
 
@@ -39,6 +41,39 @@ class PageStatusTest(unittest.TestCase):
         self.assertEqual(browser.page_status("Muscle cramp - Symptoms and causes", text, MAYO_OK[2]), "ok")
 
 
+class WaitReadyTest(unittest.TestCase):
+    """_wait_ready polls a document.readyState callable; pure of Chrome, so it is offline-testable."""
+
+    def test_returns_true_as_soon_as_complete(self):
+        states = iter(["loading", "interactive", "complete", "complete"])
+        calls = {"n": 0}
+
+        def state():
+            calls["n"] += 1
+            return next(states)
+
+        with mock.patch.object(browser.time, "sleep"):
+            self.assertTrue(browser._wait_ready(state, timeout=5.0, interval=0.5))
+        self.assertEqual(calls["n"], 3)                  # stopped the moment it was complete
+
+    def test_times_out_while_loading(self):
+        with mock.patch.object(browser.time, "sleep"):
+            self.assertFalse(browser._wait_ready(lambda: "loading", timeout=0.0))
+
+    def test_call_errors_are_treated_as_not_ready(self):
+        calls = {"n": 0}
+
+        def state():
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("connection gone")
+            return "complete"
+
+        with mock.patch.object(browser.time, "sleep"):
+            self.assertTrue(browser._wait_ready(state, timeout=5.0, interval=0.5))
+        self.assertEqual(calls["n"], 2)
+
+
 class DevToolsPortTest(unittest.TestCase):
     def test_parses_sample_file(self):
         self.assertEqual(browser.parse_devtools_port("9222\n/devtools/browser/abc-123\n"), 9222)
@@ -47,6 +82,48 @@ class DevToolsPortTest(unittest.TestCase):
         self.assertIsNone(browser.parse_devtools_port(""))
         self.assertIsNone(browser.parse_devtools_port("\n\n"))
         self.assertIsNone(browser.parse_devtools_port("not-a-port\n"))
+
+
+class ProfileLifecycleTest(unittest.TestCase):
+    """The default profile is a throwaway temp dir, removed on close (per-profile throttling
+    sticks, so each process must start flag-free)."""
+
+    def test_default_profile_is_temp_and_removed_on_close(self):
+        b = browser.Browser()
+        self.assertTrue(b._temp_profile)
+        self.assertTrue(b.profile_dir.startswith(tempfile.gettempdir()))
+        self.assertTrue(os.path.basename(b.profile_dir).startswith("mb-chrome-"))
+        self.assertTrue(os.path.isdir(b.profile_dir))
+        b.close()
+        self.assertFalse(os.path.exists(b.profile_dir))
+
+    def test_fixed_profile_is_kept(self):
+        with tempfile.TemporaryDirectory() as profile:
+            b = browser.Browser(profile_dir=profile)
+            self.assertFalse(b._temp_profile)
+            self.assertEqual(b.profile_dir, profile)
+            b.close()
+            self.assertTrue(os.path.isdir(profile))      # a caller's dir is never deleted
+
+    def test_new_temp_profile_is_unique_and_prefixed(self):
+        first, second = browser.new_temp_profile(), browser.new_temp_profile()
+        self.assertNotEqual(first, second)
+        self.assertTrue(os.path.basename(first).startswith("mb-chrome-"))
+        self.assertTrue(os.path.isdir(first) and os.path.isdir(second))
+        self.addCleanup(shutil.rmtree, first, ignore_errors=True)
+        self.addCleanup(shutil.rmtree, second, ignore_errors=True)
+
+    def test_restart_fresh_swaps_to_a_new_temp_profile(self):
+        b = browser.Browser()
+        first = b.profile_dir
+        with mock.patch.object(browser.Browser, "start", lambda self: None):
+            b.restart_fresh()
+        self.assertNotEqual(b.profile_dir, first)
+        self.assertTrue(b._temp_profile)
+        self.assertFalse(os.path.exists(first))          # old flagged dir is gone
+        self.assertTrue(os.path.isdir(b.profile_dir))    # fresh one exists
+        b.close()
+        self.assertFalse(os.path.exists(b.profile_dir))
 
 
 @unittest.skipUnless(os.environ.get("RUN_BROWSER_TESTS") == "1",

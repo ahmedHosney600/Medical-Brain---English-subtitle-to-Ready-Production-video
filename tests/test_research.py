@@ -13,8 +13,9 @@ from medical_brain.prompts import load_prompt
 from medical_brain.research import dossier as rd
 from medical_brain.research import nodes
 from medical_brain.research.graph import build_research_app
-from medical_brain.research.sources import europepmc, evidence, medlineplus, pubmed, web
+from medical_brain.research.sources import europepmc, evidence, google, medlineplus, pubmed, web
 from medical_brain.research.state import new_state
+from medical_brain.utils.llm_json import UnreadableAnswer
 
 PUBMED_XML = """<PubmedArticleSet><PubmedArticle><MedlineCitation><PMID>111</PMID><Article>
 <Journal><JournalIssue><PubDate><Year>2023</Year></PubDate></JournalIssue><Title>Heart Rhythm</Title></Journal>
@@ -59,6 +60,22 @@ class SourceParsersTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {"TAVILY_API_KEY": ""}, clear=False), \
                 mock.patch.dict(os.environ, {"BRAVE_API_KEY": ""}, clear=False):
             self.assertEqual(web.search("af"), [])
+
+    def test_enabled_lists_google_when_chrome_available(self):
+        from medical_brain.research.sources import enabled as sources_enabled
+        with mock.patch("medical_brain.research.sources.browser.available", lambda: True):
+            self.assertTrue(any("(+ Google)" in n for n in sources_enabled()))
+        with mock.patch("medical_brain.research.sources.browser.available", lambda: False):
+            self.assertFalse(any("(+ Google)" in n for n in sources_enabled()))
+
+    def test_enabled_lists_sites_banner(self):
+        from medical_brain.research.sources import enabled as sources_enabled
+        banner = "Sites: Mayo Clinic, Johns Hopkins, NHS, Cleveland Clinic"
+        with mock.patch("medical_brain.research.sources.browser.available", lambda: True):
+            names = sources_enabled()
+            self.assertIn(banner + " (+ Google)", names)
+        with mock.patch("medical_brain.research.sources.browser.available", lambda: False):
+            self.assertIn(banner, sources_enabled())
 
     def test_evidence_ranking(self):
         self.assertGreater(evidence.score({"level": 1, "year": 2023, "text": "x"}),
@@ -136,7 +153,8 @@ class ResearchGraphTest(unittest.TestCase):
         return out
 
     def test_full_research_round(self):
-        state = self.run_graph(new_state("Smartwatches and atrial fibrillation"))
+        state = self.run_graph(new_state("Smartwatches and atrial fibrillation",
+                                        settings={"web_search": "off"}))
         verified = rd.verified_facts(state)
         claims = [f["claim"] for f in verified]
         self.assertIn("Smartwatches detect AF with 94.2% sensitivity.", claims)
@@ -161,7 +179,8 @@ class ResearchGraphTest(unittest.TestCase):
         self.assertEqual(state2["review_round"], 1)
 
     def test_save_and_review_file(self):
-        state = self.run_graph(new_state("Smartwatches and atrial fibrillation"))
+        state = self.run_graph(new_state("Smartwatches and atrial fibrillation",
+                                        settings={"web_search": "off"}))
         folder = tempfile.mkdtemp()
         paths = rd.save(state, folder)
         rd.write_review_file(os.path.join(folder, "review.md"), state["topic"], "output/x")
@@ -515,6 +534,336 @@ class ParallelCallsTest(unittest.TestCase):
         self.assertEqual([s["candidates"] for s in par["outline"]],
                          [s["candidates"] for s in seq["outline"]])
         self.assertEqual(par["outline"][0]["candidates"], ["S1"])   # ids follow outline order
+
+
+WEB_A = {"title": "Mayo leg cramps", "href": "https://www.google.com/goto?url=A",
+         "site": "mayoclinic.org", "snippet": "causes and self-care", "rank": 1}
+WEB_B = {"title": "NHS leg cramps", "href": "https://www.google.com/goto?url=B",
+         "site": "nhs.uk", "snippet": "treatment", "rank": 2}
+SITE_A = {"title": "Mayo site leg cramps", "href": "https://www.mayoclinic.org/symptoms/night-leg-cramps",
+          "site": "mayoclinic.org", "snippet": "self-care at night", "rank": 1}
+
+
+class WebLlm:
+    """Routes call_llm_json by system prompt; records every system used."""
+
+    def __init__(self, triage, picker):
+        self.triage = triage
+        self.picker = picker
+        self.triage_calls = 0
+        self.systems = []
+
+    def __call__(self, system, user, temperature=None, max_tokens=None, required=()):
+        self.systems.append(system)
+        if system == load_prompt("research/web_triage"):
+            self.triage_calls += 1
+            data = self.triage(user, self.triage_calls)
+        elif system == load_prompt("research/passage_picker"):
+            data = self.picker(user)
+        else:
+            raise AssertionError("unexpected prompt: " + system)
+        return data, json.dumps(data)
+
+
+class WebResearchTest(unittest.TestCase):
+    """Google → triage → open → passage pick: fake google + fake LLM, no browser/network."""
+
+    def setUp(self):
+        self.blocks = {
+            "<html>A</html>": ["## Night leg cramps",
+                               "Most night leg cramps are harmless and have no known cause.",
+                               "Stretching your calves before bed may help prevent them.",
+                               "See a doctor if the cramps are frequent or severe."],
+            "<html>B</html>": ["## Leg cramps",
+                               "A cramp is a sudden tight contraction of a muscle.",
+                               "They often happen at night and are usually harmless.",
+                               "Drink enough water during the day to help prevent them."],
+        }
+        self.pages = {
+            WEB_A["href"]: {"url": "https://www.mayoclinic.org/leg-cramps",
+                            "title": "Mayo leg cramps", "html": "<html>A</html>"},
+            WEB_B["href"]: {"url": "https://www.nhs.uk/leg-cramps",
+                            "title": "NHS leg cramps", "html": "<html>B</html>"},
+        }
+        self.searches, self.opens = [], []
+        self.site_searches = []
+        google.reset_run()
+        for target, new in (("medical_brain.research.sources.run_query", mock.Mock(return_value=[])),
+                            ("medical_brain.research.sources.browser.available", mock.Mock(return_value=True))):
+            patcher = mock.patch(target, new)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def default_triage(self, user, call_no):
+        sids = re.findall(r"## SECTION (\w+):", user)
+        return {"sections": [{"id": s, "open": [1, 2], "why": "ok", "better_queries": []} for s in sids]}
+
+    def default_picker(self, user):
+        return {"keep": [1, 2] if "Mayo" in user else [2, 3], "relevance": "high"}
+
+    def use_google(self, hits, triage=None, picker=None):
+        def search(query, sites=None, max_results=10):
+            self.searches.append(query)
+            return [dict(r) for r in hits.get(query, [])]
+
+        def fetch_page(result_or_url):
+            href = result_or_url.get("href") if isinstance(result_or_url, dict) else result_or_url
+            self.opens.append(href)
+            return dict(self.pages[href]) if href in self.pages else None
+
+        def paragraphs(html):
+            return list(self.blocks.get(html, []))
+
+        for name, fn in (("search", search), ("fetch_page", fetch_page), ("paragraphs", paragraphs)):
+            patcher = mock.patch("medical_brain.research.sources.google." + name, fn)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        llm = WebLlm(triage or self.default_triage, picker or self.default_picker)
+        patcher = mock.patch.object(nodes, "call_llm_json", llm)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _fake_site_search(self, site_hits):
+        def search(query):
+            self.site_searches.append(query)
+            return [dict(r) for r in site_hits.get(query, [])]
+        return search
+
+    def _fake_fetch(self):
+        def fetch_page(result_or_url):
+            href = result_or_url.get("href") if isinstance(result_or_url, dict) else result_or_url
+            self.opens.append(href)
+            return dict(self.pages[href]) if href in self.pages else None
+
+        def paragraphs(html):
+            return list(self.blocks.get(html, []))
+        for name, fn in (("fetch_page", fetch_page), ("paragraphs", paragraphs)):
+            patcher = mock.patch("medical_brain.research.sources.google." + name, fn)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def use_sites(self, hits, triage=None, picker=None):
+        """Site-native search only; page fetching still goes through google.fetch_page."""
+        patcher = mock.patch("medical_brain.research.sources.sitesearch.search",
+                             self._fake_site_search(hits))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self._fake_fetch()
+        llm = WebLlm(triage or self.default_triage, picker or self.default_picker)
+        patcher = mock.patch.object(nodes, "call_llm_json", llm)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def use_both(self, site_hits, google_hits, triage=None, picker=None):
+        def google_search(query, sites=None, max_results=10):
+            self.searches.append(query)
+            return [dict(r) for r in google_hits.get(query, [])]
+
+        patcher = mock.patch("medical_brain.research.sources.sitesearch.search",
+                             self._fake_site_search(site_hits))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = mock.patch("medical_brain.research.sources.google.search", google_search)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self._fake_fetch()
+        llm = WebLlm(triage or self.default_triage, picker or self.default_picker)
+        patcher = mock.patch.object(nodes, "call_llm_json", llm)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_triage_open_and_verbatim_source(self):
+        sec = section("A", pending={"literature": [], "public": ["leg cramps causes"]})
+        st = state_of([sec], sources={}, focus=["A"], queries_done=[],
+                      settings={"web_search": "google", "web_pages_per_section": 2})
+        self.use_google({"leg cramps causes": [WEB_A, WEB_B]})
+        out = nodes.source_collector(st)
+        self.assertEqual(out["sources"]["S1"]["text"],
+                         "## Night leg cramps\nMost night leg cramps are harmless and have no known cause.")
+        self.assertEqual(out["sources"]["S1"]["origin"], "Web")
+        self.assertEqual(out["sources"]["S2"]["text"],
+                         "A cramp is a sudden tight contraction of a muscle.\n"
+                         "They often happen at night and are usually harmless.")
+        self.assertEqual(self.opens, [WEB_A["href"], WEB_B["href"]])
+        self.assertIn("google:leg cramps causes", out["queries_done"])
+        self.assertEqual(out["outline"][0]["candidates"], ["S1", "S2"])
+
+    def test_unreadable_triage_falls_back_to_top_k(self):
+        sec = section("A", pending={"literature": [], "public": ["leg cramps causes"]})
+        st = state_of([sec], sources={}, focus=["A"], queries_done=[],
+                      settings={"web_search": "google", "web_pages_per_section": 1})
+
+        def bad_triage(user, call_no):
+            raise UnreadableAnswer("nope", "raw")
+
+        self.use_google({"leg cramps causes": [WEB_A, WEB_B]}, triage=bad_triage)
+        out = nodes._web_research(st, [sec], st["settings"])
+        self.assertEqual(self.opens, [WEB_A["href"]])       # top-1 by Google rank
+        self.assertEqual(len(out["A"]), 1)
+
+    def test_refinement_when_a_section_gets_no_picks(self):
+        sec = section("A", pending={"literature": [], "public": ["leg cramps causes"]})
+        st = state_of([sec], sources={}, focus=["A"], queries_done=[],
+                      settings={"web_search": "google", "web_pages_per_section": 2,
+                                "web_refine": True})
+
+        def triage(user, call_no):
+            if call_no == 1:
+                return {"sections": [{"id": "A", "open": [], "why": "none",
+                                      "better_queries": ["night cramps relief"]}]}
+            return {"sections": [{"id": "A", "open": [1], "why": "ok", "better_queries": []}]}
+
+        self.use_google({"leg cramps causes": [WEB_A], "night cramps relief": [WEB_B]}, triage=triage)
+        out = nodes._web_research(st, [sec], st["settings"])
+        self.assertEqual(self.searches, ["leg cramps causes", "night cramps relief"])
+        self.assertEqual(self.opens, [WEB_A["href"]])       # the refined pick, rank re-numbered
+        self.assertEqual([s["title"] for s in out["A"]], ["Mayo leg cramps"])
+        self.assertIn("google:night cramps relief", st["queries_done"])
+
+    def test_refinement_off_falls_back_to_top_k(self):
+        sec = section("A", pending={"literature": [], "public": ["leg cramps causes"]})
+        st = state_of([sec], sources={}, focus=["A"], queries_done=[],
+                      settings={"web_search": "google", "web_pages_per_section": 1,
+                                "web_refine": False})
+
+        def triage(user, call_no):
+            return {"sections": [{"id": "A", "open": [], "why": "none",
+                                  "better_queries": ["night cramps relief"]}]}
+
+        self.use_google({"leg cramps causes": [WEB_A], "night cramps relief": [WEB_B]}, triage=triage)
+        out = nodes._web_research(st, [sec], st["settings"])
+        self.assertEqual(self.searches, ["leg cramps causes"])    # no refinement search
+        self.assertEqual(self.opens, [WEB_A["href"]])             # top-k fallback
+        self.assertNotIn("google:night cramps relief", st["queries_done"])
+        self.assertEqual(len(out["A"]), 1)
+
+    def test_first_round_google_budget_defers_later_sections(self):
+        secs = [section("A", pending={"literature": [], "public": ["q a"]}),
+                section("B", pending={"literature": [], "public": ["q b"]})]
+        st = state_of(secs, sources={}, focus=["A", "B"], queries_done=[], coverage_round=0,
+                      settings={"web_search": "google", "web_pages_per_section": 1,
+                                "max_google_queries": 3})
+        self.use_google({"q a": [WEB_A], "q b": [WEB_B]})
+        values = iter([3, 1, 1, 1])
+        with mock.patch("medical_brain.research.sources.google.remaining",
+                        side_effect=lambda: next(values)):
+            out = nodes._web_research(st, list(secs), st["settings"])
+        self.assertEqual(self.searches, ["q a"])                  # B deferred, no Google traffic
+        self.assertNotIn("google:q b", st["queries_done"])
+        self.assertIn("google:q a", st["queries_done"])
+        self.assertEqual(len(out.get("A", [])), 1)
+
+    def test_web_off_makes_no_google_calls(self):
+        sec = section("A", pending={"literature": [], "public": ["leg cramps causes"]})
+        st = state_of([sec], sources={}, focus=["A"], queries_done=[],
+                      settings={"web_search": "off"})
+        self.use_google({"leg cramps causes": [WEB_A]})
+        self.assertEqual(nodes._web_research(st, [sec], st["settings"]), {})
+        self.assertEqual(self.searches, [])
+
+    def test_sites_mode_makes_no_google_calls(self):
+        sec = section("A", pending={"literature": [], "public": ["leg cramps causes"]})
+        st = state_of([sec], sources={}, focus=["A"], queries_done=[],
+                      settings={"web_search": "sites", "web_pages_per_section": 1})
+        self.pages[SITE_A["href"]] = {"url": SITE_A["href"], "title": "Mayo site leg cramps",
+                                      "html": "<html>A</html>"}
+        self.use_sites({"leg cramps causes": [SITE_A]})
+
+        def no_google(*a, **k):
+            raise AssertionError("Google must not be searched in sites mode")
+
+        patcher = mock.patch("medical_brain.research.sources.google.search", no_google)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        out = nodes.source_collector(st)
+        self.assertEqual(self.site_searches, ["leg cramps causes"])
+        self.assertNotIn("google:leg cramps causes", out["queries_done"])
+        self.assertIn("sites:leg cramps causes", out["queries_done"])
+        self.assertEqual(self.opens, [SITE_A["href"]])
+        self.assertEqual(len(out["sources"]), 1)
+        self.assertEqual(out["sources"]["S1"]["url"], SITE_A["href"])
+
+    def test_sites_plus_google_merges_both(self):
+        sec = section("A", pending={"literature": [], "public": ["leg cramps causes"]})
+        st = state_of([sec], sources={}, focus=["A"], queries_done=[],
+                      settings={"web_search": "sites+google", "web_pages_per_section": 2})
+        self.pages[SITE_A["href"]] = {"url": SITE_A["href"], "title": "Mayo site leg cramps",
+                                      "html": "<html>A</html>"}
+        seen = {}
+
+        def triage(user, call_no):
+            if not seen:
+                seen["user"] = user
+            return self.default_triage(user, call_no)
+
+        self.use_both(site_hits={"leg cramps causes": [SITE_A]},
+                      google_hits={"leg cramps causes": [WEB_A]}, triage=triage)
+        out = nodes.source_collector(st)
+        self.assertEqual(self.site_searches, ["leg cramps causes"])
+        self.assertEqual(self.searches, ["leg cramps causes"])
+        self.assertIn("sites:leg cramps causes", out["queries_done"])
+        self.assertIn("google:leg cramps causes", out["queries_done"])
+        self.assertEqual(len(out["sources"]), 2)
+        # Site results come first, then Google, in the single triage prompt.
+        self.assertLess(seen["user"].index(SITE_A["title"]), seen["user"].index(WEB_A["title"]))
+
+    def test_sites_plus_google_dedupes_shared_href(self):
+        sec = section("A", pending={"literature": [], "public": ["leg cramps causes"]})
+        st = state_of([sec], sources={}, focus=["A"], queries_done=[],
+                      settings={"web_search": "sites+google", "web_pages_per_section": 2})
+        self.pages[SITE_A["href"]] = {"url": SITE_A["href"], "title": "Mayo site leg cramps",
+                                      "html": "<html>A</html>"}
+        self.use_both(site_hits={"leg cramps causes": [SITE_A]},
+                      google_hits={"leg cramps causes": [dict(SITE_A, title="Google copy")]})
+        out = nodes.source_collector(st)
+        self.assertEqual(self.opens, [SITE_A["href"]])       # fetched once, not twice
+        self.assertEqual(len(out["sources"]), 1)
+
+    def test_sites_plus_google_survives_google_exception(self):
+        sec = section("A", pending={"literature": [], "public": ["leg cramps causes"]})
+        st = state_of([sec], sources={}, focus=["A"], queries_done=[],
+                      settings={"web_search": "sites+google", "web_pages_per_section": 1})
+        self.pages[SITE_A["href"]] = {"url": SITE_A["href"], "title": "Mayo site leg cramps",
+                                      "html": "<html>A</html>"}
+        self.use_both(site_hits={"leg cramps causes": [SITE_A]}, google_hits={})
+
+        def boom(*a, **k):
+            raise RuntimeError("google exploded")
+
+        patcher = mock.patch("medical_brain.research.sources.google.search", boom)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        out = nodes.source_collector(st)                     # must not raise
+        self.assertEqual(len(out["sources"]), 1)
+        self.assertEqual(self.opens, [SITE_A["href"]])
+
+    def test_google_exception_does_not_stop_research(self):
+        sec = section("A", pending={"literature": ["af"], "public": ["leg cramps causes"]})
+        st = state_of([sec], sources={}, focus=["A"], queries_done=[],
+                      settings={"web_search": "google"})
+
+        def boom(query, sites=None, max_results=10):
+            raise RuntimeError("google exploded")
+
+        patcher = mock.patch("medical_brain.research.sources.google.search", boom)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        with mock.patch("medical_brain.research.sources.run_query",
+                        side_effect=lambda kind, q, per, years: [dict(SOURCE_A)]):
+            out = nodes.source_collector(st)                 # must not raise
+        self.assertIn("S1", out["sources"])                  # local source still merged
+        self.assertEqual(out["sources"]["S1"]["origin"], "PubMed")
+
+    def test_shared_page_fetched_once_for_two_sections(self):
+        secs = [section("A", pending={"literature": [], "public": ["q a"]}),
+                section("B", pending={"literature": [], "public": ["q b"]})]
+        st = state_of(secs, sources={}, focus=["A", "B"], queries_done=[],
+                      settings={"web_search": "google", "web_pages_per_section": 1})
+        self.use_google({"q a": [WEB_A], "q b": [WEB_A]})    # different sections, same page
+        out = nodes.source_collector(st)
+        self.assertEqual(self.opens, [WEB_A["href"]])        # fetched once
+        self.assertEqual(len(out["sources"]), 1)
+        self.assertEqual(out["sources"]["S1"]["sections"], ["A", "B"])
 
 
 class ProgressQuietTest(unittest.TestCase):

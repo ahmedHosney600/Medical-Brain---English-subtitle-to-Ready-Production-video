@@ -1,76 +1,60 @@
-# Plan: Google search over trusted medical sites, through your own Chrome, assisted by the LLM
+# Web research over trusted medical sites: how it works and what testing showed
 
-**Goal.** Research "public" queries should find the best patient-facing pages on Mayo Clinic, Johns
-Hopkins, NHS, Cleveland Clinic, CDC, WHO, MedlinePlus… using **Google's ranking**, with no paid search API,
-and an LLM that picks which results to open and which passages matter.
+The research workflow's "public" queries find patient-facing pages on Mayo Clinic, Johns Hopkins, NHS and
+Cleveland Clinic with **no search API**. An LLM picks which results to open and which passages matter.
+Google is an optional extra.
 
 ## What was tested (2026-10-09, from this Mac)
 
-| Target | plain HTTP (urllib/curl) | headless Chrome | **visible Chrome (off-screen window)** |
+| Target | plain HTTP | headless Chrome | visible Chrome, off-screen |
 |---|---|---|---|
-| mayoclinic.org (Akamai Bot Manager) | ❌ 403, even robots.txt | ❌ "Access Denied" | ✅ full article |
-| hopkinsmedicine.org (Cloudflare) | ❌ 403 (robots.txt allows `/health/`) | ❌ "Sorry, you have been blocked" | ✅ |
-| google.com/search `site:` | — | ❌ "unusual traffic" | ✅ real results, English with `hl=en&gl=us` |
-| nhs.uk, clevelandclinic, medlineplus, cdc, who | ✅ | — | ✅ |
+| mayoclinic.org (Akamai Bot Manager) | ❌ 403, even robots.txt | ❌ "Access Denied" | ✅ |
+| hopkinsmedicine.org (Cloudflare) | ❌ 403 | ❌ "Sorry, you have been blocked" | ✅ |
+| google.com/search | — | ❌ "unusual traffic" | ✅ at first (see below) |
+| nhs.uk, clevelandclinic.org, medlineplus.gov | ✅ | — | ✅ |
 
-Both bot shields detect *headless/non-browser clients*, not your IP or region. A normal Chrome window
-placed off-screen (`--window-position=-2400,-2400`) passes, so that's the approach.
+**Google turned out to be unreliable for automated searching:**
 
-Google results link through encrypted `google.com/goto?url=…` redirects. The real URL is known once the
-page is opened, and we open the chosen pages anyway. `site:a OR site:b` without parentheses let Wikipedia
-in, so queries group sites in parentheses and results are filtered to the trusted list.
+- `--remote-debugging-port=0` made every search a CAPTCHA, while an explicit port was fine. That's fixed.
+- Opening a new tab per search got penalised, so one long-lived search tab is used. That's fixed.
+- `site:` with paths is ignored, and more than 2 sites per query returns junk. Queries use at most 2 bare
+  domains.
+- Even so, after a few queries Google quietly answers a looser query: it drops `site:` and most words
+  ("night leg cramps relief site:hopkinsmedicine.org" → "Night by Elie Wiesel"). Google's terms also forbid
+  automated searching. So Google is kept as an *optional extra* that detects its own degradation (results
+  off-topic or from the wrong sites), switches to a fresh profile once, then turns itself off for the run.
 
-## Design
+## The reliable path: each site's own search or catalog (respecting robots.txt)
+
+| Site | How | Notes |
+|---|---|---|
+| Mayo Clinic | its own search `/search/search-results?q=` through Chrome | allowed by robots.txt |
+| NHS | its own search `/search/results?q=` over HTTP | allowed; `/search/click?url=` is decoded, never followed |
+| Johns Hopkins | `health-sitemap.xml` (3,861 /health/ pages) through Chrome, cached 7 days | `/search` is **disallowed** |
+| Cleveland Clinic | `site.xml` (11,039 /health/ pages) over HTTP, cached 7 days | `/search` is **disallowed** |
+
+Catalog results are ranked by matching the query's words (3+ letters) against the page address, and a
+page must match at least half of them.
+
+## Flow (`medical_brain/research/nodes.py::_web_research`)
 
 ```
-section questions ─► LLM query writer (existing topic_planner/screener public_queries)
-                      │
-                      ▼
-   Google (your Chrome, off-screen)  "night leg cramps (site:mayoclinic.org OR site:hopkinsmedicine.org OR …)"
-                      │ titles · domains · snippets  (cached, ≥12 s between queries)
-                      ▼
-   LLM triage  ── picks the 2–4 results per section worth opening (prompts/research/web_triage.md)
-                      ▼
-   open pages: Mayo/Hopkins via Chrome, others via plain HTTP  ─► page split into numbered paragraphs
-                      ▼
-   LLM passage picker ── returns paragraph NUMBERS (never rewrites text), so quotes stay verbatim
-                      (prompts/research/passage_picker.md)
-                      ▼
-   source dicts (origin "Web (Google)") ─► existing screener → extractor → verifier → coverage loop
+section public query ─► site search (Mayo, NHS) + catalogs (Hopkins, Cleveland) [+ Google, if healthy]
+                      ─► ONE LLM triage call for all sections (prompts/research/web_triage.md)
+                      ─► open picked pages (Mayo/Hopkins via Chrome, others HTTP)
+                      ─► LLM passage picker returns paragraph NUMBERS (prompts/research/passage_picker.md)
+                      ─► verbatim source text ─► screener → extractor → verifier → coverage loop
 ```
 
-The coverage loop already writes new queries when something is missing, so the LLM also steers
-follow-up searches.
+Web search runs in the first source search of each cycle (start and each coverage round), not in the
+screener's gap rounds. Picked web pages keep up to half of a section's candidate slots, so they aren't cut
+behind higher-evidence PubMed items.
 
-### Pieces
+Settings (`input_fields.json` can override): `web_search` = `sites+google` (default) | `sites` | `google` |
+`off`; `web_pages_per_section` 3; `web_queries_per_section` 1; `max_google_queries` 24; `web_refine` false.
 
-1. **`sources/browser.py`**: drives your installed Chrome over the DevTools protocol (Python
-   `websockets`, already installed). It uses a persistent profile at `~/.cache/medical_brain/chrome-profile`
-   (cookies and consent survive between runs), an off-screen window, one browser per run, and a few tabs.
-   It detects block and CAPTCHA pages. On a Google CAPTCHA it brings the window on-screen and asks you to
-   solve it (interactive runs), or turns Google off for the rest of the run (non-interactive runs).
-2. **`sources/google.py`**: builds grouped `site:` queries, parses the results page (tested against saved
-   real results pages), filters to trusted domains, enforces a per-run query cap and throttling, and
-   caches results.
-3. **LLM-assisted web research** in `source_collector`: triage, then open pages, then pick passages.
-   Settings: `web_search: "google" | "off"`, `max_google_queries`, `web_pages_per_section`.
-4. **Fallback**: if Chrome is missing or Google is blocked, research keeps working with PubMed,
-   Europe PMC and MedlinePlus as today. The sitemap index from the earlier plan stays a possible later
-   fallback.
+## Result on the muscle-cramp topic (run 20261009_153334)
 
-### Cost and time
-
-- No API spend for search. The LLM adds one triage call per section plus one passage-picker call per
-  opened page (DeepSeek Flash, cents per run).
-- Adds about 4–8 minutes to a run: Google is throttled to ≥12 s per query, and pages take a few seconds
-  each. Repeat queries come from the cache.
-
-### Risks, stated plainly
-
-- Google's terms don't allow automated searching. At low volume, from your own browser, with caching, it
-  usually works. Expect an occasional CAPTCHA, which the design hands to you rather than trying to defeat
-  it.
-- Mayo Clinic's terms limit automated copying. This is personal research at a human-like rate, quoting
-  short passages with citation, but you decide whether to keep Mayo on the list (`research_trusted_domains`).
-- Google changes its results-page markup now and then. The parser relies on structure (link → h3 → cite),
-  not class names, and is tested against saved pages so a break is caught early.
+175 verified facts, 1 left out; **106 facts cite web pages**: Mayo Clinic 89 (10 pages, e.g. "Night leg
+cramps – Causes" 32, "Muscle cramp – Symptoms and causes" 18, "Heat cramps: First aid" 13), Cleveland
+Clinic 13, NHS 4. Johns Hopkins has no cramp page beyond heat illness.

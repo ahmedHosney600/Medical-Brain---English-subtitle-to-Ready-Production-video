@@ -14,6 +14,7 @@ import os
 import random
 import re
 import sys
+import time
 import urllib.parse
 from typing import Optional
 
@@ -23,29 +24,31 @@ GOOGLE_HOST = "www.google.com"
 SEARCH_URL = "https://www.google.com/search?q={q}&hl=en&gl=us"
 
 # Politeness gap between Google queries (patched to 0 by the tests).
-GOOGLE_GAP = 12.0
-GOOGLE_JITTER = 5.0                      # extra random 0-5 s, so runs don't look robotic
+GOOGLE_GAP = 18.0
+GOOGLE_JITTER = 7.0                      # extra random 0-7 s, so runs don't look robotic
 
-MAX_SITES_PER_QUERY = 8                  # Google truncates very long queries (one site: each)
+MAX_DOMAINS_PER_QUERY = 2                # Google honours site: for at most two domains per query
 DEFAULT_MAX_RESULTS = 10
 
-# Patient-health entry points (host + path), not whole domains: a bare
-# site:hopkinsmedicine.org returns jobs/housing/department pages and a bare
-# site:mayoclinic.org returns patient-forum and newsroom posts.
-DEFAULT_SCOPES = [
-    "mayoclinic.org/diseases-conditions",
-    "mayoclinic.org/healthy-lifestyle",
-    "hopkinsmedicine.org/health",
-    "nhs.uk/conditions",
-    "my.clevelandclinic.org/health",
-    "medlineplus.gov",
-    "cdc.gov",
-    "who.int/news-room/fact-sheets",
+# Literature hosts already covered by the PubMed / Europe PMC sources: drop them from
+# Google results so they don't eat the web-search slots. Matches subdomains (pubmed., pmc.).
+EXCLUDE_DOMAINS = {"ncbi.nlm.nih.gov", "europepmc.org"}
+
+# Patient-health domains, two per query: measured live, Google only honours `site:`
+# for ≤2 domains and ignores paths (paths let Spotify/Wikipedia/WebMD leak in).
+SITE_GROUPS = [
+    ("mayoclinic.org", "hopkinsmedicine.org"),
+    ("nhs.uk", "my.clevelandclinic.org"),
 ]
 
 # Subdomain labels that never hold patient-health content (jobs, forums, news, …).
 BLOCKED_LABELS = {"connect", "jobs", "careers", "newsnetwork", "news", "offcampushousing",
                   "profiles", "scical", "community", "forums", "giving", "blogs"}
+
+# Words that carry no topic signal in a query, for the degraded-page check.
+STOPWORDS = {"what", "when", "which", "with", "from", "that", "this", "have", "does", "about",
+             "your", "should", "how", "why", "during", "after", "before", "fast", "best",
+             "causes", "treatment"}
 
 # Sites that only work through the real browser (JavaScript / bot-walled). Extend with
 # the comma-separated MB_BROWSER_ONLY env var.
@@ -59,15 +62,42 @@ _BLOCK_SKIP_TAGS = _SKIP_TAGS - {"form", "header"}
 _VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta",
               "param", "source", "track", "wbr"}
 
-# Per-run state: a query counter (so a broken run can't hammer Google) and a hard disable
-# flag set when Google shows a captcha we can't get past.
-_run = {"queries": 0, "disabled": False}
+# Per-run state: a query counter (so a broken run can't hammer Google), the per-run cap,
+# a hard disable flag set when Google shows a captcha we can't get past, and whether we
+# already spent the one fresh-profile restart.
+_run = {"queries": 0, "disabled": False, "max": 24, "restarted": False}
 
 
-def reset_run() -> None:
-    """Forget the per-run query counter and re-enable Google (called at the start of a run)."""
+def reset_run(max_queries=None) -> None:
+    """Forget the per-run query counter and re-enable Google (called at the start of a run).
+
+    max_queries is the run cap; MB_MAX_GOOGLE_QUERIES still wins when it is set."""
     _run["queries"] = 0
     _run["disabled"] = False
+    _run["restarted"] = False
+    if max_queries is not None:
+        try:
+            _run["max"] = int(max_queries)
+        except (TypeError, ValueError):
+            pass
+
+
+def _query_limit() -> int:
+    raw = os.environ.get("MB_MAX_GOOGLE_QUERIES")
+    try:
+        return int(raw) if raw not in (None, "") else int(_run.get("max") or 24)
+    except (TypeError, ValueError):
+        return int(_run.get("max") or 24)
+
+
+def remaining() -> int:
+    """Queries left in this run (never negative) — lets callers reserve budget."""
+    return max(0, _query_limit() - int(_run.get("queries") or 0))
+
+
+def _gap() -> float:
+    """The politeness gap plus jitter, evaluated live so tests can patch the constants."""
+    return GOOGLE_GAP + random.uniform(0, GOOGLE_JITTER)
 
 
 def _load_browser():
@@ -212,19 +242,31 @@ def parse_serp(html_text: str) -> list:
 
 # --------------------------------------------------------------------------- query building
 
+def _domain(site: str) -> str:
+    """'mayoclinic.org/diseases-conditions' -> 'mayoclinic.org' (Google ignores paths)."""
+    text = re.sub(r"^[a-z]+://", "", str(site or "").strip().lower())
+    return text.split("/", 1)[0].strip().rstrip(".")
+
+
 def build_query(query: str, sites: list) -> str:
-    """'<query> (site:a OR site:b ...)'; strips any site: operators the caller already added."""
+    """'<query> (site:a OR site:b)'; strips site: operators and paths, ≤2 bare domains."""
     text = re.sub(r"\bsite:\S+", " ", query or "", flags=re.I)
     text = re.sub(r"\s+", " ", text).strip()
-    sites = [s.strip() for s in (sites or []) if s and str(s).strip()]
-    if not sites:
+    domains = [d for d in (_domain(s) for s in (sites or [])) if d][:MAX_DOMAINS_PER_QUERY]
+    if not domains:
         return text
-    clause = " OR ".join(f"site:{s}" for s in sites)
+    clause = " OR ".join(f"site:{d}" for d in domains)
     return f"{text} ({clause})".strip()
 
 
-def _default_sites() -> list:
-    return list(DEFAULT_SCOPES)
+def _site_groups() -> list:
+    """Two-domain groups to query; MB_GOOGLE_GROUPS ('a,b;c,d') overrides SITE_GROUPS."""
+    groups = []
+    for group in os.environ.get("MB_GOOGLE_GROUPS", "").split(";"):
+        domains = [d for d in (_domain(x) for x in group.split(",")) if d][:MAX_DOMAINS_PER_QUERY]
+        if domains:
+            groups.append(tuple(domains))
+    return groups or list(SITE_GROUPS)
 
 
 def _site_trusted(site: str) -> bool:
@@ -240,22 +282,82 @@ def _is_blocked_site(site: str) -> bool:
     return ".blogs." in site
 
 
+def _is_excluded_site(site: str) -> bool:
+    """True for literature hosts already covered by the PubMed / Europe PMC sources."""
+    site = (site or "").lower()
+    return any(site == d or site.endswith("." + d) for d in EXCLUDE_DOMAINS)
+
+
+def _filter_results(rows: list, max_results: int) -> list:
+    """Keep only trusted patient-health results, minus the literature hosts."""
+    return [r for r in (rows or [])
+            if _site_trusted(r.get("site", ""))
+            and not _is_blocked_site(r.get("site", ""))
+            and not _is_excluded_site(r.get("site", ""))][:max_results]
+
+
+def _content_words(query: str) -> list:
+    """Query words that carry topic signal: >=4 letters, minus the stopword list."""
+    return [w for w in re.findall(r"[a-z]+", (query or "").lower())
+            if len(w) >= 4 and w not in STOPWORDS]
+
+
+def _matches_domain(site: str, domains: list) -> bool:
+    """True when `site` is one of the requested bare domains (or a subdomain of one)."""
+    site = (site or "").lower()
+    return any(site == d or site.endswith("." + d) for d in domains)
+
+
+def is_degraded(query: str, results: list, domains=None) -> bool:
+    """True when Google returned a generic page for an unrelated query, or ignored the
+    requested domains.
+
+    Content-word heuristic: of the top 5 results, fewer than 2 share any content word with
+    the query (matched on title + snippet, allowing a 5-letter prefix so "cramp" matches
+    "cramps"). Domain heuristic (when `domains` is passed): among the top 5 results, fewer
+    than half come from the requested domains — this catches Google quietly relaxing
+    ``site:``. No content words (or no results) -> never degraded."""
+    top = results[:5] if results else []
+    if not top:
+        return False
+    words = _content_words(query)
+    if words:
+        matched = 0
+        for result in top:
+            text = f"{result.get('title') or ''} {result.get('snippet') or ''}".lower()
+            if any(word in text or word[:5] in text for word in words):
+                matched += 1
+        if matched < min(2, len(top)):              # a niche query may have just one hit
+            return True
+    wanted = [_domain(d) for d in (domains or []) if _domain(d)]
+    if wanted:
+        from_wanted = sum(1 for r in top if _matches_domain(r.get("site", ""), wanted))
+        if from_wanted * 2 < len(top):             # strictly fewer than half
+            return True
+    return False
+
+
 # --------------------------------------------------------------------------- search
 
 def _captcha_prompt(browser, url: str) -> bool:
-    """Ask the user to clear Google's human check in the visible Chrome window."""
+    """Ask the user to clear Google's human check in the visible Chrome window.
+
+    Only the interactive hand-off: a non-TTY run returns False without disabling, so the
+    caller can try a fresh profile before giving up on Google."""
     if not sys.stdin.isatty():
-        _disable("captcha (non-interactive)")
         return False
     try:
-        browser.show(url)             # keep the captcha page open, on-screen, for the user
+        show_search = getattr(browser, "show_search", None)
+        if callable(show_search):
+            show_search()             # the captcha lives in the long-lived search tab already
+        else:
+            browser.show(url)         # keep the captcha page open, on-screen, for the user
     except Exception:
         pass
     print("Google is asking for a human check — solve it in the Chrome window, then press Enter here.")
     try:
         input()
     except (EOFError, KeyboardInterrupt):
-        _disable("captcha (cancelled)")
         return False
     finally:
         try:
@@ -266,79 +368,133 @@ def _captcha_prompt(browser, url: str) -> bool:
 
 
 def _disable(reason: str) -> None:
+    if _run["disabled"]:              # log the reason once
+        return
     _run["disabled"] = True
     http.log.append(("Google", "", reason))
 
 
-def _google_html(url: str) -> Optional[str]:
-    """Fetch one results page through the browser, handling captcha/blocked. None on failure."""
+def _google_page(url: str):
+    """Fetch one results page through the browser -> (html, status).
+
+    status is "ok", "captcha", "blocked"/another page status, or "unavailable". For a
+    captcha it offers the interactive hand-off (TTY only) before returning "captcha"."""
     browser = _load_browser()
     if not browser.available():
         http.log.append(("Google", url[:160], "no browser"))
-        return None
+        return None, "unavailable"
     client = browser.get_browser()
     try:
-        page = client.open(url, wait=6.0)
+        page = client.search(url)          # one long-lived tab: a fresh tab per query gets throttled
     except browser.Blocked as exc:
         http.log.append(("Google", url[:160], f"blocked ({getattr(exc, 'kind', '')})"))
-        return None
+        return None, "blocked"
     if (page or {}).get("status") == "captcha":
         captcha_url = (page or {}).get("url") or url
         if not _captcha_prompt(client, captcha_url):
-            return None
+            return None, "captcha"
         try:
-            page = client.open(url, wait=6.0)
+            page = client.search(url)
         except browser.Blocked as exc:
             http.log.append(("Google", url[:160], f"blocked ({getattr(exc, 'kind', '')})"))
-            return None
+            return None, "blocked"
         if (page or {}).get("status") == "captcha":
-            _disable("captcha persists")
-            return None
+            return None, "captcha"
     status = (page or {}).get("status", "")
     if status != "ok":
         http.log.append(("Google", url[:160], status or "not ok"))
-        return None
-    return page.get("html") or ""
+        return None, status or "not ok"
+    return page.get("html") or "", "ok"
 
 
-def search(query: str, sites=None, max_results: int = DEFAULT_MAX_RESULTS) -> list:
-    """Trusted-site Google results (browser-driven) or [] — never raises to the caller."""
-    if _run["disabled"]:
-        return []
+def _recover(failure: str, retry):
+    """Degraded page or captcha: use the one fresh profile (restart + retry once), else disable.
+
+    `retry` is a zero-arg callable returning (results, failure)."""
+    if _run["restarted"]:
+        _disable(f"{failure} persisted: disabled for the rest of the run")
+        return [], failure
+    _run["restarted"] = True
     try:
-        limit = int(os.environ.get("MB_MAX_GOOGLE_QUERIES", 40) or 40)
-    except ValueError:
-        limit = 40
-    if _run["queries"] >= limit:
-        http.log.append(("Google", "", f"run cap reached ({limit} queries)"))
-        return []
-    chosen_sites = list(sites) if sites is not None else _default_sites()
-    chosen_sites = [s for s in chosen_sites if s][:MAX_SITES_PER_QUERY]
-    url = SEARCH_URL.format(q=urllib.parse.quote(build_query(query, chosen_sites), safe=""))
+        _load_browser().get_browser().restart_fresh()
+    except Exception as exc:          # a failed restart still gets one retry attempt
+        http.log.append(("Google", "", f"restart_fresh failed ({type(exc).__name__}: {exc})"))
+    time.sleep(_gap())
+    results, again = retry()
+    if again in ("captcha", "degraded"):
+        _disable(f"{again} persisted after a fresh profile: disabled for the rest of the run")
+        return [], again
+    return results, ""
+
+
+def _search_group(query: str, sites: list, max_results: int):
+    """One Google query for one site group -> (results, failure).
+
+    failure is "" on success or "captcha"/"degraded" so search() can recover. Healthy
+    results are cached; degraded pages are not. Never raises."""
+    if _run["disabled"]:
+        return [], "disabled"
+    url = SEARCH_URL.format(q=urllib.parse.quote(build_query(query, sites), safe=""))
     key = "google:" + url
     cached = http._cache_path(key)
     if cached and os.path.exists(cached):
         try:
             with open(cached, encoding="utf-8") as handle:
-                return json.load(handle)
+                return _filter_results(json.load(handle), max_results), ""
         except (ValueError, OSError):
             pass
 
     _run["queries"] += 1
     try:
-        http._throttle(GOOGLE_HOST, GOOGLE_GAP + random.uniform(0, GOOGLE_JITTER))
-        html_text = _google_html(url)
+        http._throttle(GOOGLE_HOST, _gap())
+        html_text, status = _google_page(url)
         if html_text is None:
-            return []
-        results = [r for r in parse_serp(html_text)
-                   if _site_trusted(r["site"]) and not _is_blocked_site(r["site"])][:max_results]
+            return [], "captcha" if status == "captcha" else ""
+        results = _filter_results(parse_serp(html_text), max_results)
+        if is_degraded(query, results, sites):
+            return results, "degraded"
         if cached:
             with open(cached, "w", encoding="utf-8") as handle:
                 json.dump(results, handle)
-        return results
+        return results, ""
     except Exception as exc:                     # never raise: research must carry on
         http.log.append(("Google", url[:160], f"{type(exc).__name__}: {exc}"))
+        return [], ""
+
+
+def search(query: str, sites=None, max_results: int = DEFAULT_MAX_RESULTS) -> list:
+    """Trusted-site Google results (browser-driven) or [] — never raises to the caller.
+
+    sites=None runs one query per SITE_GROUPS group; an explicit list is chunked two
+    domains per query. Results merge in group order, deduped by href, re-ranked 1..N.
+    A degraded page or captcha triggers one fresh-profile restart + retry, then disables."""
+    if _run["disabled"]:
         return []
+    if sites is None:
+        groups = [list(group) for group in _site_groups()]
+    else:
+        domains = [d for d in (_domain(s) for s in sites) if d]
+        groups = [domains[i:i + MAX_DOMAINS_PER_QUERY]
+                  for i in range(0, len(domains), MAX_DOMAINS_PER_QUERY)]
+    limit, merged, seen = _query_limit(), [], set()
+    for group in groups:
+        if _run["queries"] >= limit:
+            http.log.append(("Google", "", f"run cap reached ({limit} queries)"))
+            break
+        results, failure = _search_group(query, group, max_results)
+        if failure in ("captcha", "degraded"):
+            results, failure = _recover(failure,
+                                        lambda: _search_group(query, group, max_results))
+        for result in results:
+            if result["href"] in seen or _is_excluded_site(result.get("site", "")):
+                continue
+            seen.add(result["href"])
+            merged.append(result)
+        if _run["disabled"]:
+            break
+    for i, result in enumerate(merged, 1):
+        result["rank"] = i
+    return merged
 
 
 # --------------------------------------------------------------------------- page fetching
@@ -530,5 +686,5 @@ def to_source(page: dict, keep: list, blocks: list) -> dict:
             indices.add(index)
     text = "\n".join(blocks[i - 1] for i in sorted(indices))[:6000]
     source = web._source(page.get("title", ""), page.get("url", ""), text)
-    source["origin"] = "Web (Google)"
+    source["origin"] = "Web"
     return source

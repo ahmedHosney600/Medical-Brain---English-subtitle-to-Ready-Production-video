@@ -60,6 +60,11 @@ DEFAULT_SETTINGS = {
     "sources_per_section": 8,
     "research_years": 10,
     "parallel_calls": 4,              # sections to search/extract/verify at once (1 = sequential)
+    "web_search": "sites+google",     # "sites+google" | "sites" | "google" (your Chrome) | "off"
+    "web_pages_per_section": 3,       # Google results the LLM may open per section per round
+    "max_google_queries": 24,         # per run
+    "web_queries_per_section": 1,     # public queries per section sent to Google (each = one query per site group)
+    "web_refine": False,              # triage better_queries refinement round (off: top-k fallback)
 }
 
 

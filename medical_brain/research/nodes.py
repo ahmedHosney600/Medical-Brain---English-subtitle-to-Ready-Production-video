@@ -149,6 +149,316 @@ def _collect_queries(job, per_query: int, years: int) -> list:
     return found
 
 
+def _merge_found(sources: dict, by_key: dict, sec: dict, found: list, next_id: int):
+    """Add found sources to `sec` (dedupe by key, deterministic S-ids). -> (next_id, added)."""
+    added = 0
+    for s in found:
+        if not s.get("text"):
+            continue
+        sid = by_key.get(s["key"])
+        if not sid:
+            sid = f"S{next_id}"
+            next_id += 1
+            s["text"] = s["text"][:6000]
+            s["sections"] = []
+            sources[sid] = s
+            by_key[s["key"]] = sid
+            added += 1
+        if sec["id"] not in sources[sid]["sections"]:
+            sources[sid]["sections"].append(sec["id"])
+        if sid not in sec["candidates"]:
+            sec["candidates"].append(sid)
+    return next_id, added
+
+
+def _web_search(google, query: str, seen: set) -> list:
+    """google.search(query) minus hrefs already `seen`; never raises."""
+    try:
+        hits = google.search(query) or []
+    except Exception as exc:
+        _log(f"web: search failed ({type(exc).__name__}: {exc})")
+        return []
+    out = []
+    for r in hits:
+        href = r.get("href")
+        if not href or href in seen:
+            continue
+        seen.add(href)
+        out.append(dict(r))
+    return out
+
+
+def _site_search(sitesearch, query: str, seen: set) -> list:
+    """sitesearch.search(query) minus hrefs already `seen`; never raises."""
+    try:
+        hits = sitesearch.search(query) or []
+    except Exception as exc:
+        _log(f"web: site search failed ({type(exc).__name__}: {exc})")
+        return []
+    out = []
+    for r in hits:
+        href = r.get("href")
+        if not href or href in seen:
+            continue
+        seen.add(href)
+        out.append(dict(r))
+    return out
+
+
+def _web_triage(topic: str, secs: list, results: dict, k: int) -> dict:
+    """One web_triage call over every section with results -> {id: verdict}; {} on failure."""
+    blocks = []
+    for sec in secs:
+        rs = results.get(sec["id"])
+        if not rs:
+            continue
+        lines = [f"## SECTION {sec['id']}: {sec['title']}",
+                 "Questions: " + " | ".join(sec.get("questions", []))]
+        lines += [f"[{r.get('rank')}] {r.get('site', '')} — {r.get('title', '')} — {r.get('snippet', '')}"
+                  for r in rs]
+        blocks.append("\n".join(lines))
+    if not blocks:
+        return {}
+    user = (f"TOPIC: {topic}\nALLOWED PER SECTION: {k}\n\n" + "\n\n".join(blocks)
+            + "\n\nOutput ONLY the JSON object.")
+    try:
+        data, _ = call_llm_json(load_prompt("research/web_triage"), user,
+                                temperature=0.2, max_tokens=3000, required=["sections"])
+    except UnreadableAnswer:
+        return {}
+    return {str(pick(v, "id", default="")): v for v in (pick(data, "sections", default=[]) or [])
+            if isinstance(v, dict)}
+
+
+def _web_picks(results: list, verdict, k: int) -> list:
+    """The results the triage numbered in `open`, in ranking order (at most k)."""
+    by_rank = {r.get("rank"): r for r in results}
+    nums = []
+    for n in (pick(verdict, "open", default=[]) or []):
+        try:
+            nums.append(int(n))
+        except (TypeError, ValueError):
+            continue
+    return [by_rank[n] for n in nums if n in by_rank][:k]
+
+
+def _web_open(google, href: str, result: dict):
+    """google.fetch_page for one picked result; never raises (returns (href, None))."""
+    try:
+        return href, google.fetch_page(result)
+    except Exception as exc:
+        _log(f"web: open failed ({type(exc).__name__}: {exc})")
+        return href, None
+
+
+def _web_blocks(google, page: dict) -> list:
+    try:
+        return google.paragraphs(page.get("html") or "")
+    except Exception as exc:
+        _log(f"web: paragraphs failed ({type(exc).__name__}: {exc})")
+        return []
+
+
+def _web_research(state: dict, sections_with_queries: list, settings: dict) -> dict:
+    """Web research: site-native search (and/or Google through the user's Chrome) → LLM
+    triage → open picked pages → LLM passage pick.
+
+    ``web_search`` is "sites+google" (default: site search first, Google appended), "sites"
+    (site search only), "google" (Google only) or "off". Site search never counts against
+    ``max_google_queries``. Best-effort: any failure logs one line and returns {} so
+    research continues without the web. Appends "<engine>:<query>" to state["queries_done"]
+    so a later round never repeats a query."""
+    mode = settings.get("web_search", "sites+google")
+    if mode == "off":
+        return {}
+    use_sites = mode in ("sites", "sites+google")
+    use_google = mode in ("google", "sites+google")
+    try:
+        from .sources import google, sitesearch      # lazy: websockets may be missing
+    except Exception as exc:
+        _log(f"web: unavailable ({type(exc).__name__}: {exc})")
+        return {}
+    have_browser = False
+    try:
+        from .sources import browser
+        have_browser = browser.available()
+    except Exception as exc:
+        _log(f"web: browser unavailable ({type(exc).__name__}: {exc})")
+    if use_google and not have_browser:
+        if not use_sites:                            # Google-only still needs Chrome
+            return {}
+        use_google = False                           # sites+google: keep the site half
+    try:
+        topic = state.get("topic", "")
+        per_section = max(1, int(settings.get("web_queries_per_section", 1) or 1))
+        per_page = max(1, int(settings.get("web_pages_per_section", 3) or 3))
+        done = state.setdefault("queries_done", [])
+
+        # Reserve Google budget for the later coverage rounds: the first cycle may spend at
+        # most 2/3 of the run cap, then stops issuing Google searches for remaining sections.
+        # Site search is not budgeted (it is not Google).
+        max_queries = max(1, int(settings.get("max_google_queries", 24) or 24))
+        first_cycle = state.get("coverage_round", 0) == 0
+        first_share = (max_queries * 2) // 3
+        budget_floor = max_queries - first_share       # stop once remaining() <= floor
+        budget_logged = [False]
+
+        def budget_left() -> bool:
+            if not first_cycle or google.remaining() > budget_floor:
+                return True
+            if not budget_logged[0]:
+                budget_logged[0] = True
+                _log(f"web: first-round Google budget ({first_share}/{max_queries}) reached; "
+                     "deferring the rest to later rounds")
+            return False
+
+        # a. Site search first (unbudgeted), then Google for the same public queries,
+        #    appended; the combined, deduped list goes to the single triage call.
+        results = {}
+        for sec in sections_with_queries:
+            pubs = (sec.get("pending", {}).get("public") or sec.get("queries", {}).get("public") or [])
+            queries = [str(q).strip() for q in pubs[:per_section]]
+            queries = [q for q in queries if q]
+            found, seen = [], set()
+            if use_sites:
+                for query in queries:
+                    tag = "sites:" + query
+                    if tag in done:
+                        continue
+                    done.append(tag)
+                    found.extend(_site_search(sitesearch, query, seen))
+            if use_google:
+                for query in queries:
+                    tag = "google:" + query
+                    if tag in done:
+                        continue
+                    if not budget_left():
+                        break
+                    done.append(tag)
+                    found.extend(_web_search(google, query, seen))
+            if found:
+                for i, r in enumerate(found, 1):
+                    r["rank"] = i
+                results[sec["id"]] = found
+        if not results:
+            return {}
+        by_id = {sec["id"]: sec for sec in sections_with_queries}
+
+        # b. One triage call for all sections with results; top-k by rank on failure.
+        verdicts = _web_triage(topic, sections_with_queries, results, per_page)
+        opened, refine = {}, {}
+        for sid, rs in results.items():
+            chosen = _web_picks(rs, verdicts.get(sid, {}), per_page) if verdicts else []
+            if chosen:
+                opened[sid] = chosen
+                continue
+            better = ([str(q) for q in (pick(verdicts.get(sid, {}), "better_queries", default=[]) or [])
+                       if str(q).strip()][:2]
+                      if settings.get("web_refine") and verdicts else [])
+            if better:
+                refine[sid] = better
+            else:
+                opened[sid] = rs[:per_page]      # no refinement: fall back to top-k by rank
+
+        # c. One refinement round for sections the triage could not fill (web_refine only).
+        if refine and (not use_google or budget_left()):
+            for sid, queries in refine.items():
+                if use_google and not budget_left():
+                    break
+                seen = {r["href"] for r in results[sid]}
+                extra = []
+                for query in queries:
+                    if use_sites:
+                        tag = "sites:" + query
+                        if tag not in done:
+                            done.append(tag)
+                        extra.extend(_site_search(sitesearch, query, seen))
+                    if use_google:
+                        tag = "google:" + query
+                        if tag not in done:
+                            done.append(tag)
+                        extra.extend(_web_search(google, query, seen))
+                if extra:
+                    merged = results[sid] + extra
+                    for i, r in enumerate(merged, 1):
+                        r["rank"] = i
+                    results[sid] = merged
+            again = _web_triage(topic, [by_id[s] for s in refine],
+                                {s: results[s] for s in refine}, per_page)
+            for sid in refine:
+                opened[sid] = _web_picks(results[sid], again.get(sid, {}), per_page) or results[sid][:per_page]
+
+        # d. Open the picked results; one fetch per href, attached by final URL.
+        picks, hrefs = {}, {}
+        for sid, rs in opened.items():
+            picks[sid] = [r["href"] for r in rs if r.get("href")]
+            for r in rs:
+                if r.get("href"):
+                    hrefs.setdefault(r["href"], r)
+        fetched = _parallel(lambda h: _web_open(google, h, hrefs[h]), list(hrefs), 3)
+        by_final, href_final = {}, {}
+        for href, page in fetched:
+            if not page:
+                continue
+            final = page.get("url") or href
+            href_final[href] = final
+            by_final.setdefault(final, page)
+
+        # e. One passage-picker call per (page, section); keep only chosen paragraphs.
+        jobs = []
+        for sec in sections_with_queries:
+            sid, seen_final = sec["id"], set()
+            for href in picks.get(sid, []):
+                final = href_final.get(href)
+                if not final or final in seen_final:
+                    continue
+                seen_final.add(final)
+                page = by_final[final]
+                blocks = _web_blocks(google, page)
+                if len(blocks) < 3:
+                    continue
+                numbered = "\n".join(f"[P{i}] {b}" for i, b in enumerate(blocks, 1))[:20000]
+                user = (f"TOPIC: {topic}\nSECTION {sid}: {sec['title']}\n"
+                        f"QUESTIONS: {' | '.join(sec.get('questions', []))}\n\n"
+                        f"PAGE: {page.get('title', '')} — {final}\nPARAGRAPHS:\n{numbered}\n\n"
+                        "Output ONLY the JSON object.")
+                jobs.append((sid, page, blocks, user))
+
+        def keep_one(job):
+            sid, page, blocks, user = job
+            try:
+                data, _ = call_llm_json(load_prompt("research/passage_picker"), user,
+                                        temperature=0.1, max_tokens=1500, required=["keep"])
+            except UnreadableAnswer:
+                return None
+            keep = pick(data, "keep", default=[]) or []
+            if not keep or str(pick(data, "relevance", default="")).lower() == "low":
+                return None
+            try:
+                return sid, google.to_source(page, keep, blocks)
+            except Exception as exc:
+                _log(f"web: source failed ({type(exc).__name__}: {exc})")
+                return None
+
+        out = {}
+        for kept in _parallel(keep_one, jobs, settings.get("parallel_calls", 4)):
+            if kept:
+                out.setdefault(kept[0], []).append(kept[1])
+
+        # f. One summary line per section.
+        for sec in sections_with_queries:
+            sid = sec["id"]
+            opened_n = len({href_final.get(h) for h in picks.get(sid, []) if href_final.get(h)})
+            kept_n = len(out.get(sid, []))
+            if results.get(sid) or opened_n or kept_n:
+                _log(f"{sid} web: {len(results.get(sid, []))} results, opened {opened_n}, "
+                     f"kept {kept_n} pages")
+        return out
+    except Exception as exc:                      # web trouble must not stop the research
+        _log(f"web: failed ({type(exc).__name__}: {exc})")
+        return {}
+
+
 def source_collector(state: dict) -> dict:
     settings = state.get("settings", {})
     per_query, years = settings.get("sources_per_query", 6), settings.get("research_years", 10)
@@ -176,28 +486,27 @@ def source_collector(state: dict) -> dict:
     # 3. merge in outline order so source ids stay deterministic.
     results = _parallel(lambda job: _collect_queries(job, per_query, years), jobs,
                         settings.get("parallel_calls", 4))
+    # 3b. LLM-assisted Google research, while pending still holds this round's public queries.
+    web_sections = [sec for sec in outline if sec["id"] in focus
+                    and (sec.get("pending", {}).get("public") or sec.get("queries", {}).get("public"))]
+    state["queries_done"] = done
+    # Web pages are found once per cycle; the screener's gap rounds re-searched the same
+    # sites for minutes and kept almost nothing new, so they use the literature only.
+    web = _web_research(state, web_sections, settings) if not state.get("screen_round") else {}
+    done = state["queries_done"]
     for (sec, _), found in zip(jobs, results):
-        new_here = 0
-        for s in found:
-            if not s.get("text"):
-                continue
-            sid = by_key.get(s["key"])
-            if not sid:
-                sid = f"S{next_id}"
-                next_id += 1
-                s["text"] = s["text"][:6000]
-                s["sections"] = []
-                sources[sid] = s
-                by_key[s["key"]] = sid
-                new_here += 1
-            if sec["id"] not in sources[sid]["sections"]:
-                sources[sid]["sections"].append(sec["id"])
-            if sid not in sec["candidates"]:
-                sec["candidates"].append(sid)
-        sec["candidates"].sort(key=lambda i: -evidence.score(sources[i], years))
-        sec["candidates"] = sec["candidates"][:settings.get("sources_per_section", 8) * 2]
+        next_id, new_here = _merge_found(sources, by_key, sec, found, next_id)
+        next_id, web_here = _merge_found(sources, by_key, sec, web.get(sec["id"], []), next_id)
         sec["pending"] = {"literature": [], "public": []}
-        _log(f"{sec['id']} {sec['title'][:50]}: {new_here} new sources, {len(sec['candidates'])} candidates")
+        sec["candidates"].sort(key=lambda i: -evidence.score(sources[i], years))
+        # Pages the LLM picked from Google rank as level 5, below every trial or review,
+        # so a plain cut would drop them all; they keep their own slots in the list.
+        cap = settings.get("sources_per_section", 8) * 2
+        web_ids = [i for i in sec["candidates"] if sources[i].get("origin") == "Web"][:cap // 2]
+        rest = [i for i in sec["candidates"] if i not in web_ids][:cap - len(web_ids)]
+        sec["candidates"] = [i for i in sec["candidates"] if i in web_ids or i in rest]
+        _log(f"{sec['id']} {sec['title'][:50]}: {new_here + web_here} new sources, "
+             f"{len(sec['candidates'])} candidates")
     return {"outline": outline, "sources": sources, "next_source": next_id, "queries_done": done,
             "source_log": list(src.http.log)}
 

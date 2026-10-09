@@ -10,9 +10,11 @@ RuntimeError so the research collector can fall back to the plain HTTP sources.
 import atexit
 import json
 import os
+import shutil
 import signal
 import socket
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.request
@@ -22,6 +24,14 @@ from websockets.sync.client import connect
 from ...exports.convert import find_chrome_executable
 
 DEFAULT_PROFILE = os.path.expanduser("~/.cache/medical_brain/chrome-profile")
+
+
+def new_temp_profile() -> str:
+    """A throwaway Chrome profile dir for one process.
+
+    Google's throttling flag sticks to a profile, so the default is a fresh, temporary
+    profile that is deleted on close. Callers that need persistence pass `profile_dir`."""
+    return tempfile.mkdtemp(prefix="mb-chrome-")
 
 
 class Blocked(Exception):
@@ -113,11 +123,36 @@ _SNAPSHOT = ("({url: location.href, title: document.title, "
              "html: document.documentElement ? document.documentElement.outerHTML : ''})")
 
 
+def _ready_state(page) -> str:
+    """document.readyState of an attached tab ("" if the call fails)."""
+    value = page.call("Runtime.evaluate",
+                      {"expression": "document.readyState", "returnByValue": True})["result"].get("value")
+    return value or ""
+
+
+def _wait_ready(call_state, timeout: float = 25.0, interval: float = 0.5) -> bool:
+    """Poll `call_state` (a zero-arg callable returning document.readyState) until "complete".
+
+    Returns True as soon as it is complete, False on timeout. Kept free of Chrome so the
+    polling can be unit-tested with a plain callable; a raised exception means "not yet"."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            if (call_state() or "") == "complete":
+                return True
+        except Exception:
+            pass
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(interval)
+
+
 class Browser:
     """A single persistent Chrome, shared by threads; each open() is its own tab."""
 
     def __init__(self, profile_dir: str = None, offscreen: bool = True, max_tabs: int = 3):
-        self.profile_dir = profile_dir or DEFAULT_PROFILE
+        self._temp_profile = profile_dir is None
+        self.profile_dir = profile_dir or new_temp_profile()
         self.offscreen = offscreen
         self.port = None
         self._proc = None
@@ -127,6 +162,9 @@ class Browser:
         self._state_lock = threading.RLock()         # reentrant: start() closes on failure
         self._tabs_lock = threading.Lock()           # guards _targets
         self._sem = threading.Semaphore(max_tabs)    # at most `max_tabs` tabs at once
+        self._search_tab = None                      # targetId of the one long-lived search tab
+        self._search_cdp = None                      # its _CDP, kept open for the browser's life
+        self._search_lock = threading.Lock()         # one Google page at a time
 
     # -- lifecycle -----------------------------------------------------------
     def start(self) -> None:
@@ -157,12 +195,24 @@ class Browser:
 
             actual = self._wait_for_port(port, port_file, timeout=15)
             if not actual:
+                message = self._startup_error()   # read the profile before close() removes it
                 self.close()
-                raise RuntimeError(self._startup_error())
+                raise RuntimeError(message)
 
             self.port = actual
             ws_url = self._connect_browser_ws(actual)
             self._browser = _CDP(connect(ws_url, max_size=None, proxy=None))
+
+    def restart_fresh(self) -> None:
+        """Close Chrome and relaunch it with a brand-new temporary profile.
+
+        Used to shake off a per-profile throttle (degraded results / captcha). The shared
+        instance stays the same object, so get_browser() keeps returning it."""
+        with self._state_lock:
+            self.close()
+            self._temp_profile = True
+            self.profile_dir = new_temp_profile()
+            self.start()
 
     @staticmethod
     def _free_port() -> int:
@@ -238,13 +288,20 @@ class Browser:
             proc, self._proc = self._proc, None
             browser, self._browser = self._browser, None
             self.port = None
+            search_cdp, self._search_cdp = self._search_cdp, None
+            self._search_tab = None
+            temp_profile, profile_dir = self._temp_profile, self.profile_dir
         with self._tabs_lock:
             self._shown.clear()
+        if search_cdp:
+            search_cdp.close()
         if browser:
             browser.close()
         if proc:
             self._terminate(proc)
-        self._remove(os.path.join(self.profile_dir, "DevToolsActivePort"))
+        self._remove(os.path.join(profile_dir, "DevToolsActivePort"))
+        if temp_profile:
+            shutil.rmtree(profile_dir, ignore_errors=True)
 
     @staticmethod
     def _terminate(proc) -> None:
@@ -306,6 +363,86 @@ class Browser:
                     except Exception:
                         pass
 
+    def search(self, url: str, settle: float = 4.0) -> dict:
+        """Load `url` in the ONE persistent search tab and return url/title/html/text/status.
+
+        Google degrades results when each query is opened in a brand-new tab, so every
+        search() reuses a single long-lived tab (the initial about:blank target, or a tab
+        created once if Chrome has none) and calls run one at a time. Unlike open(), it never
+        calls Page.enable and never closes the tab; close()/restart_fresh() do that."""
+        if self._proc is None:
+            raise RuntimeError("Browser.start() must be called before search()")
+        with self._search_lock:
+            page = self._search_page()
+            try:
+                return self._navigate_and_snapshot(page, url, settle)
+            except RuntimeError:
+                # the long-lived tab was closed under us: rebuild it once and retry
+                self._discard_search_page()
+                page = self._search_page()
+                return self._navigate_and_snapshot(page, url, settle)
+
+    def _search_page(self):
+        """The persistent search tab's CDP connection, created lazily and kept open."""
+        if self._search_cdp is not None and self._search_tab in self._page_ids():
+            return self._search_cdp
+        with self._state_lock:
+            if self._search_cdp is not None and self._search_tab in self._page_ids():
+                return self._search_cdp
+            old, self._search_cdp = self._search_cdp, None
+            self._search_tab = None
+            if old is not None:
+                old.close()                              # a dead connection, drop it
+            if self._browser is None:
+                raise RuntimeError("Browser.start() must be called before search()")
+            target_id = self._initial_page_target()
+            if target_id is None:                        # Chrome had no page tab: make one
+                target_id = self._browser.call("Target.createTarget", {"url": "about:blank"})["targetId"]
+            ws_url = self._page_ws(target_id)
+            self._search_tab = target_id
+            self._search_cdp = _CDP(connect(ws_url, max_size=None, proxy=None))
+            return self._search_cdp
+
+    def _discard_search_page(self) -> None:
+        with self._state_lock:
+            cdp, self._search_cdp = self._search_cdp, None
+            self._search_tab = None
+        if cdp is not None:
+            cdp.close()
+
+    def _page_ids(self) -> set:
+        """The ids of Chrome's current page-type targets (empty if the endpoint is down)."""
+        try:
+            return {item.get("id") for item in json.loads(self._http(self.port, "/json/list"))
+                    if item.get("type") == "page" and item.get("id")}
+        except Exception:
+            return set()
+
+    def _initial_page_target(self):
+        """The id of the first page target Chrome already has (the launch about:blank)."""
+        try:
+            for item in json.loads(self._http(self.port, "/json/list")):
+                if item.get("type") == "page" and item.get("id"):
+                    return item["id"]
+        except Exception:
+            pass
+        return None
+
+    @staticmethod
+    def _navigate_and_snapshot(page, url: str, settle: float) -> dict:
+        """Navigate an already-attached tab, wait for readyState, then snapshot it."""
+        page.call("Page.navigate", {"url": url})
+        _wait_ready(lambda: _ready_state(page), timeout=25.0, interval=0.5)
+        if settle:
+            time.sleep(settle)
+        value = page.call("Runtime.evaluate",
+                          {"expression": _SNAPSHOT, "returnByValue": True})["result"].get("value") or {}
+        title = value.get("title") or ""
+        text = value.get("text") or ""
+        final_url = value.get("url") or url
+        return {"url": final_url, "title": title, "html": value.get("html") or "",
+                "text": text, "status": page_status(title, text, final_url)}
+
     def _page_ws(self, target_id: str) -> str:
         deadline = time.monotonic() + 10
         while time.monotonic() < deadline:
@@ -325,6 +462,27 @@ class Browser:
             target_id = self._browser.call("Target.createTarget", {"url": url})["targetId"]
             with self._tabs_lock:
                 self._shown.add(target_id)
+            try:
+                self._browser.call("Target.activateTarget", {"targetId": target_id})
+            except Exception:
+                pass
+            self._move_window(target_id, 80, 80)
+        except Exception:
+            pass
+
+    def show_search(self) -> None:
+        """Bring the persistent search tab on-screen so the user can clear a Google check.
+
+        Unlike show(), it reuses the tab search() runs in and never closes it; hide() parks
+        the window again. Never raises."""
+        try:
+            if self._browser is None:
+                return
+            with self._search_lock:
+                self._search_page()
+                target_id = self._search_tab
+            if not target_id:
+                return
             try:
                 self._browser.call("Target.activateTarget", {"targetId": target_id})
             except Exception:
