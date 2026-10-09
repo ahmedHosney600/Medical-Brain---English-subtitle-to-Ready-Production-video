@@ -3,9 +3,13 @@ them → check coverage → write the dossier. A review round (review.md) re-run
 same steps for the sections the user asked to add or change.
 
 System prompts live in prompts/research/<step>.md."""
+import contextvars
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from ..llm import call_llm_json
+from ..llm.progress import quiet
 from ..prompts import load_prompt
 from ..utils.llm_json import UnreadableAnswer, pick
 from . import sources as src
@@ -85,8 +89,28 @@ def quote_problem(fact: dict, state: dict) -> str:
     return ""
 
 
+_log_lock = threading.Lock()
+
+
 def _log(msg: str) -> None:
-    print(f"  🔎 {msg}", flush=True)
+    with _log_lock:                # concurrent sections must not interleave one line
+        print(f"  🔎 {msg}", flush=True)
+
+
+def _parallel(fn, items, workers: int) -> list:
+    """Run fn(item) for every item and return the results in the original order.
+
+    A fresh copy of the caller's context goes to each task: worker threads do not
+    inherit contextvars, so without it call_llm_json would see current_node=None
+    (wrong model routing in hybrid mode). The live progress line is silenced for the
+    block. workers <= 1, or a single item, keeps the plain sequential loop."""
+    items = list(items)
+    if workers <= 1 or len(items) <= 1:
+        return [fn(item) for item in items]
+    with quiet():
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(contextvars.copy_context().run, fn, item) for item in items]
+            return [f.result() for f in futures]     # re-raises whatever the task raised
 
 
 # --------------------------------------------------------------------------
@@ -117,6 +141,14 @@ Plan the research. Output ONLY the JSON object."""
             "focus": ids, "work": ids, "screen_round": 0, "verify_round": 0, "coverage_round": 0}
 
 
+def _collect_queries(job, per_query: int, years: int) -> list:
+    _, queries = job
+    found = []
+    for kind, q in queries:
+        found.extend(src.run_query(kind, q, per_query, years))
+    return found
+
+
 def source_collector(state: dict) -> dict:
     settings = state.get("settings", {})
     per_query, years = settings.get("sources_per_query", 6), settings.get("research_years", 10)
@@ -126,17 +158,25 @@ def source_collector(state: dict) -> dict:
     next_id = state.get("next_source", 1)
     done = list(state.get("queries_done", []))
     focus = set(state.get("focus") or [s["id"] for s in outline])
+    # 1. Pick each section's still-undone queries, marking them done in order.
+    jobs = []
     for sec in outline:
         if sec["id"] not in focus:
             continue
-        found = []
+        queries = []
         for kind in ("literature", "public"):
             for q in sec.get("pending", {}).get(kind, []):
                 tag = f"{kind}:{q}"
                 if tag in done:
                     continue
                 done.append(tag)
-                found.extend(src.run_query(kind, q, per_query, years))
+                queries.append((kind, q))
+        jobs.append((sec, queries))
+    # 2. Search each section's queries concurrently (network-bound), then
+    # 3. merge in outline order so source ids stay deterministic.
+    results = _parallel(lambda job: _collect_queries(job, per_query, years), jobs,
+                        settings.get("parallel_calls", 4))
+    for (sec, _), found in zip(jobs, results):
         new_here = 0
         for s in found:
             if not s.get("text"):
@@ -245,6 +285,9 @@ def fact_extractor(state: dict) -> dict:
     user_notes = state.get("extractor_notes", {}) or {}
     budget = settings.get("max_facts_per_section", 20)
     outline = [dict(s) for s in state.get("outline", [])]
+    # 1. Build each section's prompt up front (cheap); sections with no work are
+    #    logged and skipped exactly as before.
+    jobs = []
     for sec in _sections({"outline": outline}, state.get("to_extract")):
         fixing = redo.get(sec["id"]) or []
         extracted = list(sec.get("extracted", []))
@@ -280,17 +323,26 @@ SOURCES (quote ONLY from these texts):
 {chr(10).join(_source_block(state, sid) for sid in send_ids)}
 
 Output ONLY the JSON object."""
+        jobs.append((sec, fixing, extracted, send_ids, room, user_prompt))
+
+    def extract_one(job):
         try:
-            data, _ = call_llm_json(system_prompt, user_prompt, temperature=0.2, max_tokens=9000,
+            data, _ = call_llm_json(system_prompt, job[5], temperature=0.2, max_tokens=9000,
                                     required=["facts"])
         except UnreadableAnswer:
             data = {}
+        return data
+
+    # 2. Run the calls concurrently; 3. merge in the original section order so fact
+    #    ids do not depend on which call happened to finish first.
+    results = _parallel(extract_one, jobs, settings.get("parallel_calls", 4))
+    seen = {_norm(f["claim"]) for f in facts}
+    for (sec, fixing, extracted, send_ids, room, _), data in zip(jobs, results):
         if not fixing and data:
             # These sources are done; a later pass must not send them again (an
             # unreadable answer leaves them for the next pass).
             sec["extracted"] = list(dict.fromkeys(extracted + send_ids))
         added = 0
-        seen = {_norm(f["claim"]) for f in facts}
         limit = len(fixing) if fixing else room          # fix mode: corrections only
         for raw in pick(data, "facts", default=[]) or []:
             if not isinstance(raw, dict) or not str(pick(raw, "claim", default="")).strip():
@@ -334,9 +386,12 @@ def fact_verifier(state: dict) -> dict:
             by_section.setdefault(f["section"], []).append(f)
     # 2. Model check: is each claim faithful to its quote, current, and consistent?
     system_prompt = load_prompt("research/fact_verifier")
+    # The list of already-verified facts is taken once, before the parallel block:
+    # with the calls running at once a section cannot see another's fresh verdicts.
+    others = [f"{f['id']}: {f['claim']}" for f in facts if f["status"] == "verified"][:60]
+    jobs = []
     for sid, group in by_section.items():
         sec = next((s for s in state.get("outline", []) if s["id"] == sid), {"title": sid})
-        others = [f"{f['id']}: {f['claim']}" for f in facts if f["status"] == "verified"][:60]
         items = "\n\n".join(
             f"{f['id']} ({f['kind']}) CLAIM: {f['claim']}\nQUOTE: \"{f['quote']}\"\nSOURCE: "
             + "; ".join(f"[{i}] {state['sources'][i]['title']} ({state['sources'][i].get('year') or 'n.d.'}, "
@@ -353,11 +408,19 @@ OTHER VERIFIED FACTS (check for contradictions):
 {chr(10).join(others) or "(none)"}
 
 Output ONLY the JSON object."""
+        jobs.append((group, user_prompt))
+
+    def verify_one(job):
         try:
-            data, _ = call_llm_json(system_prompt, user_prompt, temperature=0.1, max_tokens=7000,
+            data, _ = call_llm_json(system_prompt, job[1], temperature=0.1, max_tokens=7000,
                                     required=["verdicts"])
         except UnreadableAnswer:
             data = {}
+        return data
+
+    # 3. Apply the verdicts sequentially, in section order.
+    results = _parallel(verify_one, jobs, settings.get("parallel_calls", 4))
+    for (group, _), data in zip(jobs, results):
         verdicts = {str(pick(v, "id", default="")): v for v in (pick(data, "verdicts", default=[]) or [])
                     if isinstance(v, dict)}
         for f in group:

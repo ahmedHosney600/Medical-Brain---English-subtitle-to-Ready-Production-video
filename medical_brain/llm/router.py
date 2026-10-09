@@ -1,5 +1,6 @@
 """LLMRouter: picks the model for each step (main / single / hybrid) and falls back on failure."""
 import os
+import threading
 from typing import Optional
 
 from .backends import make_backend
@@ -28,6 +29,7 @@ class LLMRouter:
         self.calls = {}
         self.node_models = {}
         self._backends = {}
+        self._lock = threading.Lock()   # guards the book-keeping dicts and lazy backends
 
     def model_for(self, node: Optional[str]) -> str:
         if self.mode == "single":
@@ -54,7 +56,8 @@ class LLMRouter:
         return f"{self.main} writes; {routed}{backup}"
 
     def _is_down(self, spec: str) -> bool:
-        return spec in self.down_specs or parse_spec(spec)[0] in self.down
+        with self._lock:
+            return spec in self.down_specs or parse_spec(spec)[0] in self.down
 
     def _ask(self, spec: str, system_prompt, user_prompt, temperature, max_tokens) -> str:
         result = self._backend(spec).call(system_prompt, user_prompt, temperature, max_tokens)
@@ -63,13 +66,16 @@ class LLMRouter:
         return result
 
     def _backend(self, spec: str):
-        if spec not in self._backends:
-            self._backends[spec] = make_backend(spec, self.config["providers"])
-        return self._backends[spec]
+        with self._lock:               # two steps may need the same backend at once
+            backend = self._backends.get(spec)
+            if backend is None:
+                backend = self._backends[spec] = make_backend(spec, self.config["providers"])
+            return backend
 
     def _log(self, msg: str):
-        print(f"🔀 [LLM] {msg}")
-        self.events.append(msg)
+        with self._lock:               # keep whole event lines from interleaving
+            print(f"🔀 [LLM] {msg}")
+            self.events.append(msg)
 
     def select(self, ask=None):
         """Quick check of every model this run will use. Never blocks: a model
@@ -91,13 +97,15 @@ class LLMRouter:
             else:
                 # Only this model is taken out: another model of the same provider
                 # (another judge, or the backup) may still work.
-                self.down_specs[spec] = detail
+                with self._lock:
+                    self.down_specs[spec] = detail
                 self._log(f"⚠️ {spec} unavailable ({detail}). Its steps will run on {self.main}.")
 
     def _count(self, node, spec):
-        self.calls[spec] = self.calls.get(spec, 0) + 1
-        if node:
-            self.node_models[node] = spec
+        with self._lock:               # read-modify-write from parallel calls
+            self.calls[spec] = self.calls.get(spec, 0) + 1
+            if node:
+                self.node_models[node] = spec
 
     def call(self, system_prompt: str, user_prompt: str,
              temperature: Optional[float] = None, max_tokens: Optional[int] = None) -> str:
@@ -117,7 +125,8 @@ class LLMRouter:
                     self._count(node, spec)
                     return result
                 except ProviderUnavailable as e:
-                    self.down[provider] = _short(e)
+                    with self._lock:
+                        self.down[provider] = _short(e)
                     self._log(f"⚠️ {node}: {spec} unavailable ({_short(e)}). "
                               f"This and later {provider} steps run on {self.main}.")
                 except Exception as e:
@@ -132,7 +141,8 @@ class LLMRouter:
             if isinstance(e, AnswerCutOff) and not cut_text:
                 cut_text = e.text
             if isinstance(e, ProviderUnavailable):
-                self.down[parse_spec(self.main)[0]] = _short(e)
+                with self._lock:
+                    self.down[parse_spec(self.main)[0]] = _short(e)
             if not self.backup or self._is_down(self.backup):
                 if cut_text:
                     self._log(f"⚠️ {node}: no model gave a complete answer; using the cut-off one.")
@@ -155,11 +165,12 @@ class LLMRouter:
         return self.node_models.get(node)
 
     def report(self) -> dict:
-        return {
-            "mode": self.mode,
-            "setup": self.describe(),
-            "calls": dict(self.calls),
-            "node_models": dict(self.node_models),
-            "unavailable": {**self.down, **self.down_specs},
-            "events": list(self.events),
-        }
+        with self._lock:               # a consistent snapshot even if a call is still landing
+            return {
+                "mode": self.mode,
+                "setup": self.describe(),
+                "calls": dict(self.calls),
+                "node_models": dict(self.node_models),
+                "unavailable": {**self.down, **self.down_specs},
+                "events": list(self.events),
+            }

@@ -4,6 +4,7 @@ Every failure is returned as None — a dead source never stops the research."""
 import hashlib
 import json
 import os
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -13,6 +14,8 @@ from typing import Optional
 USER_AGENT = "MedicalBrainResearch/1.0 (educational medical video research)"
 _cache_dir: Optional[str] = None
 _last_call: dict = {}          # host -> time of last request (rate limiting)
+_locks_guard = threading.Lock()
+_host_locks: dict = {}         # host -> lock, so concurrent requests to one host still space out
 log: list = []                 # (source, url, problem) for the run report
 
 
@@ -30,10 +33,13 @@ def _cache_path(key: str) -> Optional[str]:
 
 
 def _throttle(host: str, min_gap: float) -> None:
-    wait = _last_call.get(host, 0) + min_gap - time.monotonic()
-    if wait > 0:
-        time.sleep(wait)
-    _last_call[host] = time.monotonic()
+    with _locks_guard:
+        lock = _host_locks.setdefault(host, threading.Lock())
+    with lock:                     # hold it across the sleep so a host's gap is honoured
+        wait = _last_call.get(host, 0) + min_gap - time.monotonic()
+        if wait > 0:
+            time.sleep(wait)
+        _last_call[host] = time.monotonic()
 
 
 def get(url: str, params: Optional[dict] = None, headers: Optional[dict] = None, data: Optional[dict] = None,

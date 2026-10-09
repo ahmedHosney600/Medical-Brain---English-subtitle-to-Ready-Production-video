@@ -1,11 +1,14 @@
 """The topic → research workflow, offline: fake sources and a scripted fake model."""
 import json
 import os
+import re
 import tempfile
+import time
 import unittest
 from unittest import mock
 
 from medical_brain import llm
+from medical_brain.llm.progress import _Progress, quiet
 from medical_brain.prompts import load_prompt
 from medical_brain.research import dossier as rd
 from medical_brain.research import nodes
@@ -410,6 +413,75 @@ class ExtractorLoopTest(unittest.TestCase):
             nodes.fact_extractor(st)
         self.assertEqual(fake.prompts, [])
         self.assertIn("fact budget reached", " ".join(str(c) for c in printed.call_args_list))
+
+
+class ParallelCallsTest(unittest.TestCase):
+    """parallel_calls: independent section calls run at once but merge in a fixed order."""
+
+    def extract(self, workers, delay):
+        outline = [section(sid, source_ids=[f"S{i + 1}"]) for i, sid in enumerate("ABCD")]
+        st = state_of(outline, sources={f"S{i}": dict(SOURCE) for i in range(1, 5)},
+                      facts=[], next_fact=1, to_extract=["A", "B", "C", "D"],
+                      settings={"parallel_calls": workers})
+        seen = []
+
+        def reply(system, user, temperature=None, max_tokens=None, required=()):
+            seen.append(llm.current_node.get())
+            time.sleep(delay)
+            sid = re.search(r"SECTION (\w+):", user).group(1)
+            return {"facts": [{"claim": f"Claim {sid}", "quote": "Pooled sensitivity was 94.2%",
+                               "source_ids": [f"S{ord(sid) - 64}"]}]}, "{}"
+
+        with mock.patch.object(nodes, "call_llm_json", reply):
+            out = llm.track_node("fact_extractor", nodes.fact_extractor)(st)
+        return out, seen
+
+    def test_calls_run_concurrently_with_the_right_node(self):
+        start = time.monotonic()
+        par, seen = self.extract(4, delay=0.2)
+        self.assertLess(time.monotonic() - start, 0.7)      # would be 4 × 0.2s if sequential
+        self.assertEqual(len(seen), 4)
+        self.assertTrue(all(name == "fact_extractor" for name in seen))
+        self.assertEqual([f["id"] for f in par["facts"]], ["F1", "F2", "F3", "F4"])
+
+        seq, _ = self.extract(1, delay=0.2)                 # ids/order must match the sequential run
+        key = lambda o: [(f["id"], f["section"], f["claim"]) for f in o["facts"]]   # noqa: E731
+        self.assertEqual(key(par), key(seq))
+
+    def test_source_ids_are_deterministic_across_worker_counts(self):
+        def collect(workers):
+            outline = [section(sid, pending={"literature": [f"q{sid}"], "public": []}) for sid in "ABCD"]
+            st = state_of(outline, sources={}, focus=["A", "B", "C", "D"], queries_done=[],
+                          settings={"parallel_calls": workers})
+
+            def fake(kind, query, per_source, years):
+                time.sleep(0.2)
+                return [dict(SOURCE_A, key=f"doi:{query}")]
+
+            with mock.patch("medical_brain.research.sources.run_query", side_effect=fake):
+                return nodes.source_collector(st)
+
+        start = time.monotonic()
+        par = collect(4)
+        self.assertLess(time.monotonic() - start, 0.7)      # would be 4 × 0.2s if sequential
+        seq = collect(1)
+        self.assertEqual([s["candidates"] for s in par["outline"]],
+                         [s["candidates"] for s in seq["outline"]])
+        self.assertEqual(par["outline"][0]["candidates"], ["S1"])   # ids follow outline order
+
+
+class ProgressQuietTest(unittest.TestCase):
+    def test_quiet_silences_the_live_line(self):
+        p = _Progress("step", None)
+        p.last = time.monotonic() - 10                      # make the next tick due
+        with mock.patch("sys.stdout.write") as write:
+            p.tick(writing=5)
+        self.assertTrue(write.called)
+        q = _Progress("step", None)
+        q.last = time.monotonic() - 10
+        with mock.patch("sys.stdout.write") as write, quiet():
+            q.tick(writing=5)
+        self.assertEqual(write.call_args_list, [])
 
 
 class CliTest(unittest.TestCase):

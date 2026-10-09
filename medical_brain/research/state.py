@@ -59,6 +59,7 @@ DEFAULT_SETTINGS = {
     "sources_per_query": 6,
     "sources_per_section": 8,
     "research_years": 10,
+    "parallel_calls": 4,              # sections to search/extract/verify at once (1 = sequential)
 }
 
 

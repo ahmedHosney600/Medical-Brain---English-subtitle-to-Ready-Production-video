@@ -1,7 +1,9 @@
 """Which step is running (track_node), the live progress line, and the per-call time-out."""
+import contextlib
 import contextvars
 import functools
 import sys
+import threading
 import time
 from typing import Optional
 
@@ -12,6 +14,19 @@ current_node = contextvars.ContextVar("current_node", default=None)
 
 
 _node_state = contextvars.ContextVar("_node_state", default=None)
+
+# Set while a parallel block runs: several live "\r ⏳" lines would garble each other.
+_quiet = threading.Event()
+
+
+@contextlib.contextmanager
+def quiet():
+    """Silence the live progress line for the duration of the block (timeouts still work)."""
+    _quiet.set()
+    try:
+        yield
+    finally:
+        _quiet.clear()
 
 
 def track_node(name: str, fn):
@@ -47,7 +62,7 @@ class _Progress:
             self.done()
             raise StepTimeout(f"{self.label} took more than {int(self.timeout)} s "
                               f"(step_timeout_seconds) and was stopped")
-        if now - self.last >= 3:
+        if now - self.last >= 3 and not _quiet.is_set():
             self.last = now
             what = f"writing ~{self.writing:,} tokens" if self.writing else \
                 (f"thinking (~{self.thinking:,} tokens)…" if self.thinking else "waiting for the first words…")
