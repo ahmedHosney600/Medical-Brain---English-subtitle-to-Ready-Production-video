@@ -6,3 +6,4 @@ langchain-core
 openai
 anthropic        # Claude by API key, and OpenCode Go's Qwen / MiniMax models
 python-dotenv
+websockets       # sync CDP client for driving real Chrome on the pages that block HTTP clients

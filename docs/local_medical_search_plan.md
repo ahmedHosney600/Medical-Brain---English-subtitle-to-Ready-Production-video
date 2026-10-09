@@ -1,74 +1,76 @@
-# Plan: local search over trusted medical websites (no search API)
+# Plan: Google search over trusted medical sites, through your own Chrome, assisted by the LLM
 
-**Goal.** The research workflow's "public" queries (`medical_brain/research/sources/web.py`) today need a
-paid Tavily or Brave key; without one, only PubMed, Europe PMC and MedlinePlus are searched. Replace that
-with a search that runs on this Mac: no API key, no third-party search engine, works offline once built.
+**Goal.** Research "public" queries should find the best patient-facing pages on Mayo Clinic, Johns
+Hopkins, NHS, Cleveland Clinic, CDC, WHO, MedlinePlus… using **Google's ranking**, with no paid search API,
+and an LLM that picks which results to open and which passages matter.
 
-## What was checked (2026-10-09)
+## What was tested (2026-10-09, from this Mac)
 
-| Site | Sitemap | Plain HTTP fetch |
-|---|---|---|
-| nhs.uk | `sitemap.xml` → `sitemap-cms-content.xml` | ✅ 200 (`/conditions/leg-cramps/`) |
-| my.clevelandclinic.org | `sitemap.xml` → `site.xml`, `page.xml` | ✅ |
-| medlineplus.gov | `sitemap.xml` (+ free search API already used) | ✅ |
-| cdc.gov | `wcms-auto-sitemap-index.xml` | ✅ |
-| who.int | `sitemaps/sitemapindex.xml` | ✅ |
-| health.harvard.edu | `sitemap.xml` → `sitemap-pages.xml` … | ✅ |
-| patient.info, aafp.org | `sitemap.xml` | ✅ |
-| mayoclinic.org, hopkinsmedicine.org | **403** (bot protection) | ❌ needs fallback |
+| Target | plain HTTP (urllib/curl) | headless Chrome | **visible Chrome (off-screen window)** |
+|---|---|---|---|
+| mayoclinic.org (Akamai Bot Manager) | ❌ 403, even robots.txt | ❌ "Access Denied" | ✅ full article |
+| hopkinsmedicine.org (Cloudflare) | ❌ 403 (robots.txt allows `/health/`) | ❌ "Sorry, you have been blocked" | ✅ |
+| google.com/search `site:` | — | ❌ "unusual traffic" | ✅ real results, English with `hl=en&gl=us` |
+| nhs.uk, clevelandclinic, medlineplus, cdc, who | ✅ | — | ✅ |
 
-## Design: sitemap catalog + on-demand pages + SQLite full-text search
+Both bot shields detect *headless/non-browser clients*, not your IP or region. A normal Chrome window
+placed off-screen (`--window-position=-2400,-2400`) passes, so that's the approach.
+
+Google results link through encrypted `google.com/goto?url=…` redirects. The real URL is known once the
+page is opened, and we open the chosen pages anyway. `site:a OR site:b` without parentheses let Wikipedia
+in, so queries group sites in parentheses and results are filtered to the trusted list.
+
+## Design
 
 ```
-build (weekly, ~minutes)          query (during research, ~ms)
-sitemaps ──► catalog(url, title,  query ──► FTS5/BM25 over title+slug+summary
-             slug, site, lastmod)            │ top N URLs not yet cached
-                                             ▼
-                                  fetch page (throttled, cached) ──► page_text()
-                                             ▼
-                                  FTS5 over page body ──► ranked sources (same dict shape as today)
+section questions ─► LLM query writer (existing topic_planner/screener public_queries)
+                      │
+                      ▼
+   Google (your Chrome, off-screen)  "night leg cramps (site:mayoclinic.org OR site:hopkinsmedicine.org OR …)"
+                      │ titles · domains · snippets  (cached, ≥12 s between queries)
+                      ▼
+   LLM triage  ── picks the 2–4 results per section worth opening (prompts/research/web_triage.md)
+                      ▼
+   open pages: Mayo/Hopkins via Chrome, others via plain HTTP  ─► page split into numbered paragraphs
+                      ▼
+   LLM passage picker ── returns paragraph NUMBERS (never rewrites text), so quotes stay verbatim
+                      (prompts/research/passage_picker.md)
+                      ▼
+   source dicts (origin "Web (Google)") ─► existing screener → extractor → verifier → coverage loop
 ```
 
-1. **Catalog (cheap, eager).** For each site in a `SITES` registry, read the sitemap index, keep only
-   health-topic paths (allow-list per site, e.g. `nhs.uk/conditions/`, `nhs.uk/medicines/`,
-   `my.clevelandclinic.org/health/`, `medlineplus.gov/ency/`, `cdc.gov/<topic>/about/`,
-   `who.int/news-room/fact-sheets/`). Store `url, site, title-from-slug, lastmod` in SQLite. This is
-   about 20–60k URLs across all sites. No page downloads yet.
-2. **Search.** SQLite **FTS5** (part of Python's `sqlite3`, no install) with BM25 ranking over the
-   catalog's title/slug, plus page bodies once cached. Add a small medical synonym map
-   (cramp ↔ spasm ↔ charley horse, heart attack ↔ myocardial infarction, …) applied to the query, and
-   use the LLM-written `public_queries` as they are.
-3. **Pages on demand.** Fetch only the top hits that aren't cached yet. Use the existing `http.get`
-   (it already caches, throttles per host and retries), extract text with the existing `page_text()`,
-   and index the body so later queries rank by content, not just by title. Respect robots.txt
-   (`urllib.robotparser`), send an honest User-Agent, and keep ≥1 s between requests per host.
-4. **Refresh.** `python3 -m medical_brain.research.local_index --build` (or automatically when the
-   catalog is older than `refresh_days`, default 7). Use sitemap `lastmod` to re-fetch only changed pages.
-5. **Blocked sites (Mayo, Hopkins).** Phase 2, optional: fetch through the Chrome you already have
-   (headless Playwright or the Claude-in-Chrome extension) for a hand-picked list of URLs, or simply
-   leave them out. NHS, Cleveland Clinic, MedlinePlus, CDC and WHO cover the same patient topics.
+The coverage loop already writes new queries when something is missing, so the LLM also steers
+follow-up searches.
 
-## Where it plugs in
+### Pieces
 
-- New `medical_brain/research/sources/local_index.py`: `build()`, `search(query, max_results, years)`
-  returning the same source dicts as `web._source()` (`origin: "Web (local)"`, evidence level from
-  `evidence.level_of`).
-- `sources/__init__.py`: `PUBLIC = {"MedlinePlus": …, "Web": web.search, "Web (local)": local_index.search}`.
-  `web.py` keeps Tavily/Brave as an optional extra; the local index is the default.
-- Storage: `~/.cache/medical_brain/web_index.sqlite`, outside the repo and git-ignored.
-- Settings: `local_web: true`, `local_web_sites: [...]`, `refresh_days: 7` in input_fields.json.
-- `sources.enabled()` shows `Web (local index, N pages)` in the run banner.
+1. **`sources/browser.py`**: drives your installed Chrome over the DevTools protocol (Python
+   `websockets`, already installed). It uses a persistent profile at `~/.cache/medical_brain/chrome-profile`
+   (cookies and consent survive between runs), an off-screen window, one browser per run, and a few tabs.
+   It detects block and CAPTCHA pages. On a Google CAPTCHA it brings the window on-screen and asks you to
+   solve it (interactive runs), or turns Google off for the rest of the run (non-interactive runs).
+2. **`sources/google.py`**: builds grouped `site:` queries, parses the results page (tested against saved
+   real results pages), filters to trusted domains, enforces a per-run query cap and throttling, and
+   caches results.
+3. **LLM-assisted web research** in `source_collector`: triage, then open pages, then pick passages.
+   Settings: `web_search: "google" | "off"`, `max_google_queries`, `web_pages_per_section`.
+4. **Fallback**: if Chrome is missing or Google is blocked, research keeps working with PubMed,
+   Europe PMC and MedlinePlus as today. The sitemap index from the earlier plan stays a possible later
+   fallback.
 
-## Steps (each a separate, testable task)
+### Cost and time
 
-1. Site registry + sitemap catalog builder (gzip sitemaps, sitemap indexes, path allow-lists). Tests use
-   saved sample sitemaps; no network in tests.
-2. FTS5 schema + `search()` over the catalog + synonym expansion. Tests use a tiny in-memory DB.
-3. On-demand fetch + body indexing + robots.txt + caching; wire into `PUBLIC`.
-4. CLI `--build` / auto-refresh, banner, and a docs section in README.
-5. (Optional) Blocked-site fallback through the browser.
+- No API spend for search. The LLM adds one triage call per section plus one passage-picker call per
+  opened page (DeepSeek Flash, cents per run).
+- Adds about 4–8 minutes to a run: Google is throttled to ≥12 s per query, and pages take a few seconds
+  each. Repeat queries come from the cache.
 
-**Cost:** zero API spend. First build is a few minutes of sitemap downloads; each research query adds
-a few page fetches (cached afterwards).
-**Risk:** sites change sitemap paths, so allow-lists live in one registry, and a site that fails to
-build is logged and skipped, never fatal.
+### Risks, stated plainly
+
+- Google's terms don't allow automated searching. At low volume, from your own browser, with caching, it
+  usually works. Expect an occasional CAPTCHA, which the design hands to you rather than trying to defeat
+  it.
+- Mayo Clinic's terms limit automated copying. This is personal research at a human-like rate, quoting
+  short passages with citation, but you decide whether to keep Mayo on the list (`research_trusted_domains`).
+- Google changes its results-page markup now and then. The parser relies on structure (link → h3 → cite),
+  not class names, and is tested against saved pages so a break is caught early.
