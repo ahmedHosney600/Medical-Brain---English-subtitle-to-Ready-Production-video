@@ -288,13 +288,19 @@ def run_research(router, state: dict, session_dir: str) -> dict:
     state["review"] = {}
     paths = rd.save(state, folder)
     review_path = os.path.join(folder, "review.md")
+    has_guide = bool(state.get("patient_guide"))
     if os.path.exists(review_path):           # keep the previous round's review for the record
         os.replace(review_path, os.path.join(folder, f"review_round{state.get('review_round', 0)}.md"))
-    rd.write_review_file(review_path, state["topic"], os.path.relpath(session_dir, PROJECT_ROOT))
-    _convert(paths["md"], "research dossier")
+    rd.write_review_file(review_path, state["topic"], os.path.relpath(session_dir, PROJECT_ROOT),
+                         has_guide=has_guide)
     facts = rd.verified_facts(state)
-    print(f"\n📄 Dossier: {paths['md']}  ({len(facts)} verified facts, {len(rd.used_sources(state))} sources, "
-          f"{len(state.get('rejected', []))} left out)")
+    guide_md = paths.get("guide_md")
+    if has_guide and guide_md:
+        print(f"\n📄 Patient guide (what the video will be built from): {guide_md}")
+        _convert(guide_md, "patient guide")
+    print(f"📄 Evidence Library (dossier): {paths['md']}  ({len(facts)} verified facts, "
+          f"{len(rd.used_sources(state))} sources, {len(state.get('rejected', []))} left out)")
+    _convert(paths["md"], "research dossier")
     print(f"✍️  Review it, then edit {review_path}")
     print(f"   → python3 main.py --continue {os.path.relpath(session_dir, PROJECT_ROOT)}")
     print("     (APPROVED: yes to finish" + (" and build the video)" if state.get("workflow") == "research-video" else ")"))

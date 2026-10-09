@@ -36,6 +36,14 @@ STRENGTH_LABELS = {"proven": "✅ Proven", "probably_helps": "🟢 Probably help
                    "weak_or_disputed": "⚠️ Weak / disputed", "no_benefit": "❌ No benefit",
                    "harmful": "⛔ Harmful", "untested": "❔ Untested"}
 
+# The patient guide's action card: emergency first so it can't be missed.
+GUIDE_ACTION_LABELS = (("emergency_if", "🚨 Go to the ER if"),
+                       ("do_now", "Do this now"),
+                       ("daily", "Tonight / before exercise"),
+                       ("works", "What works (with evidence)"),
+                       ("doesnt_work_or_risky", "Doesn't work or is risky"),
+                       ("see_doctor_if", "See a doctor if"))
+
 # Classic-check verdicts, strongest evidence first: any harmful fact dominates.
 CLASSIC_VERDICTS = (("harmful", "Risky / harmful"),
                     ("proven", "Helps (proven)"),
@@ -194,6 +202,157 @@ def reference_lines(state: dict, ids=None) -> list:
     return out
 
 
+def _fact_source_ids(f: dict) -> list:
+    """Every source a fact cites, including the ones merged into it (also_supported_by)."""
+    ids = list(f.get("source_ids", []))
+    for m in f.get("also_supported_by", []) or []:
+        ids += list(m.get("source_ids", []))
+    return ids
+
+
+def _guide_cites(state: dict, fact_ids) -> str:
+    """The [S#] citations of a guide item, via the facts it cites."""
+    facts = {f["id"]: f for f in verified_facts(state)}
+    out = []
+    for fid in fact_ids or []:
+        f = facts.get(str(fid).strip().strip("[]"))
+        if not f:
+            continue
+        for sid in _fact_source_ids(f):
+            if sid not in out:
+                out.append(sid)
+    return "".join(f"[{i}]" for i in out)
+
+
+def _guide_md_label(item: dict) -> str:
+    label = STRENGTH_LABELS.get(str(item.get("strength", "") or ""))
+    return f" · {label}" if label else ""
+
+
+def _guide_src_label(item: dict) -> str:
+    strength = str(item.get("strength", "") or "")
+    return f" [evidence: {strength}]" if strength else ""
+
+
+def _guide_cited_fact_ids(guide: dict) -> list:
+    ids = []
+
+    def add(items):
+        for it in items or []:
+            if not isinstance(it, dict):
+                continue
+            for fid in it.get("facts", []) or []:
+                fid = str(fid).strip().strip("[]")
+                if fid and fid not in ids:
+                    ids.append(fid)
+
+    ac = guide.get("action_card") or {}
+    for key, _ in GUIDE_ACTION_LABELS:
+        add(ac.get(key))
+    for sec in guide.get("sections", []) or []:
+        add((sec or {}).get("points") if isinstance(sec, dict) else None)
+    add(guide.get("special_groups"))
+    add(guide.get("myths"))
+    add(guide.get("uncertain"))
+    add(guide.get("key_numbers"))
+    comp = guide.get("complementary") or {}
+    add(comp.get("options"))
+    add(comp.get("not_proven"))
+    return ids
+
+
+def _guide_source_ids(state: dict, guide: dict) -> list:
+    facts = {f["id"]: f for f in verified_facts(state)}
+    out = []
+    for fid in _guide_cited_fact_ids(guide):
+        f = facts.get(fid)
+        if not f:
+            continue
+        for sid in _fact_source_ids(f):
+            if sid in state.get("sources", {}) and sid not in out:
+                out.append(sid)
+    return sorted(out, key=lambda i: int(re.sub(r"\D", "", i) or 0))
+
+
+def _guide_item_line(state: dict, item: dict, text: str, prefix: str = "- ") -> str:
+    return f"{prefix}{text.strip()} {_guide_cites(state, item.get('facts'))}{_guide_md_label(item)}".rstrip()
+
+
+def render_guide_markdown(state: dict) -> str:
+    """patient_guide.md — the organised, patient-valued version, every item citing
+    the verified facts it came from and their evidence label. Built only from code,
+    so nothing unverified can slip in."""
+    guide = state.get("patient_guide") or {}
+    report = state.get("guide_report") or {}
+    n_facts = len(verified_facts(state))
+    md = [f"# 🩺 PATIENT GUIDE — {state.get('topic', '')}", ""]
+    if guide.get("promise"):
+        md += [f"> **The promise:** {guide['promise']}", ""]
+    md += ["## 🚨 Action card", ""]
+    ac = guide.get("action_card") or {}
+    for key, label in GUIDE_ACTION_LABELS:
+        items = ac.get(key) or []
+        md += [f"### {label}", ""]
+        if items:
+            md += [_guide_item_line(state, it, it.get("text", "")) for it in items]
+        else:
+            md.append("- (none)")
+        md.append("")
+    if guide.get("sections"):
+        md += ["## What you need to know", ""]
+        for sec in guide["sections"]:
+            md += [f"### {sec.get('title', '')}", ""]
+            if sec.get("question"):
+                md += [f"*{sec['question']}*", ""]
+            md += [_guide_item_line(state, p, p.get("text", "")) for p in sec.get("points", [])]
+            md.append("")
+    if guide.get("special_groups"):
+        md += ["## Special groups", ""]
+        for g in guide["special_groups"]:
+            text = f"**{g.get('group', '')}:** {g.get('advice', '')}"
+            md.append(_guide_item_line(state, g, text))
+        md.append("")
+    if guide.get("myths"):
+        md += ["## Myths vs evidence", ""]
+        for m in guide["myths"]:
+            md.append(f"- **Myth:** {m.get('myth', '').strip()}")
+            md.append(_guide_item_line(state, m, f"**Truth:** {m.get('truth', '')}", prefix="  "))
+        md.append("")
+    comp = guide.get("complementary") or {}
+    options = comp.get("options") or []
+    not_proven = comp.get("not_proven") or []
+    if options or not_proven:
+        md += ["## Complementary options — what the evidence says", "",
+               "**Evidence-based options** (proven or limited evidence, no safety signal):", ""]
+        if options:
+            md += [_guide_item_line(state, it, f"{it.get('item', '')} — {it.get('text', '')}") for it in options]
+        else:
+            md.append("- (none has good evidence for this topic yet)")
+        md += ["", "**Popular but not proven** (shown for honesty, never as a recommendation):", ""]
+        if not_proven:
+            md += [_guide_item_line(state, it, f"{it.get('item', '')} — {it.get('text', '')}")
+                   for it in not_proven]
+        else:
+            md.append("- (none)")
+        md.append("")
+    if guide.get("key_numbers"):
+        md += ["## Key numbers", ""]
+        md += [_guide_item_line(state, it, it.get("text", "")) for it in guide["key_numbers"]]
+        md.append("")
+    if guide.get("uncertain"):
+        md += ["## What the evidence doesn't settle", ""]
+        md += [_guide_item_line(state, it, it.get("text", "")) for it in guide["uncertain"]]
+        md.append("")
+    dropped = report.get("dropped", len(report.get("dropped_items", []) or []))
+    md += ["---", "",
+           f"Built only from {n_facts} verified facts in the Evidence Library (dossier.md); "
+           f"{dropped} items were removed by automatic checks.", ""]
+    ids = _guide_source_ids(state, guide)
+    if ids:
+        md += ["## References", ""] + [f"- {line}" for line in reference_lines(state, ids)] + [""]
+    return "\n".join(md)
+
+
 def render_markdown(state: dict) -> str:
     facts = verified_facts(state)
     by_id = {f["id"]: f for f in facts}
@@ -281,7 +440,7 @@ def render_markdown(state: dict) -> str:
 
 REVIEW_TEMPLATE = """# ✍️ REVIEW — {topic}
 
-Read dossier.md, then fill in this file and run:
+{guide_line}Read dossier.md (the verified Evidence Library), then fill in this file and run:
     python3 main.py --continue {session}
 
 Set APPROVED to yes when the research is complete and correct (nothing else needed).
@@ -303,9 +462,11 @@ NOTES:
 """
 
 
-def write_review_file(path: str, topic: str, session: str) -> None:
+def write_review_file(path: str, topic: str, session: str, has_guide: bool = False) -> None:
+    guide_line = ("The **patient guide** (patient_guide.md) is what the video will be built from — "
+                  "review it first.\n\n" if has_guide else "")
     with open(path, "w", encoding="utf-8") as f:
-        f.write(REVIEW_TEMPLATE.format(topic=topic, session=session))
+        f.write(REVIEW_TEMPLATE.format(topic=topic, session=session, guide_line=guide_line))
 
 
 def parse_review(text: str) -> dict:
@@ -328,10 +489,13 @@ def has_requests(review: dict) -> bool:
 
 
 def save(state: dict, folder: str) -> dict:
-    """Writes dossier.md, dossier.json and research_state.json. Returns their paths."""
+    """Writes dossier.md, dossier.json and research_state.json (plus patient_guide.md
+    and patient_guide.json when a guide exists). Returns their paths."""
     os.makedirs(folder, exist_ok=True)
     paths = {"md": os.path.join(folder, "dossier.md"), "json": os.path.join(folder, "dossier.json"),
-             "state": os.path.join(folder, "research_state.json")}
+             "state": os.path.join(folder, "research_state.json"),
+             "guide_md": os.path.join(folder, "patient_guide.md"),
+             "guide_json": os.path.join(folder, "patient_guide.json")}
     with open(paths["md"], "w", encoding="utf-8") as f:
         f.write(render_markdown(state))
     dossier = {"topic": state.get("topic"), "outline": state.get("outline"), "facts": verified_facts(state),
@@ -339,15 +503,102 @@ def save(state: dict, folder: str) -> dict:
                "rejected": state.get("rejected", []), "history": state.get("history", [])}
     with open(paths["json"], "w", encoding="utf-8") as f:
         json.dump(dossier, f, ensure_ascii=False, indent=2)
+    guide = state.get("patient_guide") or {}
+    if guide:
+        with open(paths["guide_md"], "w", encoding="utf-8") as f:
+            f.write(render_guide_markdown(state))
+        with open(paths["guide_json"], "w", encoding="utf-8") as f:
+            json.dump({"patient_guide": guide, "report": state.get("guide_report", {})},
+                      f, ensure_ascii=False, indent=2)
     with open(paths["state"], "w", encoding="utf-8") as f:
         json.dump(state, f, ensure_ascii=False, indent=2)
     return paths
 
 
+def _guide_video_source(state: dict, guide: dict) -> str:
+    """The Patient Guide (Layer 2) as the source text of the video workflow."""
+    out = [f"PATIENT GUIDE (Organised, patient-valued, verified) — TOPIC: {state.get('topic', '')}", ""]
+    if state.get("angle"):
+        out += [f"ANGLE: {state['angle']}", ""]
+    if guide.get("promise"):
+        out += [f"PROMISE: {guide['promise']}", ""]
+    ac = guide.get("action_card") or {}
+    out.append("ACTION CARD:")
+    for key, label in GUIDE_ACTION_LABELS:
+        items = ac.get(key) or []
+        if not items:
+            continue
+        out.append(f"  {label.upper()}:")
+        out += [f"  - {it.get('text', '').strip()} {_guide_cites(state, it.get('facts'))}"
+                f"{_guide_src_label(it)}".rstrip() for it in items]
+    out.append("")
+    out.append("SECTIONS:")
+    for sec in guide.get("sections", []) or []:
+        out.append(f"SECTION: {sec.get('title', '')}")
+        if sec.get("question"):
+            out.append(f"  VIEWER QUESTION: {sec['question']}")
+        out += [f"  - {p.get('text', '').strip()} {_guide_cites(state, p.get('facts'))}"
+                f"{_guide_src_label(p)}".rstrip() for p in sec.get("points", []) or []]
+        out.append("")
+    if guide.get("special_groups"):
+        out.append("SPECIAL GROUPS:")
+        out += [f"  - {g.get('group', '')}: {g.get('advice', '').strip()} "
+                f"{_guide_cites(state, g.get('facts'))}{_guide_src_label(g)}".rstrip()
+                for g in guide["special_groups"]]
+        out.append("")
+    if guide.get("myths"):
+        out.append("MYTHS:")
+        for m in guide["myths"]:
+            out.append(f"  - MYTH: {m.get('myth', '').strip()}")
+            out.append(f"    TRUTH: {m.get('truth', '').strip()} {_guide_cites(state, m.get('facts'))}"
+                       f"{_guide_src_label(m)}".rstrip())
+        out.append("")
+    comp = guide.get("complementary") or {}
+    options, not_proven = comp.get("options") or [], comp.get("not_proven") or []
+    verdicts = {str(r.get("item", "")).strip().lower(): r.get("verdict", "")
+                for r in classic_check_table(state)}
+    if options or not_proven:
+        out.append("COMPLEMENTARY — evidence-based options (the only ones safe to present as options):")
+        if options:
+            out += [f"  - {it.get('item', '')} — {it.get('text', '').strip()} "
+                    f"{_guide_cites(state, it.get('facts'))}{_guide_src_label(it)} "
+                    f"(verdict: {verdicts.get(str(it.get('item', '')).strip().lower(), '')})".rstrip()
+                    for it in options]
+        else:
+            out.append("  - (none has good evidence for this topic yet)")
+        out.append("")
+        out.append("COMPLEMENTARY — popular but NOT proven (never present as an option):")
+        if not_proven:
+            for it in not_proven:
+                verdict = verdicts.get(str(it.get("item", "")).strip().lower(), "")
+                flag = "RISKY — " if verdict == "Risky / harmful" else ""
+                out.append(f"  - {flag}{it.get('item', '')} — {it.get('text', '').strip()} "
+                           f"{_guide_cites(state, it.get('facts'))}{_guide_src_label(it)} "
+                           f"(verdict: {verdict})".rstrip())
+        else:
+            out.append("  - (none)")
+        out.append("")
+    if guide.get("key_numbers"):
+        out.append("KEY NUMBERS:")
+        out += [f"  - {it.get('text', '').strip()} {_guide_cites(state, it.get('facts'))}"
+                f"{_guide_src_label(it)}".rstrip() for it in guide["key_numbers"]]
+        out.append("")
+    if guide.get("uncertain"):
+        out.append("UNCERTAIN (what the evidence does not settle):")
+        out += [f"  - {it.get('text', '').strip()} {_guide_cites(state, it.get('facts'))}"
+                f"{_guide_src_label(it)}".rstrip() for it in guide["uncertain"]]
+        out.append("")
+    out += ["SOURCES:"] + reference_lines(state, _guide_source_ids(state, guide))
+    return "\n".join(out)
+
+
 def video_source(state: dict) -> str:
-    """The dossier as the source text of the video workflow: English, in outline order,
-    every statement with its source ids. The video workflow treats it like an English
-    script — but here every claim is verified and cited."""
+    """The Patient Guide as the source text of the video workflow when it exists;
+    otherwise the full dossier (old sessions). Both are English, every statement
+    with its source ids — but here every claim is verified and cited."""
+    guide = state.get("patient_guide") or {}
+    if guide:
+        return _guide_video_source(state, guide)
     facts = verified_facts(state)
     by_id = {f["id"]: f for f in facts}
     out = [f"RESEARCH DOSSIER (verified, cited) — TOPIC: {state.get('topic', '')}", ""]

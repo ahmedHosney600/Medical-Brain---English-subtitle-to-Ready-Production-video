@@ -39,6 +39,7 @@ RESULTS_PATH = os.path.join(EVALS_DIR, "results.jsonl")
 SCORECARD_PATH = os.path.join(EVALS_DIR, "scorecard.md")
 
 SCORE_KEYS = ("answers", "actionability", "safety", "focus", "evidence_honesty")
+GUIDE_SCORE_KEYS = ("answers", "actionability", "safety", "clarity", "honesty")
 BALANCE_URL = "https://api.deepseek.com/user/balance"
 
 
@@ -191,9 +192,105 @@ def judge_session(topic: str, questions: list, facts: list, sources: dict):
 
 
 # --------------------------------------------------------------------------
+# Guide judge (Phase 3)
+# --------------------------------------------------------------------------
+GUIDE_ACTION_KEYS = ("do_now", "daily", "works", "doesnt_work_or_risky", "see_doctor_if", "emergency_if")
+
+
+def _guide_item_tail(item: dict) -> str:
+    bits = []
+    facts = ", ".join(str(f) for f in (item.get("facts") or []))
+    if facts:
+        bits.append(f"facts: {facts}")
+    if item.get("strength"):
+        bits.append(f"strength: {item['strength']}")
+    return f" — {'; '.join(bits)}" if bits else ""
+
+
+def build_guide_judge_user(topic: str, questions: list, guide: dict) -> str:
+    """The guide as plain text, each item with the fact ids it cites and its strength."""
+    lines = [f"TOPIC: {topic}", "", "PATIENT QUESTIONS:"]
+    for q in questions or []:
+        lines.append(f"{q.get('id', '')} ({q.get('importance', '')}) {q.get('q', '')}")
+    guide = guide or {}
+    lines += ["", "PATIENT GUIDE:"]
+    if guide.get("promise"):
+        lines.append(f"PROMISE: {guide['promise']}")
+    ac = guide.get("action_card") or {}
+    lines.append("ACTION CARD:")
+    for key in GUIDE_ACTION_KEYS:
+        for it in ac.get(key) or []:
+            lines.append(f"- [{key}] {it.get('text', '')}{_guide_item_tail(it)}")
+    if guide.get("sections"):
+        lines.append("SECTIONS:")
+        for sec in guide["sections"]:
+            lines.append(f"## {sec.get('title', '')} — {sec.get('question', '')}")
+            for p in sec.get("points") or []:
+                lines.append(f"- {p.get('text', '')}{_guide_item_tail(p)}")
+    if guide.get("special_groups"):
+        lines.append("SPECIAL GROUPS:")
+        for g in guide["special_groups"]:
+            lines.append(f"- {g.get('group', '')}: {g.get('advice', '')}{_guide_item_tail(g)}")
+    if guide.get("myths"):
+        lines.append("MYTHS:")
+        for m in guide["myths"]:
+            lines.append(f"- MYTH: {m.get('myth', '')} / TRUTH: {m.get('truth', '')}{_guide_item_tail(m)}")
+    comp = guide.get("complementary") or {}
+    lines.append("COMPLEMENTARY — EVIDENCE-BASED OPTIONS:")
+    for it in comp.get("options") or []:
+        lines.append(f"- {it.get('item', '')}: {it.get('text', '')}{_guide_item_tail(it)}")
+    lines.append("COMPLEMENTARY — POPULAR BUT NOT PROVEN:")
+    for it in comp.get("not_proven") or []:
+        lines.append(f"- {it.get('item', '')}: {it.get('text', '')}{_guide_item_tail(it)}")
+    if guide.get("key_numbers"):
+        lines.append("KEY NUMBERS:")
+        for it in guide["key_numbers"]:
+            lines.append(f"- {it.get('text', '')}{_guide_item_tail(it)}")
+    if guide.get("uncertain"):
+        lines.append("UNCERTAIN:")
+        for it in guide["uncertain"]:
+            lines.append(f"- {it.get('text', '')}{_guide_item_tail(it)}")
+    return "\n".join(lines)
+
+
+def judge_guide_session(topic: str, questions: list, guide: dict):
+    """One guide-judge call; on an unreadable answer retry once, then return None."""
+    system = load_prompt("evals/guide_judge")
+    user = build_guide_judge_user(topic, questions, guide)
+    problem = None
+    for _ in range(2):
+        try:
+            judge, _raw = call_llm_json(system, user, temperature=0, max_tokens=8000,
+                                        required=["questions", "scores"])
+            return judge
+        except UnreadableAnswer as e:
+            problem = e
+    print(f"  ⚠️ Guide judge answer unreadable after retry ({problem}); recording guide_judge=null.")
+    return None
+
+
+def _count_guide_items(guide: dict) -> int:
+    if not guide:
+        return 0
+    n = 0
+    ac = guide.get("action_card") or {}
+    for key in GUIDE_ACTION_KEYS:
+        n += len(ac.get(key) or [])
+    for sec in guide.get("sections") or []:
+        n += len((sec or {}).get("points") or [])
+    n += len(guide.get("special_groups") or [])
+    n += len(guide.get("myths") or [])
+    comp = guide.get("complementary") or {}
+    n += len(comp.get("options") or []) + len(comp.get("not_proven") or [])
+    n += len(guide.get("key_numbers") or [])
+    n += len(guide.get("uncertain") or [])
+    return n
+
+
+# --------------------------------------------------------------------------
 # Metrics (computed by code, not the LLM)
 # --------------------------------------------------------------------------
-def compute_metrics(state: dict, questions: list, judge: dict) -> dict:
+def compute_metrics(state: dict, questions: list, judge: dict, guide_judge: dict = None) -> dict:
     facts = rd.verified_facts(state)
     sources = state.get("sources", {}) or {}
     n_facts = len(facts)
@@ -233,6 +330,21 @@ def compute_metrics(state: dict, questions: list, judge: dict) -> dict:
 
     google = any(entry and entry[0] == "Google" for entry in state.get("source_log", []) if isinstance(entry, (list, tuple)))
 
+    # Phase 3: the patient guide and its judge (absent on old sessions).
+    guide = state.get("patient_guide") or {}
+    guide_judge = guide_judge or {}
+    g_answered = {q.get("id"): q.get("answered") for q in guide_judge.get("questions", [])
+                  if isinstance(q, dict)}
+    g_core_yes = sum(1 for q in core if g_answered.get(q.get("id")) == "yes")
+    g_scores = guide_judge.get("scores") if isinstance(guide_judge.get("scores"), dict) else {}
+    g_values = [g_scores.get(k) for k in GUIDE_SCORE_KEYS]
+    g_numeric = [v for v in g_values if isinstance(v, (int, float))]
+    guide_mean = round(sum(g_numeric) / len(g_numeric), 2) if len(g_numeric) == len(GUIDE_SCORE_KEYS) else None
+    report = state.get("guide_report") or {}
+    guide_dropped = report.get("dropped") if report else None
+    if guide_dropped is None:
+        guide_dropped = len(report.get("dropped_items", []) or [])
+
     return {
         "verified_facts": n_facts,
         "left_out": len(state.get("rejected", []) or []),
@@ -264,6 +376,19 @@ def compute_metrics(state: dict, questions: list, judge: dict) -> dict:
         "focus": scores.get("focus"),
         "evidence_honesty": scores.get("evidence_honesty"),
         "score_mean": mean,
+        # patient guide
+        "guide_items": _count_guide_items(guide),
+        "guide_dropped": guide_dropped,
+        "guide_core_answered": g_core_yes,
+        "guide_core_total": len(core),
+        "guide_unsafe": len(guide_judge.get("unsafe_or_misleading", []) or []),
+        "guide_missing_from_action_card": len(guide_judge.get("missing_from_action_card", []) or []),
+        "guide_answers": g_scores.get("answers"),
+        "guide_actionability": g_scores.get("actionability"),
+        "guide_safety": g_scores.get("safety"),
+        "guide_clarity": g_scores.get("clarity"),
+        "guide_honesty": g_scores.get("honesty"),
+        "guide_mean": guide_mean,
     }
 
 
@@ -353,8 +478,9 @@ def _fmt_num(value, digits=1) -> str:
 
 def render_scorecard(results: list, topics: dict = None) -> str:
     header = ("| date | label | slug | commit | minutes | cost | facts | left out | web % | core answered | "
-              "off-topic % | low-value % | safety gaps | answers | actionability | safety | focus | honesty | mean |")
-    sep = "|" + "---|" * 19
+              "off-topic % | low-value % | safety gaps | answers | actionability | safety | focus | honesty | mean | "
+              "guide core | guide mean |")
+    sep = "|" + "---|" * 21
     lines = ["# Research eval scorecard", "",
              "One row per scored session. Baseline is the `v1-baseline-research-web` tag; rows are comparable "
              "only when the topic bank stayed frozen (same `questions`).", "", header, sep]
@@ -362,7 +488,7 @@ def render_scorecard(results: list, topics: dict = None) -> str:
         metrics = r
         lines.append("| {date} | {label} | {slug} | {commit} | {minutes} | {cost} | {facts} | {left} | {web} | "
                      "{core} | {off} | {low} | {safety} | {answers} | {action} | {safety_score} | {focus} | "
-                     "{honesty} | {mean} |".format(
+                     "{honesty} | {mean} | {guide_core} | {guide_mean} |".format(
                          date=r.get("date", ""),
                          label=r.get("label", "") or "—",
                          slug=r.get("slug", ""),
@@ -381,7 +507,10 @@ def render_scorecard(results: list, topics: dict = None) -> str:
                          safety_score=_fmt_num(r.get("safety")),
                          focus=_fmt_num(r.get("focus")),
                          honesty=_fmt_num(r.get("evidence_honesty")),
-                         mean=_fmt_num(r.get("score_mean"), 2)))
+                         mean=_fmt_num(r.get("score_mean"), 2),
+                         guide_core=(f"{r.get('guide_core_answered', 0)}/{r.get('guide_core_total', 0)}"
+                                     if r.get("guide_items") else "—"),
+                         guide_mean=_fmt_num(r.get("guide_mean"), 2)))
     lines += ["", "_`cost` is approximate: DeepSeek balance delta (before − after). Concurrent DeepSeek usage "
               "would inflate it; `—` means the balance was unavailable._", ""]
 
@@ -406,6 +535,21 @@ def render_scorecard(results: list, topics: dict = None) -> str:
                 lines += [f"- {qid} ({status}): {text}" for qid, status, text in open_core]
             else:
                 lines.append("**All core questions answered.**")
+            guide_judge = r.get("guide_judge") or {}
+            if r.get("guide_items"):
+                lines += ["", f"**Guide judge** — {r.get('guide_core_answered', 0)}/"
+                              f"{r.get('guide_core_total', 0)} core answered · "
+                              f"mean {_fmt_num(r.get('guide_mean'), 2)} · "
+                              f"{r.get('guide_unsafe', 0)} unsafe / misleading items."]
+                lines.append("")
+                lines.append(guide_judge.get("summary")
+                             or "_No guide judge summary (guide judge output was unreadable)._")
+                unsafe = guide_judge.get("unsafe_or_misleading") or []
+                if unsafe:
+                    lines.append("")
+                    lines.append("**Unsafe or misleading:**")
+                    lines += [f"- {u.get('item', '')} — {u.get('why', '')}"
+                              for u in unsafe if isinstance(u, dict)]
             lines += ["", ""]
     return "\n".join(lines).rstrip() + "\n"
 
@@ -454,7 +598,10 @@ def score_session(session_dir: str, slug: str, label: str = "", cost_usd=None) -
 
     print(f"\n⚖️  Scoring {slug} — {len(facts)} verified facts against {len(questions)} questions …")
     judge = judge_session(topic.get("topic", ""), questions, facts, state.get("sources", {}))
-    metrics = compute_metrics(state, questions, judge)
+    guide = state.get("patient_guide") or {}
+    guide_judge = (judge_guide_session(topic.get("topic", ""), questions, guide)
+                   if guide else None)
+    metrics = compute_metrics(state, questions, judge, guide_judge)
     metrics["run_minutes"] = _run_minutes(folder)
 
     result = {
@@ -468,6 +615,7 @@ def score_session(session_dir: str, slug: str, label: str = "", cost_usd=None) -
         "cost_usd": cost_usd,
         **metrics,
         "judge": judge,
+        "guide_judge": guide_judge,
     }
 
     with open(os.path.join(folder, "eval.json"), "w", encoding="utf-8") as f:
@@ -486,6 +634,10 @@ def _print_summary(result: dict) -> None:
           f"({result['web_share']}%) · judge mean {result['score_mean']} · cost {_fmt_cost(result['cost_usd'])}")
     if judge.get("summary"):
         print(f"   {judge['summary']}")
+    if result.get("guide_items"):
+        print(f"   Patient guide: {result['guide_items']} items ({result.get('guide_dropped', 0)} dropped) · "
+              f"guide core {result.get('guide_core_answered', 0)}/{result.get('guide_core_total', 0)} · "
+              f"mean {result.get('guide_mean')}")
     print(f"   Wrote {os.path.relpath(RESULTS_PATH, PROJECT_ROOT)} and {os.path.relpath(SCORECARD_PATH, PROJECT_ROOT)}")
 
 

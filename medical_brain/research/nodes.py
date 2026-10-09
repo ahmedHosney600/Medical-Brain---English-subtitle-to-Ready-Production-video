@@ -1132,6 +1132,196 @@ Output ONLY the JSON object."""
     return {"summary": cited_only(pick(data, "summary", default="")), "section_notes": notes}
 
 
+# --------------------------------------------------------------------------
+# Patient Guide (Layer 2): the organised, patient-valued version of the verified
+# facts that becomes the input to the video workflow.
+# --------------------------------------------------------------------------
+GUIDE_ACTION_KEYS = ("do_now", "daily", "works", "doesnt_work_or_risky", "see_doctor_if", "emergency_if")
+# Weakest certainty first: an item is only as strong as its weakest cited fact.
+GUIDE_STRENGTH_ORDER = ("harmful", "no_benefit", "untested", "weak_or_disputed", "probably_helps", "proven")
+
+
+def _guide_ids(raw, valid) -> list:
+    """The fact ids of a guide item that name a verified fact ("F12" or "[F12]")."""
+    out = []
+    for x in raw or []:
+        s = str(x).strip().strip("[]").strip()
+        if s in valid and s not in out:
+            out.append(s)
+    return out
+
+
+def _guide_item_text(item: dict, fields) -> str:
+    return " ".join(str(item.get(k, "")) for k in fields if item.get(k)).strip()
+
+
+def _guide_weakest(strengths) -> str:
+    """The weakest-certainty label among the cited facts ("" when all are n/a)."""
+    present = [str(s).strip() for s in strengths if str(s).strip() in GUIDE_STRENGTH_ORDER]
+    return min(present, key=lambda s: GUIDE_STRENGTH_ORDER.index(s)) if present else ""
+
+
+def validate_guide(guide: dict, state: dict) -> tuple:
+    """Code-check the model's patient guide and return (clean_guide, report).
+
+    Every item (action card, section points, special groups, myths, complementary
+    options / not-proven, key numbers, uncertain) must cite verified fact ids and
+    invent no number outside its cited facts. Complementary options that the
+    classic-checks table does not call helpful (or that are harmful) are moved to
+    "not proven", never silently dropped. Each surviving item carries the weakest
+    evidence label among its cited facts. Sections left with no points are dropped."""
+    from .dossier import _EVIDENCE_OPTION_VERDICTS, classic_check_table, verified_facts
+
+    guide = guide if isinstance(guide, dict) else {}
+    facts = verified_facts(state)
+    valid = {f["id"] for f in facts}
+    by_id = {f["id"]: f for f in facts}
+    report = {"kept": 0, "dropped": 0, "by_reason": {}, "dropped_items": [], "moved_to_not_proven": []}
+
+    def drop(kind, text, reason, category):
+        report["dropped"] += 1
+        report["by_reason"][category] = report["by_reason"].get(category, 0) + 1
+        report["dropped_items"].append({"kind": kind, "text": text, "reason": reason})
+
+    def clean_item(item, kind, fields):
+        if not isinstance(item, dict):
+            drop(kind, str(item), "not an object", "not_object")
+            return None
+        text = _guide_item_text(item, fields)
+        ids = _guide_ids(item.get("facts"), valid)
+        if not ids:
+            drop(kind, text or "(empty)", "no valid verified fact id", "no_valid_fact_id")
+            return None
+        claimed = set()
+        for fid in ids:
+            claimed |= _numbers(by_id[fid].get("claim", ""))
+        missing = _numbers(text) - claimed
+        if missing:
+            drop(kind, text, "number(s) " + ", ".join(sorted(missing)) + " not in the cited facts",
+                 "invented_number")
+            return None
+        out = dict(item)
+        out["facts"] = ids
+        strength = _guide_weakest(by_id[fid].get("strength", "n/a") for fid in ids)
+        if strength:
+            out["strength"] = strength
+        report["kept"] += 1
+        return out
+
+    clean = {"promise": str(guide.get("promise", "") or "").strip()}
+    ac = guide.get("action_card") if isinstance(guide.get("action_card"), dict) else {}
+    clean["action_card"] = {
+        key: [c for c in (clean_item(it, "action_card." + key, ("text",)) for it in (ac.get(key) or [])) if c]
+        for key in GUIDE_ACTION_KEYS}
+    # "Works" is a promise to the viewer: every cited fact must show real benefit
+    # (proven / probably helps). Anything resting on weaker evidence leaves the list.
+    works = []
+    for item in clean["action_card"].get("works", []):
+        strengths = {str(by_id[fid].get("strength", "n/a") or "n/a") for fid in item["facts"]}
+        if strengths and strengths <= {"proven", "probably_helps"}:
+            works.append(item)
+        else:
+            report["kept"] -= 1
+            drop("action_card.works", _guide_item_text(item, ("text",)),
+                 "evidence not strong enough for 'works' (" + ", ".join(sorted(strengths)) + ")",
+                 "weak_evidence_in_works")
+    clean["action_card"]["works"] = works
+
+    sections = []
+    for sec in guide.get("sections") or []:
+        if not isinstance(sec, dict):
+            continue
+        points = [p for p in (clean_item(it, "section.point", ("text",)) for it in (sec.get("points") or [])) if p]
+        if not points:
+            continue
+        sections.append({"title": str(sec.get("title", "") or "").strip(),
+                         "question": str(sec.get("question", "") or "").strip(),
+                         "points": points})
+    clean["sections"] = sections
+
+    clean["special_groups"] = [g for g in (clean_item(it, "special_group", ("group", "advice"))
+                                           for it in (guide.get("special_groups") or [])) if g]
+    clean["myths"] = [m for m in (clean_item(it, "myth", ("myth", "truth"))
+                                  for it in (guide.get("myths") or [])) if m]
+
+    comp = guide.get("complementary") if isinstance(guide.get("complementary"), dict) else {}
+    rows = {str(r.get("item", "")).strip().lower(): r for r in classic_check_table(state)}
+    options, moved = [], []
+    for it in comp.get("options") or []:
+        name = str(it.get("item", "")).strip().lower() if isinstance(it, dict) else ""
+        row = rows.get(name)
+        if row and row.get("verdict") in _EVIDENCE_OPTION_VERDICTS and not row.get("harmful"):
+            options.append(it)
+        else:
+            moved.append(it)
+            report["moved_to_not_proven"].append(
+                _guide_item_text(it, ("item", "text")) if isinstance(it, dict) else str(it))
+    raw_not = list(comp.get("not_proven") or []) + moved
+    clean["complementary"] = {
+        "options": [o for o in (clean_item(it, "complementary.option", ("item", "text")) for it in options) if o],
+        "not_proven": [o for o in (clean_item(it, "complementary.not_proven", ("item", "text"))
+                                   for it in raw_not) if o]}
+
+    clean["key_numbers"] = [n for n in (clean_item(it, "key_number", ("text",))
+                                        for it in (guide.get("key_numbers") or [])) if n]
+    clean["uncertain"] = [u for u in (clean_item(it, "uncertain", ("text",))
+                                      for it in (guide.get("uncertain") or [])) if u]
+    return clean, report
+
+
+def guide_editor(state: dict) -> dict:
+    """One call that turns the verified facts (Layer 1) into the PATIENT GUIDE
+    (Layer 2). The answer is checked in code by validate_guide. On an unreadable
+    answer it is asked once more; if that fails too the guide is empty and the run
+    continues (the video falls back to the full dossier)."""
+    from .dossier import classic_check_table
+
+    facts = [f for f in state.get("facts", []) if f.get("status") == "verified"]
+    if not facts:
+        _log("guide: no verified facts — no patient guide for this run")
+        return {"patient_guide": {}, "guide_report": {"kept": 0, "dropped": 0, "by_reason": {},
+                                                      "dropped_items": [], "moved_to_not_proven": []}}
+    rows = classic_check_table(state)
+    classic_lines = [f"- {r['item']} — {r['verdict']} — facts {', '.join(r['fact_ids']) or '—'} — "
+                     f"complementary {'yes' if r.get('complementary') else 'no'} — "
+                     f"harmful {'yes' if r.get('harmful') else 'no'}" for r in rows] or ["(none)"]
+    fact_lines = [f"- {f['id']} [{f.get('section', '')} · {f.get('kind', '')} · {f.get('strength', 'n/a')}] "
+                  f"{f['claim']} — sources: {_source_names(state, f.get('source_ids', [])) or '—'}"
+                  for f in facts]
+    special = state.get("special_groups") or []
+    user_prompt = f"""TOPIC: {state.get("topic", "")}
+TOPIC TYPE: {state.get("topic_type") or "(not set)"}
+ANGLE: {state.get("angle", "")}
+SPECIAL GROUPS: {", ".join(str(g) for g in special) or "(none)"}
+CLASSIC CHECKS (item — verdict — facts — complementary — harmful):
+{chr(10).join(classic_lines)}
+
+VERIFIED FACTS (id [section · kind · strength] claim — sources):
+{chr(10).join(fact_lines)}
+
+Output ONLY the JSON object."""
+    system_prompt = load_prompt("research/patient_guide")
+    data, readable = {}, False
+    for attempt in range(2):
+        try:
+            data, _ = call_llm_json(system_prompt, user_prompt, temperature=0.3, max_tokens=12000,
+                                    required=["action_card", "sections"])
+            readable = True
+            break
+        except UnreadableAnswer as e:
+            if attempt == 0:
+                _log(f"guide: answer unreadable ({e}); asking once more")
+            else:
+                _log(f"guide: still unreadable after retry ({e}); no patient guide this run")
+    if not readable:                      # no guide: the video falls back to the full dossier
+        return {"patient_guide": {}, "guide_report": {"kept": 0, "dropped": 0, "by_reason": {},
+                                                      "dropped_items": [], "moved_to_not_proven": []}}
+    clean, report = validate_guide(data, state)
+    _log(f"guide: {report['kept']} items kept, {report['dropped']} dropped, "
+         f"{len(report['moved_to_not_proven'])} moved to not proven")
+    return {"patient_guide": clean, "guide_report": report}
+
+
 def review_planner(state: dict) -> dict:
     """Turns the creator's review.md into research work for the next round."""
     review = state.get("review", {}) or {}

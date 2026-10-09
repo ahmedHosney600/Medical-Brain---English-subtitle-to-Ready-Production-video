@@ -128,6 +128,21 @@ class ResearchGraphTest(unittest.TestCase):
             return json.dumps({"verdicts": [{"id": i, "verdict": "verified", "reason": "ok"} for i in ids]})
 
         self.extract_calls = extract_calls
+        self.guide = json.dumps({
+            "promise": "You will know how accurate a smartwatch is for AF, and when to get help.",
+            "action_card": {
+                "daily": [], "works": [],
+                "do_now": [{"text": "Smartwatches detect AF with 94.2% sensitivity.", "facts": ["F1"]}],
+                "doesnt_work_or_risky": [], "see_doctor_if": [],
+                "emergency_if": [{"text": "Chest pain or fainting needs a doctor right away.",
+                                  "facts": ["[F2]"]}]},
+            "sections": [{"title": "How accurate are watches?", "question": "How accurate?",
+                          "points": [{"text": "Smartwatches detect AF with 94.2% sensitivity.",
+                                      "facts": ["F1"]}]}],
+            "special_groups": [], "myths": [],
+            "complementary": {"options": [], "not_proven": []},
+            "key_numbers": [{"text": "94.2% sensitivity.", "facts": ["F1"]}],
+            "uncertain": []})
         self.router = Scripted({
             "topic_planner": json.dumps({"angle": "What your watch can and can't tell you", "must_cover": ["accuracy"],
                                          "sections": [{"title": "How accurate are watches?", "questions": ["How accurate?"],
@@ -140,6 +155,7 @@ class ResearchGraphTest(unittest.TestCase):
                                            "missing": [], "report": "complete"}),
             "dossier_editor": json.dumps({"summary": "Watches are good at spotting AF [F1]. They also cure it.",
                                           "section_notes": {"A": "Accuracy is high [F1]."}}),
+            "patient_guide": lambda user: self.guide,
             "review_planner": json.dumps({"new_sections": [{"title": "When to see a doctor", "questions": ["When?"],
                                                             "literature_queries": [], "public_queries": ["AF warning signs"]}],
                                           "edit_sections": [], "remove_sections": [], "remove_facts": []}),
@@ -171,11 +187,17 @@ class ResearchGraphTest(unittest.TestCase):
         names = [n for n, _ in self.router.calls]
         self.assertIn("fact_merger", names)                 # verifier → merger → critic
         self.assertLess(names.index("fact_merger"), names.index("coverage_critic"))
+        self.assertIn("patient_guide", names)               # dossier_editor → guide_editor
+        self.assertLess(names.index("dossier_editor"), names.index("patient_guide"))
+        self.assertIn("promise", state["patient_guide"])
+        self.assertEqual(state["patient_guide"]["action_card"]["do_now"][0]["facts"], ["F1"])
+        self.assertEqual(state["patient_guide"]["action_card"]["emergency_if"][0]["facts"], ["F2"])
         md = rd.render_markdown(state)
         self.assertIn("[S1]", md)
         self.assertIn("Pooled sensitivity was 94.2%", md)
         src = rd.video_source(state)
-        self.assertIn("RED FLAG: Chest pain or fainting needs a doctor right away. [S2]", src)
+        self.assertIn("PATIENT GUIDE", src)                 # the guide, not the raw dossier
+        self.assertIn("Chest pain or fainting needs a doctor right away. [S2]", src)
         self.assertIn("SOURCES:", src)
 
         # Review round: the creator asks for a new section → only that section is researched.
@@ -198,7 +220,15 @@ class ResearchGraphTest(unittest.TestCase):
         self.assertFalse(rd.has_requests(review))            # template placeholders don't count
         with open(paths["state"]) as f:
             self.assertEqual(json.load(f)["topic"], "Smartwatches and atrial fibrillation")
+        self.assertTrue(os.path.exists(paths["guide_md"]))
+        self.assertTrue(os.path.exists(paths["guide_json"]))
         self.assertTrue(rd.parse_review("APPROVED: yes\n")["approved"])
+
+    def test_graph_wiring_dossier_to_guide_to_end(self):
+        app = build_research_app()
+        edges = {(e.source, e.target) for e in app.get_graph().edges}
+        self.assertIn(("dossier_editor", "guide_editor"), edges)
+        self.assertIn(("guide_editor", "__end__"), edges)
 
 
 class QuoteCheckTest(unittest.TestCase):
@@ -1348,6 +1378,42 @@ class CliTest(unittest.TestCase):
                 cli.continue_research(lambda: self.fail("no model needed"), "")
             self.assertIn("no requests", " ".join(str(c) for c in printed.call_args_list))
 
+    def test_run_research_prints_and_exports_the_guide_first(self):
+        from medical_brain import cli
+        from medical_brain.research import dossier as rd_mod
+        session = tempfile.mkdtemp()
+        state = {"topic": "Cramps", "workflow": "research", "review_round": 0,
+                 "patient_guide": {"promise": "p"}, "guide_report": {},
+                 "facts": [], "sources": {}, "outline": [], "rejected": [], "settings": {}}
+
+        def fake_save(st, folder):
+            os.makedirs(folder, exist_ok=True)
+            paths = {"md": os.path.join(folder, "dossier.md"),
+                     "json": os.path.join(folder, "dossier.json"),
+                     "state": os.path.join(folder, "research_state.json"),
+                     "guide_md": os.path.join(folder, "patient_guide.md"),
+                     "guide_json": os.path.join(folder, "patient_guide.json")}
+            for key in ("md", "guide_md"):
+                with open(paths[key], "w") as f:
+                    f.write("x")
+            return paths
+
+        converted = []
+        with mock.patch.object(cli, "run_graph", lambda *a, **k: state), \
+                mock.patch.object(rd_mod, "save", fake_save), \
+                mock.patch.object(cli, "_convert", lambda p, label: converted.append((p, label))), \
+                mock.patch("medical_brain.research.graph.build_research_app", lambda: None), \
+                mock.patch("medical_brain.research.sources.enabled", lambda: []), \
+                mock.patch("medical_brain.research.sources.http.set_cache_dir", lambda *a: None), \
+                mock.patch("medical_brain.research.sources.google.reset_run", lambda *a, **k: None), \
+                mock.patch("builtins.print") as printed:
+            cli.run_research(None, state, session)
+        lines = [str(c) for c in printed.call_args_list]
+        guide_line = next(i for i, l in enumerate(lines) if "Patient guide" in l)
+        dossier_line = next(i for i, l in enumerate(lines) if "Evidence Library" in l)
+        self.assertLess(guide_line, dossier_line)
+        self.assertEqual(converted[0][1], "patient guide")
+
 
 if __name__ == "__main__":
     unittest.main()
@@ -1369,3 +1435,206 @@ class MixedEvidenceVerdictTest(unittest.TestCase):
         options, others = dossier.complementary_lists(rows)
         self.assertEqual(options, [])
         self.assertEqual([r["item"] for r in others], ["Magnesium"])
+
+
+GUIDE_SOURCES = {"S1": {"title": "Cochrane review", "journal": "cochranelibrary.com", "year": 2024,
+                        "level": 2, "url": "u1"},
+                 "S2": {"title": "NCCIH", "journal": "nccih.nih.gov", "year": 2024, "level": 5, "url": "u2"}}
+
+
+def empty_action(**lists):
+    action = {k: [] for k in nodes.GUIDE_ACTION_KEYS}
+    action.update(lists)
+    return action
+
+
+def empty_guide(**kw):
+    guide = {"promise": "p", "action_card": empty_action(), "sections": [], "special_groups": [],
+             "myths": [], "complementary": {"options": [], "not_proven": []}, "key_numbers": [],
+             "uncertain": []}
+    guide.update(kw)
+    return guide
+
+
+class GuideValidationTest(unittest.TestCase):
+    def state(self, facts, **kw):
+        st = {"topic": "Cramps", "outline": [section("A")], "sources": dict(GUIDE_SOURCES),
+              "facts": facts, "rejected": [], "classic_checks": [], "settings": {}}
+        st.update(kw)
+        return st
+
+    def test_invalid_ids_dropped_valid_and_bracket_ids_kept(self):
+        facts = [_mk_fact("F1", "magnesium", "proven")]
+        guide = empty_guide(action_card=empty_action(do_now=[
+            {"text": "Do it.", "facts": ["[F1]"]},
+            {"text": "Ghost.", "facts": ["F99"]}]))
+        clean, report = nodes.validate_guide(guide, self.state(facts))
+        self.assertEqual([i["text"] for i in clean["action_card"]["do_now"]], ["Do it."])
+        self.assertEqual(clean["action_card"]["do_now"][0]["facts"], ["F1"])
+        self.assertEqual(report["dropped"], 1)
+        self.assertEqual(report["by_reason"], {"no_valid_fact_id": 1})
+        self.assertEqual(report["dropped_items"][0]["text"], "Ghost.")
+
+    def test_invented_number_dropped(self):
+        facts = [_mk_fact("F1", "magnesium", "proven")]
+        guide = empty_guide(action_card=empty_action(do_now=[
+            {"text": "Magnesium may help.", "facts": ["F1"]},
+            {"text": "Magnesium helps 50% of people.", "facts": ["F1"]}]))
+        clean, report = nodes.validate_guide(guide, self.state(facts))
+        self.assertEqual([i["text"] for i in clean["action_card"]["do_now"]], ["Magnesium may help."])
+        self.assertEqual(report["by_reason"], {"invented_number": 1})
+        self.assertIn("50", report["dropped_items"][0]["reason"])
+
+    def test_unproven_complementary_option_moved_not_dropped(self):
+        facts = [_mk_fact("F1", "acupuncture", "proven"), _mk_fact("F2", "cupping", "untested")]
+        checks = [{"item": "acupuncture", "section": "A"}, {"item": "cupping", "section": "A"}]
+        guide = empty_guide(complementary={"options": [
+            {"item": "acupuncture", "text": "May help with pain.", "facts": ["F1"]},
+            {"item": "cupping", "text": "People use it for pain.", "facts": ["F2"]}], "not_proven": []})
+        clean, report = nodes.validate_guide(guide, self.state(facts, classic_checks=checks))
+        self.assertEqual([i["item"] for i in clean["complementary"]["options"]], ["acupuncture"])
+        self.assertEqual([i["item"] for i in clean["complementary"]["not_proven"]], ["cupping"])
+        self.assertEqual(report["dropped"], 0)                     # moved, never dropped
+        self.assertEqual(report["moved_to_not_proven"], ["cupping People use it for pain."])
+
+    def test_strength_is_the_weakest_cited_label(self):
+        facts = [_mk_fact("F1", "magnesium", "proven"), _mk_fact("F2", "magnesium", "weak_or_disputed"),
+                 _mk_fact("F3", "magnesium", "untested"), _mk_fact("F4", "magnesium", "n/a"),
+                 _mk_fact("F5", "quinine", "harmful")]
+        guide = empty_guide(action_card=empty_action(do_now=[
+            {"text": "A.", "facts": ["F1", "F2"]},
+            {"text": "B.", "facts": ["F1", "F3"]},
+            {"text": "C.", "facts": ["F4"]},
+            {"text": "D.", "facts": ["F5", "F1"]}]))
+        clean, _ = nodes.validate_guide(guide, self.state(facts))
+        by = {i["text"]: i for i in clean["action_card"]["do_now"]}
+        self.assertEqual(by["A."]["strength"], "weak_or_disputed")
+        self.assertEqual(by["B."]["strength"], "untested")
+        self.assertNotIn("strength", by["C."])                     # all n/a → omitted
+        self.assertEqual(by["D."]["strength"], "harmful")
+
+    def test_empty_section_and_empty_lists(self):
+        facts = [_mk_fact("F1", "magnesium", "proven")]
+        guide = empty_guide(sections=[
+            {"title": "Empty", "question": "?", "points": [{"text": "X.", "facts": ["F99"]}]},
+            {"title": "Kept", "question": "Q?", "points": [{"text": "Y.", "facts": ["F1"]}]}])
+        clean, _ = nodes.validate_guide(guide, self.state(facts))
+        self.assertEqual([s["title"] for s in clean["sections"]], ["Kept"])
+        self.assertEqual(clean["action_card"]["do_now"], [])       # empty lists stay empty
+
+    def test_wrong_shape_is_dropped_not_fatal(self):
+        guide = empty_guide(action_card=empty_action(do_now=["not an object", {"text": "x"}]))
+        clean, report = nodes.validate_guide(guide, self.state([]))
+        self.assertEqual(clean["action_card"]["do_now"], [])
+        self.assertEqual(report["by_reason"], {"not_object": 1, "no_valid_fact_id": 1})
+
+
+class GuideRenderTest(unittest.TestCase):
+    def state(self, **kw):
+        guide = empty_guide(
+            promise="You will know what to do about cramps.",
+            action_card=empty_action(
+                do_now=[{"text": "Rest the muscle.", "facts": ["F1"], "strength": "proven"}],
+                emergency_if=[{"text": "Go now.", "facts": ["F1"], "strength": "proven"}]))
+        guide["sections"] = [{"title": "Why me?", "question": "Why does it happen?",
+                              "points": [{"text": "It is sudden.", "facts": ["F1"], "strength": "proven"}]}]
+        st = {
+            "topic": "Cramps", "outline": [section("A")], "sources": dict(GUIDE_SOURCES),
+            "facts": [{"id": "F1", "section": "A", "kind": "advice", "claim": "Stretch the calf.",
+                       "quote": "Stretch the calf muscle.", "source_ids": ["S1"], "level": 2,
+                       "status": "verified", "strength": "proven"},
+                      {"id": "F2", "section": "A", "kind": "fact", "claim": "A cramp is sudden.",
+                       "quote": "A cramp is a sudden tightening.", "source_ids": ["S2"], "level": 5,
+                       "status": "verified", "strength": "probably_helps"}],
+            "patient_guide": guide,
+            "guide_report": {"kept": 3, "dropped": 1, "by_reason": {"no_valid_fact_id": 1},
+                             "dropped_items": [{"kind": "point", "text": "Bad",
+                                                "reason": "no valid verified fact id"}],
+                             "moved_to_not_proven": []},
+        }
+        st.update(kw)
+        return st
+
+    def test_render_has_action_card_citations_and_footer(self):
+        md = rd.render_guide_markdown(self.state())
+        self.assertIn("# 🩺 PATIENT GUIDE — Cramps", md)
+        self.assertIn("## 🚨 Action card", md)
+        self.assertIn("🚨 Go to the ER if", md)
+        self.assertIn("Rest the muscle. [S1] · ✅ Proven", md)
+        self.assertIn("*Why does it happen?*", md)
+        self.assertIn("Built only from 2 verified facts in the Evidence Library (dossier.md); "
+                      "1 items were removed by automatic checks.", md)
+        self.assertIn("- [S1] Cochrane review", md)
+        self.assertNotIn("[S2]", md)                               # only the guide's sources
+
+    def test_video_source_uses_the_guide(self):
+        src = rd.video_source(self.state())
+        self.assertIn("PATIENT GUIDE (Organised, patient-valued, verified)", src)
+        self.assertIn("PROMISE: You will know what to do about cramps.", src)
+        self.assertIn("Rest the muscle. [S1] [evidence: proven]", src)
+        self.assertNotIn("RESEARCH DOSSIER", src)
+
+    def test_video_source_falls_back_without_a_guide(self):
+        st = self.state()
+        del st["patient_guide"]
+        src = rd.video_source(st)
+        self.assertIn("RESEARCH DOSSIER (verified, cited)", src)
+        self.assertIn("Stretch the calf. [S1]", src)
+
+
+class GuideEditorTest(unittest.TestCase):
+    def state(self, **kw):
+        st = {"topic": "Cramps", "topic_type": "symptom", "angle": "why me",
+              "special_groups": ["pregnancy"], "outline": [section("A")],
+              "sources": dict(GUIDE_SOURCES), "classic_checks": [{"item": "magnesium", "section": "A"}],
+              "facts": [_mk_fact("F1", "magnesium", "proven")], "rejected": [], "settings": {}}
+        st.update(kw)
+        return st
+
+    def test_unreadable_after_retry_yields_no_guide_and_does_not_fail(self):
+        calls = []
+
+        def boom(system, user, temperature=None, max_tokens=None, required=()):
+            calls.append((temperature, max_tokens, required))
+            raise UnreadableAnswer("bad", "raw")
+
+        with mock.patch.object(nodes, "call_llm_json", boom), mock.patch("builtins.print"):
+            out = nodes.guide_editor(self.state())
+        self.assertEqual(out["patient_guide"], {})
+        self.assertEqual(out["guide_report"]["dropped"], 0)
+        self.assertEqual(len(calls), 2)                                   # one retry
+        self.assertEqual(calls[0], (0.3, 12000, ["action_card", "sections"]))
+
+    def test_prompt_carries_the_plan_checks_and_facts(self):
+        fake = FakeLlmJson({"action_card": empty_action(), "sections": []})
+        with mock.patch.object(nodes, "call_llm_json", fake), mock.patch("builtins.print"):
+            nodes.guide_editor(self.state())
+        user = fake.prompts[0]
+        self.assertIn("TOPIC: Cramps", user)
+        self.assertIn("TOPIC TYPE: symptom", user)
+        self.assertIn("ANGLE: why me", user)
+        self.assertIn("SPECIAL GROUPS: pregnancy", user)
+        self.assertIn("magnesium — Helps (proven)", user)
+        self.assertIn("F1 [A · fact · proven] magnesium claim F1", user)
+
+
+
+
+class GuideWorksRuleTest(unittest.TestCase):
+    def test_works_needs_proven_or_probably_helps(self):
+        from medical_brain.research import nodes
+        state = {"sources": {"S1": {"title": "t", "level": 2}},
+                 "facts": [
+                     {"id": "F1", "section": "A", "kind": "fact", "claim": "Compression stockings reduced cramps.",
+                      "status": "verified", "source_ids": ["S1"], "strength": "probably_helps"},
+                     {"id": "F2", "section": "A", "kind": "fact", "claim": "Black seed is not well studied.",
+                      "status": "verified", "source_ids": ["S1"], "strength": "untested"},
+                     {"id": "F3", "section": "A", "kind": "advice", "claim": "Stretch the calf.",
+                      "status": "verified", "source_ids": ["S1"], "strength": "n/a"}]}
+        guide = {"action_card": {"works": [{"text": "Compression stockings", "facts": ["F1"]},
+                                           {"text": "Black seed oil", "facts": ["F2"]},
+                                           {"text": "Stretching", "facts": ["F3"]}]},
+                 "sections": []}
+        clean, report = nodes.validate_guide(guide, state)
+        self.assertEqual([i["text"] for i in clean["action_card"]["works"]], ["Compression stockings"])
+        self.assertEqual(report["by_reason"].get("weak_evidence_in_works"), 2)

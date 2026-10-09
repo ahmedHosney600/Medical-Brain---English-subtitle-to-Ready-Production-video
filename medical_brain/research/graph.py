@@ -4,7 +4,7 @@
           → source_collector → source_screener ──gaps──┐ (back to collector)
           → fact_extractor → fact_verifier ──fixes──┐ (back to extractor)
                                  └─ else ─→ fact_merger → coverage_critic ──missing──┐ (back to collector)
-                                             → dossier_editor → end
+                                             → dossier_editor → guide_editor → end
 Every loop has a round limit (settings in research_state['settings'])."""
 from langgraph.graph import END, START, StateGraph
 
@@ -22,6 +22,7 @@ NODES = [
     ("fact_merger", nodes.fact_merger),
     ("coverage_critic", nodes.coverage_critic),
     ("dossier_editor", nodes.dossier_editor),
+    ("guide_editor", nodes.guide_editor),
 ]
 
 
@@ -62,5 +63,6 @@ def build_research_app():
     g.add_edge("fact_merger", "coverage_critic")
     g.add_conditional_edges("coverage_critic", route_after_coverage,
                             {"source_collector": "source_collector", "dossier_editor": "dossier_editor"})
-    g.add_edge("dossier_editor", END)
+    g.add_edge("dossier_editor", "guide_editor")
+    g.add_edge("guide_editor", END)
     return g.compile()

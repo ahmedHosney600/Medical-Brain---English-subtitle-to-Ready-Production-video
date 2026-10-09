@@ -46,6 +46,8 @@ class ResearchState(TypedDict, total=False):
     verify_notes: dict           # section id -> what the verifier asked to fix
     summary: str
     section_notes: dict
+    patient_guide: dict          # Layer 2: the organised guide the video is built from
+    guide_report: dict           # validate_guide's kept/dropped counts + dropped items
     review: dict                 # parsed review.md for this cycle
     review_round: int
     history: list
@@ -81,6 +83,7 @@ def new_state(topic: str, audience: str = "", notes: str = "", settings: dict = 
         sources={}, facts=[], merged=[], rejected=[], focus=[], work=[], to_extract=[], extractor_notes={},
         need_sources=False, need_fix=False, need_research=False, queries_done=[], next_source=1, next_fact=1,
         screen_round=0, verify_round=0, coverage_round=0, coverage_pass=False, coverage_report="",
-        coverage_scores={}, screen_notes="", verify_notes={}, summary="", section_notes={}, review={},
+        coverage_scores={}, screen_notes="", verify_notes={}, summary="", section_notes={},
+        patient_guide={}, guide_report={}, review={},
         review_round=0, history=[], settings={**DEFAULT_SETTINGS, **(settings or {})}, source_log=[],
     )

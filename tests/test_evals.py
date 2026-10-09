@@ -67,6 +67,29 @@ JUDGE = {
     "summary": "Solid basics; safety and night cramps are thin.",
 }
 
+GUIDE = {
+    "promise": "You can handle night cramps.",
+    "action_card": {"do_now": [{"text": "Stretch before bed.", "facts": ["F2"], "strength": "proven"}],
+                    "daily": [], "works": [], "doesnt_work_or_risky": [],
+                    "see_doctor_if": [], "emergency_if": []},
+    "sections": [{"title": "What it is", "question": "What is a cramp?",
+                  "points": [{"text": "A cramp is a sudden tightening.", "facts": ["F1"],
+                              "strength": "proven"}]}],
+    "special_groups": [], "myths": [],
+    "complementary": {"options": [], "not_proven": []},
+    "key_numbers": [], "uncertain": [],
+}
+
+GUIDE_JUDGE = {
+    "questions": [{"id": "Q1", "answered": "yes"}, {"id": "Q2", "answered": "yes"},
+                  {"id": "Q3", "answered": "no"}],
+    "unsafe_or_misleading": [{"item": "Stretch.", "why": "overstated"}],
+    "missing_from_action_card": ["ER signs"],
+    "unclear": [], "padding": [],
+    "scores": {"answers": 8, "actionability": 7, "safety": 9, "clarity": 8, "honesty": 7},
+    "summary": "Good guide; night cramps are thin.",
+}
+
 
 class FakeLlmJson:
     def __init__(self, reply):
@@ -116,6 +139,57 @@ class MetricsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root, _state = fake_session(tmp)
             self.assertEqual(evals._run_minutes(os.path.join(root, "research")), 10.0)
+
+
+class GuideMetricsTest(unittest.TestCase):
+    def test_guide_metrics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _root, state = fake_session(tmp)
+            state["patient_guide"] = GUIDE
+            state["guide_report"] = {"dropped": 3, "dropped_items": [{"text": "x"}]}
+            metrics = evals.compute_metrics(state, QUESTIONS, JUDGE, GUIDE_JUDGE)
+            self.assertEqual((metrics["guide_items"], metrics["guide_dropped"]), (2, 3))
+            self.assertEqual((metrics["guide_core_answered"], metrics["guide_core_total"]), (2, 2))
+            self.assertEqual(metrics["guide_unsafe"], 1)
+            self.assertEqual((metrics["guide_answers"], metrics["guide_clarity"]), (8, 8))
+            self.assertEqual(metrics["guide_mean"], 7.8)
+
+    def test_no_guide_gives_zero_and_none(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _root, state = fake_session(tmp)
+            metrics = evals.compute_metrics(state, QUESTIONS, JUDGE, None)
+            self.assertEqual(metrics["guide_items"], 0)
+            self.assertEqual(metrics["guide_dropped"], 0)
+            self.assertEqual(metrics["guide_unsafe"], 0)
+            self.assertIsNone(metrics["guide_mean"])
+
+
+class GuideJudgeTest(unittest.TestCase):
+    def test_prompt_has_every_question_item_fact_and_strength(self):
+        user = evals.build_guide_judge_user("Muscle cramps", QUESTIONS, GUIDE)
+        self.assertIn("TOPIC: Muscle cramps", user)
+        for q in QUESTIONS:
+            self.assertIn(q["id"], user)
+            self.assertIn(q["q"], user)
+        self.assertIn("Stretch before bed.", user)
+        self.assertIn("facts: F2", user)
+        self.assertIn("strength: proven", user)
+
+    def test_judge_temperature_and_required(self):
+        fake = FakeLlmJson(GUIDE_JUDGE)
+        with mock.patch.object(evals, "call_llm_json", fake):
+            judge = evals.judge_guide_session("t", QUESTIONS, GUIDE)
+        self.assertEqual(judge, GUIDE_JUDGE)
+        self.assertEqual(fake.calls[0]["temperature"], 0)
+        self.assertEqual(fake.calls[0]["max_tokens"], 8000)
+        self.assertEqual(fake.calls[0]["required"], ["questions", "scores"])
+
+    def test_unreadable_retries_once_then_null(self):
+        fake = FakeLlmJson(None)
+        fake.reply = lambda user, n: (_ for _ in ()).throw(UnreadableAnswer("bad", "raw"))
+        with mock.patch.object(evals, "call_llm_json", fake), mock.patch("builtins.print"):
+            self.assertIsNone(evals.judge_guide_session("t", QUESTIONS, GUIDE))
+        self.assertEqual(len(fake.calls), 2)
 
 
 class FrozenQuestionsTest(unittest.TestCase):
@@ -209,6 +283,25 @@ class ScorecardTest(unittest.TestCase):
         self.assertIsNone(evals.balance_delta(1.0, None))
         self.assertEqual(evals.balance_delta(1.0, 0.25), 0.75)
 
+    def test_guide_columns_and_summary_with_a_guide(self):
+        topics = {"topics": [{"slug": "muscle-cramps", "questions": QUESTIONS}]}
+        result = self._result(guide_items=2, guide_core_answered=2, guide_core_total=2,
+                              guide_mean=7.8, guide_unsafe=1, guide_judge=GUIDE_JUDGE)
+        text = evals.render_scorecard([result], topics)
+        header_line = next(l for l in text.splitlines() if l.startswith("| date "))
+        header = [c.strip() for c in header_line.strip("|").split("|")]
+        self.assertIn("guide core", header)
+        self.assertIn("guide mean", header)
+        self.assertIn("| 2/2 | 7.80 |", text)
+        self.assertIn(GUIDE_JUDGE["summary"], text)
+        self.assertIn("**Unsafe or misleading:**", text)
+
+    def test_guide_columns_are_dashes_without_a_guide(self):
+        topics = {"topics": [{"slug": "muscle-cramps", "questions": QUESTIONS}]}
+        text = evals.render_scorecard([self._result()], topics)
+        data_line = next(l for l in text.splitlines() if l.startswith("| 2026-10-09"))
+        self.assertTrue(data_line.rstrip().endswith("| — | — |"))
+
 
 class BalanceTest(unittest.TestCase):
     class _Resp:
@@ -270,6 +363,35 @@ class ScoreSessionTest(unittest.TestCase):
             self.assertTrue(os.path.exists(os.path.join(root, "research", "eval.json")))
             with open(scorecard_path, encoding="utf-8") as f:
                 self.assertIn("muscle-cramps", f.read())
+
+    def test_scores_a_session_with_a_patient_guide(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root, state = fake_session(os.path.join(tmp, "session"))
+            state["patient_guide"] = GUIDE
+            state["guide_report"] = {"dropped": 1, "dropped_items": [{"text": "x"}]}
+            with open(os.path.join(root, "research", "research_checkpoint.json"), "w", encoding="utf-8") as f:
+                json.dump(state, f)
+            topics_path = os.path.join(tmp, "topics.json")
+            results_path = os.path.join(tmp, "results.jsonl")
+            scorecard_path = os.path.join(tmp, "scorecard.md")
+            with open(topics_path, "w", encoding="utf-8") as f:
+                json.dump({"topics": [TOPIC_ENTRY]}, f)
+            fake = FakeLlmJson(lambda user, n: JUDGE if n == 1 else GUIDE_JUDGE)
+            with mock.patch.object(evals, "TOPICS_PATH", topics_path), \
+                    mock.patch.object(evals, "RESULTS_PATH", results_path), \
+                    mock.patch.object(evals, "SCORECARD_PATH", scorecard_path), \
+                    mock.patch.object(evals, "call_llm_json", fake), \
+                    mock.patch("builtins.print"):
+                result = evals.score_session(root, "muscle-cramps", "phase3", cost_usd=None)
+            self.assertEqual(len(fake.calls), 2)                # research judge + guide judge
+            self.assertEqual(result["guide_items"], 2)
+            self.assertEqual((result["guide_core_answered"], result["guide_core_total"]), (2, 2))
+            self.assertEqual(result["guide_mean"], 7.8)
+            self.assertEqual(result["guide_judge"], GUIDE_JUDGE)
+            with open(scorecard_path, encoding="utf-8") as f:
+                text = f.read()
+            self.assertIn("| 2/2 | 7.80 |", text)
+            self.assertIn(GUIDE_JUDGE["summary"], text)
 
 
 if __name__ == "__main__":
