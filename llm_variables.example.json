@@ -14,8 +14,8 @@
         "gemini": {
             "base_url": "http://localhost:8765/v1",
             "token_file": "~/Desktop/My Computer/Programming Proejcts/gemini-canvas-proxy/native_host/.proxy_token",
-            "timeout_retries": 2,
-            "retry_wait_seconds": 10,
+            "timeout_retries": 5,
+            "retry_wait_seconds": 20,
             "min_max_tokens": 16000,
             "json_mode": true
         },
