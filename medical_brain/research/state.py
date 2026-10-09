@@ -16,10 +16,14 @@ class ResearchState(TypedDict, total=False):
     audience: str
     user_notes: str
     angle: str
+    topic_type: str              # planner's classification ("" on old checkpoints)
     must_cover: list
+    classic_checks: list         # [{"item": str, "section": str}]
+    special_groups: list         # [str]
     outline: list
     sources: dict
     facts: list
+    merged: list                 # facts merged into another (kept out of facts/rejected)
     rejected: list
     focus: list                  # section ids this round works on ([] = all)
     work: list                   # sections researched in this cycle (extract + verify)
@@ -54,7 +58,7 @@ DEFAULT_SETTINGS = {
     "max_coverage_rounds": 2,         # coverage critic → more research
     "max_coverage_sections": 3,       # sections re-researched per coverage round
     "max_sources_per_section": 12,    # hard cap on kept sources in a section
-    "max_facts_per_section": 20,      # verified facts a section needs, then stop
+    "max_facts_per_section": 12,      # verified facts a section needs, then stop
     "coverage_pass_score": 7,         # each coverage score that counts as a pass
     "sources_per_query": 6,
     "sources_per_section": 8,
@@ -70,8 +74,9 @@ DEFAULT_SETTINGS = {
 
 def new_state(topic: str, audience: str = "", notes: str = "", settings: dict = None) -> ResearchState:
     return ResearchState(
-        topic=topic.strip(), audience=audience, user_notes=notes, angle="", must_cover=[], outline=[],
-        sources={}, facts=[], rejected=[], focus=[], work=[], to_extract=[], extractor_notes={},
+        topic=topic.strip(), audience=audience, user_notes=notes, angle="", topic_type="",
+        must_cover=[], classic_checks=[], special_groups=[], outline=[],
+        sources={}, facts=[], merged=[], rejected=[], focus=[], work=[], to_extract=[], extractor_notes={},
         need_sources=False, need_fix=False, need_research=False, queries_done=[], next_source=1, next_fact=1,
         screen_round=0, verify_round=0, coverage_round=0, coverage_pass=False, coverage_report="",
         coverage_scores={}, screen_notes="", verify_notes={}, summary="", section_notes={}, review={},

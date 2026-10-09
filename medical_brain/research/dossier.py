@@ -15,7 +15,26 @@ LEVEL_BADGE = {1: "🟢 Guideline", 2: "🟢 Meta-analysis", 3: "🟢 RCT", 4: "
 
 
 def _cites(f: dict) -> str:
-    return "".join(f"[{i}]" for i in f.get("source_ids", []))
+    ids = list(f.get("source_ids", []))
+    for m in f.get("also_supported_by", []) or []:
+        ids += list(m.get("source_ids", []))
+    return "".join(f"[{i}]" for i in dict.fromkeys(ids))
+
+
+def _source_names(state: dict, ids) -> str:
+    """Human names (journal/site, else origin) for a list of source ids."""
+    names = []
+    for i in ids:
+        s = state.get("sources", {}).get(i) or {}
+        name = s.get("journal") or s.get("origin") or i
+        if name and name not in names:
+            names.append(str(name))
+    return ", ".join(names)
+
+
+STRENGTH_LABELS = {"proven": "✅ Proven", "probably_helps": "🟢 Probably helps",
+                   "weak_or_disputed": "⚠️ Weak / disputed", "no_benefit": "❌ No benefit",
+                   "harmful": "⛔ Harmful"}
 
 
 _CITE_RUN = re.compile(r"\[S\d+\](?:[ \t]*\[S\d+\])*")
@@ -47,7 +66,10 @@ def verified_facts(state: dict) -> list:
 def used_sources(state: dict) -> list:
     ids = []
     for f in verified_facts(state):
-        for i in f.get("source_ids", []):
+        fids = list(f.get("source_ids", []))
+        for m in f.get("also_supported_by", []) or []:
+            fids += list(m.get("source_ids", []))
+        for i in fids:
             if i in state.get("sources", {}) and i not in ids:
                 ids.append(i)
     return sorted(ids, key=lambda i: int(re.sub(r"\D", "", i) or 0))
@@ -65,7 +87,10 @@ def reference_lines(state: dict, ids=None) -> list:
 def render_markdown(state: dict) -> str:
     facts = verified_facts(state)
     by_id = {f["id"]: f for f in facts}
-    md = [f"# 🔬 RESEARCH DOSSIER — {state.get('topic', '')}", ""]
+    header = f"# 🔬 RESEARCH DOSSIER — {state.get('topic', '')}"
+    if state.get("topic_type"):
+        header += f" · {state['topic_type']}"
+    md = [header, ""]
     scores = state.get("coverage_scores") or {}
     md.append(f"Review round {state.get('review_round', 0)} · {len(facts)} verified facts from "
               f"{len(used_sources(state))} sources · coverage {scores.get('coverage', '?')}/10, "
@@ -75,6 +100,16 @@ def render_markdown(state: dict) -> str:
            "to a quote, and checked by a separate verifier model. Edit **review.md** to ask for changes.", ""]
     if state.get("angle"):
         md += [f"**Angle:** {state['angle']}", ""]
+    classic = state.get("classic_checks") or []
+    special = state.get("special_groups") or []
+    if classic or special:
+        md += ["## Plan", ""]
+        if classic:
+            md += ["**Classic checks:** " + " · ".join(
+                f"{c['item']} ({c['section']})" if c.get("section") else str(c["item"])
+                for c in classic if isinstance(c, dict) and c.get("item")), ""]
+        if special:
+            md += ["**Special groups:** " + " · ".join(str(g) for g in special), ""]
     if state.get("summary"):
         md += ["## Overview", "", _link_refs(state["summary"], by_id), ""]
     md += ["## Outline", ""] + [f"{s['id']}. {s['title']}" for s in state.get("outline", [])] + [""]
@@ -94,7 +129,18 @@ def render_markdown(state: dict) -> str:
                 continue
             md += [f"### {KIND_TITLES[kind]}", ""]
             for f in group:
-                md.append(f"- **{f['id']}** {f['claim']} {_cites(f)} · {LEVEL_BADGE.get(f.get('level', 6), '')}")
+                strength = f.get("strength", "n/a")
+                label = STRENGTH_LABELS.get(strength) if strength and strength != "n/a" else ""
+                extra = f" · {label}" if label else ""
+                if label and f.get("strength_reason"):
+                    extra += f" ({f['strength_reason']})"
+                also = f.get("also_supported_by") or []
+                if also:
+                    names = _source_names(state, [i for m in also for i in m.get("source_ids", [])])
+                    if names:
+                        extra += f" (also: {names})"
+                md.append(f"- **{f['id']}** {f['claim']} {_cites(f)} · "
+                          f"{LEVEL_BADGE.get(f.get('level', 6), '')}{extra}")
                 md.append(f"  > \"{f['quote']}\"")
             md.append("")
     numbers = [f for f in facts if re.search(r"\d", f["claim"])]
@@ -199,7 +245,9 @@ def video_source(state: dict) -> str:
             for f in (x for x in sec_facts if x["kind"] == kind):
                 label = {"myth": "MYTH vs EVIDENCE", "red_flag": "RED FLAG", "advice": "PRACTICAL",
                          "debated": "DEBATED"}.get(kind, "FACT")
-                out.append(f"- {label}: {f['claim']} {_cites(f)}")
+                strength = f.get("strength", "n/a")
+                tag = f" [evidence: {strength}]" if strength and strength != "n/a" else ""
+                out.append(f"- {label}: {f['claim']} {_cites(f)}{tag}")
         out.append("")
     out += ["SOURCES:"] + reference_lines(state)
     return "\n".join(out)

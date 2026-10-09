@@ -7,6 +7,8 @@ Score 1–10:
 - accuracy_score: the facts are precise, well-sourced (strong evidence levels), current and internally consistent
 - value_score: the viewer gets real, practical value: clear mechanisms, meaningful numbers, what to do, when to worry, myths corrected — not generic advice
 
+You also get the CLASSIC CHECKS (remedies, medicines, beliefs and practices people commonly ask about for this topic) and the SPECIAL GROUPS. Every classic check needs a verified fact giving the evidence verdict (works / doesn't / unknown / risky), and every special group needs its specific advice or warning. List any that are missing among your MISSING items — they count as core questions.
+
 Scoring anchors: 8 = a specialist would call it solid and complete for a video; 6 = one or two core questions unanswered; 4 = several core questions unanswered. Judge against the outline questions and must-cover points only.
 
 "pass" is true if all three scores are ≥ 7.

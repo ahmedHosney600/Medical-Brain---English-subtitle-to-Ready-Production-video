@@ -12,7 +12,7 @@ from medical_brain.llm.progress import _Progress, quiet
 from medical_brain.prompts import load_prompt
 from medical_brain.research import dossier as rd
 from medical_brain.research import nodes
-from medical_brain.research.graph import build_research_app
+from medical_brain.research.graph import build_research_app, route_after_verifier
 from medical_brain.research.sources import europepmc, evidence, google, medlineplus, pubmed, web
 from medical_brain.research.state import new_state
 from medical_brain.utils.llm_json import UnreadableAnswer
@@ -131,6 +131,7 @@ class ResearchGraphTest(unittest.TestCase):
             "source_screener": json.dumps({"sections": [{"id": "A", "keep": ["S1", "S2"], "gaps": []}]}),
             "fact_extractor": extract,
             "fact_verifier": verify,
+            "fact_merger": json.dumps({"groups": []}),
             "coverage_critic": json.dumps({"coverage_score": 9, "accuracy_score": 9, "value_score": 9, "pass": True,
                                            "missing": [], "report": "complete"}),
             "dossier_editor": json.dumps({"summary": "Watches are good at spotting AF [F1]. They also cure it.",
@@ -163,6 +164,9 @@ class ResearchGraphTest(unittest.TestCase):
         self.assertEqual(len(self.extract_calls), 2)        # first pass + one fix round
         self.assertEqual(len(claims), len(set(claims)))     # no duplicates from the re-extraction
         self.assertNotIn("cure", state["summary"])          # uncited sentence dropped
+        names = [n for n, _ in self.router.calls]
+        self.assertIn("fact_merger", names)                 # verifier → merger → critic
+        self.assertLess(names.index("fact_merger"), names.index("coverage_critic"))
         md = rd.render_markdown(state)
         self.assertIn("[S1]", md)
         self.assertIn("Pooled sensitivity was 94.2%", md)
@@ -327,6 +331,206 @@ class CoverageCriticTest(unittest.TestCase):
                               "missing": one}, coverage_round=1,
                              coverage_scores={"coverage": 6, "accuracy": 6, "value": 6})
         self.assertTrue(out["need_research"])
+
+
+class PlannerFieldsTest(unittest.TestCase):
+    def test_planner_stores_type_checks_and_groups(self):
+        reply = {"topic_type": "symptom", "angle": "x",
+                 "classic_checks": [{"item": "magnesium", "section": "B"},
+                                    {"item": "", "section": "C"},
+                                    "bad", {"section": "D"}],
+                 "special_groups": ["pregnancy", " ", "children"],
+                 "sections": [{"title": "S", "questions": ["q"], "literature_queries": ["l"],
+                               "public_queries": ["p"]}]}
+        fake = FakeLlmJson(reply)
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            out = nodes.topic_planner(new_state("t"))
+        self.assertEqual(out["topic_type"], "symptom")
+        self.assertEqual(out["classic_checks"], [{"item": "magnesium", "section": "B"}])
+        self.assertEqual(out["special_groups"], ["pregnancy", "children"])
+
+    def test_defaults_and_old_checkpoint_still_works(self):
+        st = new_state("t")
+        self.assertEqual(st["topic_type"], "")
+        self.assertEqual(st["classic_checks"], [])
+        self.assertEqual(st["special_groups"], [])
+        self.assertEqual(st["merged"], [])
+        self.assertEqual(st["settings"]["max_facts_per_section"], 12)
+        old = {"topic": "old", "outline": [], "facts": [], "sources": {}, "rejected": []}
+        self.assertIn("RESEARCH DOSSIER", rd.render_markdown(old))
+        self.assertEqual(rd.used_sources(old), [])
+
+
+class VerifierStrengthTest(unittest.TestCase):
+    def verify(self, verdicts, facts):
+        st = state_of([section("A")], facts=facts, sources={"S1": dict(SOURCE)}, verify_round=0)
+        fake = FakeLlmJson({"verdicts": verdicts})
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            return nodes.fact_verifier(st)
+
+    def test_strength_normalised_and_stored(self):
+        base = {"section": "A", "kind": "fact", "quote": "Pooled sensitivity was 94.2%",
+                "source_ids": ["S1"], "level": 2, "status": "new", "note": ""}
+        facts = [dict(base, id="F1", claim="Magnesium helps cramps."),
+                 dict(base, id="F2", claim="A cramp is sudden.")]
+        out = self.verify([{"id": "F1", "verdict": "verified", "strength": "Probably helps",
+                            "strength_reason": "one small RCT"},
+                           {"id": "F2", "verdict": "verified", "strength": "banana"}], facts)
+        by = {f["id"]: f for f in out["facts"]}
+        self.assertEqual(by["F1"]["strength"], "probably_helps")
+        self.assertEqual(by["F1"]["strength_reason"], "one small RCT")
+        self.assertEqual(by["F2"]["strength"], "n/a")            # unknown label
+
+    def test_strength_stored_when_wording_corrected(self):
+        fact = {"id": "F1", "section": "A", "kind": "advice", "claim": "Magnesium cures cramps",
+                "quote": "Pooled sensitivity was 94.2%", "source_ids": ["S1"], "level": 2,
+                "status": "new", "note": ""}
+        out = self.verify([{"id": "F1", "verdict": "fix", "corrected_claim": "Magnesium may help",
+                            "reason": "overstated", "strength": "weak / disputed",
+                            "strength_reason": "low certainty"}], [fact])
+        f = out["facts"][0]
+        self.assertEqual(f["status"], "verified")
+        self.assertEqual(f["strength"], "weak_or_disputed")
+        self.assertEqual(f["strength_reason"], "low certainty")
+
+    def test_old_facts_without_strength_are_na(self):
+        old = {"topic": "t", "outline": [section("A")],
+               "sources": {"S1": {"title": "x", "journal": "j", "year": 2020, "level": 5,
+                                  "url": "u", "text": "x"}},
+               "facts": [{"id": "F1", "section": "A", "kind": "fact", "claim": "Stretch the calf.",
+                          "quote": "x", "source_ids": ["S1"], "status": "verified", "level": 5}]}
+        md = rd.render_markdown(old)
+        self.assertIn("Stretch the calf.", md)
+        self.assertNotIn("Proven", md)
+
+
+class FactMergerTest(unittest.TestCase):
+    SOURCES = {f"S{i}": {"title": f"Source {i}", "journal": f"journal{i}.org", "year": 2024,
+                         "level": 3, "url": f"u{i}"} for i in range(1, 6)}
+
+    def facts(self):
+        mk = lambda i, sid, strength: {"id": f"F{i}", "section": "A" if i <= 3 else "B",
+                                       "kind": "fact", "claim": f"Claim {i}", "quote": f"Quote {i}.",
+                                       "source_ids": [sid], "level": 3, "status": "verified",
+                                       "note": "", "strength": strength}   # noqa: E731
+        return [mk(1, "S1", "proven"), mk(2, "S2", "proven"), mk(3, "S3", "probably_helps"),
+                mk(4, "S4", "proven"), mk(5, "S5", "proven")]
+
+    def merge(self, groups, **state):
+        outline = [section("A"), section("B")]
+        st = state_of(outline, sources=dict(self.SOURCES), facts=self.facts(), work=[],
+                      rejected=[], merged=[], **state)
+        fake = FakeLlmJson({"groups": groups})
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            return nodes.fact_merger(st), fake
+
+    def test_validates_groups_and_unions_sources(self):
+        out, fake = self.merge([
+            {"keep": "F1", "merge": ["F2", "F4"]},     # cross-section F4 dropped
+            {"keep": "F3", "merge": ["F3"]},           # keep in merge → skipped
+            {"keep": "F2", "merge": ["F3"]},           # F2 already used → skipped
+            {"keep": "F4", "merge": ["F5"]},
+            {"keep": "F9", "merge": ["F1"]},           # unknown keep → skipped
+        ])
+        self.assertEqual(len(fake.prompts), 2)          # one call per eligible section
+        self.assertEqual([f["id"] for f in out["facts"]], ["F1", "F3", "F4"])
+        merged = {m["id"]: m for m in out["merged"]}
+        self.assertEqual(merged["F2"]["merged_into"], "F1")
+        self.assertEqual(merged["F5"]["merged_into"], "F4")
+        self.assertNotIn("F2", {f["id"] for f in out["facts"]})
+        self.assertEqual(out["facts"][0]["source_ids"], ["S1", "S2"])
+        self.assertEqual(out["facts"][0]["also_supported_by"],
+                         [{"id": "F2", "source_ids": ["S2"], "quote": "Quote 2."}])
+        self.assertEqual(out["facts"][2]["source_ids"], ["S4", "S5"])
+        self.assertEqual(out.get("rejected", []), [])   # merged facts are not rejected
+        self.assertNotIn("F2", {f["id"] for f in out.get("rejected", [])})
+
+    def test_strength_kept_only_when_the_group_agrees(self):
+        out, _ = self.merge([{"keep": "F1", "merge": ["F3"]},    # proven vs probably_helps
+                             {"keep": "F4", "merge": ["F5"]}])   # proven + proven
+        by = {f["id"]: f for f in out["facts"]}
+        self.assertEqual(by["F1"]["strength"], "proven")         # disagreement → kept fact's
+        self.assertEqual(by["F4"]["strength"], "proven")         # agreement
+
+    def test_error_in_a_section_never_fails_the_run(self):
+        outline = [section("A"), section("B")]
+        st = state_of(outline, sources=dict(self.SOURCES), facts=self.facts(), work=[],
+                      rejected=[], merged=[])
+
+        def boom(system, user, temperature=None, max_tokens=None, required=()):
+            raise UnreadableAnswer("bad", "raw")
+
+        with mock.patch.object(nodes, "call_llm_json", boom), mock.patch("builtins.print"):
+            out = nodes.fact_merger(st)
+        self.assertEqual(out["merged"], [])
+        self.assertEqual(len(out["facts"]), 5)
+
+    def test_route_verifier_to_merger_or_extractor(self):
+        self.assertEqual(route_after_verifier({"need_fix": True}), "fact_extractor")
+        self.assertEqual(route_after_verifier({"need_fix": False}), "fact_merger")
+        self.assertEqual(route_after_verifier({}), "fact_merger")
+
+
+class CriticPromptTest(unittest.TestCase):
+    def test_prompt_lists_plan_and_strength_tags(self):
+        facts = [{"id": "F12", "section": "A", "kind": "advice", "claim": "Magnesium may help.",
+                  "status": "verified", "strength": "proven"},
+                 {"id": "F13", "section": "A", "kind": "fact", "claim": "A cramp is sudden.",
+                  "status": "verified"}]
+        fake = FakeLlmJson({"coverage_score": 8, "accuracy_score": 8, "value_score": 8,
+                            "pass": True, "missing": []})
+        st = state_of([section("A")], facts=facts, topic_type="symptom",
+                      classic_checks=[{"item": "magnesium", "section": "B"},
+                                      {"item": "quinine", "section": ""}],
+                      special_groups=["pregnancy"])
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            nodes.coverage_critic(st)
+        user = fake.prompts[0]
+        self.assertIn("TOPIC TYPE: symptom", user)
+        self.assertIn("CLASSIC CHECKS:", user)
+        self.assertIn("- magnesium (B)", user)
+        self.assertIn("- quinine", user)
+        self.assertIn("SPECIAL GROUPS: pregnancy", user)
+        self.assertIn("- F12 [advice · proven] Magnesium may help.", user)
+        self.assertIn("- F13 [fact] A cramp is sudden.", user)
+
+
+class DossierStrengthTest(unittest.TestCase):
+    def state(self):
+        return {
+            "topic": "Cramps", "topic_type": "symptom",
+            "classic_checks": [{"item": "magnesium", "section": "A"}],
+            "special_groups": ["pregnancy"],
+            "outline": [section("A")],
+            "sources": {"S1": {"title": "Mayo", "journal": "mayoclinic.org", "year": 2024,
+                               "level": 5, "url": "u1"},
+                        "S2": {"title": "NHS", "journal": "nhs.uk", "year": 2024,
+                               "level": 5, "url": "u2"}},
+            "facts": [{"id": "F1", "section": "A", "kind": "advice", "claim": "Stretch the calf.",
+                       "quote": "Stretch the calf muscle.", "source_ids": ["S1"], "level": 5,
+                       "strength": "proven", "strength_reason": "Cochrane review", "status": "verified",
+                       "also_supported_by": [{"id": "F2", "source_ids": ["S2"],
+                                              "quote": "Stretching helps."}]}],
+            "rejected": [],
+            "merged": [{"id": "F2", "section": "A", "claim": "Calf stretching helps.",
+                        "source_ids": ["S2"], "status": "verified", "merged_into": "F1"}],
+        }
+
+    def test_render_shows_labels_plan_and_merged_sources(self):
+        md = rd.render_markdown(self.state())
+        self.assertIn("symptom", md.splitlines()[0])
+        self.assertIn("**Classic checks:** magnesium (A)", md)
+        self.assertIn("**Special groups:** pregnancy", md)
+        self.assertIn("✅ Proven", md)
+        self.assertIn("(Cochrane review)", md)
+        self.assertIn("[S1][S2]", md)
+        self.assertIn("(also: nhs.uk)", md)
+        self.assertNotIn("Calf stretching helps.", md)      # merged fact not a separate entry
+
+    def test_video_source_has_evidence_tags_and_merged_sources(self):
+        src = rd.video_source(self.state())
+        self.assertIn("Stretch the calf. [S1][S2] [evidence: proven]", src)
+        self.assertIn("[S2] NHS", src)                      # reference includes merged source
 
 
 class SourceScreenerTest(unittest.TestCase):

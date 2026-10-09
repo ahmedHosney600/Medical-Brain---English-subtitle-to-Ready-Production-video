@@ -16,6 +16,35 @@ from . import sources as src
 from .sources import evidence
 
 KINDS = ("fact", "myth", "advice", "red_flag", "debated")
+STRENGTHS = ("proven", "probably_helps", "weak_or_disputed", "no_benefit", "harmful", "n/a")
+_STRENGTH_ALIASES = {
+    "probably_help": "probably_helps", "probably": "probably_helps",
+    "weak_disputed": "weak_or_disputed", "disputed": "weak_or_disputed", "weak": "weak_or_disputed",
+    "no_effect": "no_benefit", "no_benefits": "no_benefit",
+}
+
+
+def _norm_strength(value) -> str:
+    """The verifier's evidence label, normalised to the allowed set (unknown → "n/a")."""
+    s = str(value or "").strip().lower()
+    if s in ("", "n/a", "na", "none", "null", "not_applicable"):
+        return "n/a"
+    s = re.sub(r"\s*/\s*", "_", s)
+    s = re.sub(r"[\s\-]+", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    s = _STRENGTH_ALIASES.get(s, s)
+    return s if s in STRENGTHS else "n/a"
+
+
+def _source_names(state: dict, ids) -> str:
+    """Human names (journal or origin) for a list of source ids."""
+    names = []
+    for i in ids:
+        s = state.get("sources", {}).get(i) or {}
+        name = s.get("journal") or s.get("origin") or i
+        if name and name not in names:
+            names.append(str(name))
+    return ", ".join(names)
 
 
 # --------------------------------------------------------------------------
@@ -135,8 +164,20 @@ Plan the research. Output ONLY the JSON object."""
                          "literature_queries": [t], "public_queries": [t]}]
     outline = [_new_section(state, i, s) for i, s in enumerate(raw_sections)]
     _log(f"outline: {len(outline)} sections — " + "; ".join(s["title"] for s in outline))
+    topic_type = str(pick(data, "topic_type", default="") or "").strip()
+    classic = []
+    for c in (pick(data, "classic_checks", default=[]) or []):
+        if not isinstance(c, dict):
+            continue
+        item = str(pick(c, "item", default="") or "").strip()
+        if item:
+            classic.append({"item": item, "section": str(pick(c, "section", default="") or "").strip()})
+    special = [str(g).strip() for g in (pick(data, "special_groups", default=[]) or []) if str(g).strip()]
+    _log(f"type: {topic_type or '(none)'}; classic checks: {len(classic)}; "
+         f"special groups: {', '.join(special) or '(none)'}")
     ids = [s["id"] for s in outline]
     return {"outline": outline, "angle": str(pick(data, "angle", default="")),
+            "topic_type": topic_type, "classic_checks": classic, "special_groups": special,
             "must_cover": [str(m) for m in (pick(data, "must_cover", default=[]) or [])],
             "focus": ids, "work": ids, "screen_round": 0, "verify_round": 0, "coverage_round": 0}
 
@@ -592,7 +633,7 @@ def fact_extractor(state: dict) -> dict:
     next_fact = state.get("next_fact", 1)
     notes = state.get("verify_notes", {}) or {}
     user_notes = state.get("extractor_notes", {}) or {}
-    budget = settings.get("max_facts_per_section", 20)
+    budget = settings.get("max_facts_per_section", 12)
     outline = [dict(s) for s in state.get("outline", [])]
     # 1. Build each section's prompt up front (cheap); sections with no work are
     #    logged and skipped exactly as before.
@@ -754,14 +795,18 @@ Output ONLY the JSON object."""
             verdict = str(pick(v, "verdict", default="")).lower()
             reason = str(pick(v, "reason", default=""))
             corrected = str(pick(v, "corrected_claim", default="") or "").strip()
+            strength = _norm_strength(pick(v, "strength"))
+            strength_reason = str(pick(v, "strength_reason", default="") or "").strip()
             if verdict.startswith("verif"):
                 f["status"] = "verified"
                 if pick(v, "debated", kind=bool):
                     f["kind"] = "debated"
+                f["strength"], f["strength_reason"] = strength, strength_reason
             elif verdict.startswith("fix") and corrected:
                 candidate = dict(f, claim=corrected)
                 if not quote_problem(candidate, state):
-                    f.update(claim=corrected, status="verified", note="wording corrected by the verifier")
+                    f.update(claim=corrected, status="verified", note="wording corrected by the verifier",
+                             strength=strength, strength_reason=strength_reason)
                 else:
                     f["status"], f["note"] = "fix", reason or "needs correction"
             elif verdict.startswith("fix"):
@@ -792,6 +837,97 @@ Output ONLY the JSON object."""
             "to_extract": fix_sections if more else [], "verify_notes": notes if more else {}}
 
 
+def fact_merger(state: dict) -> dict:
+    """Merge duplicate verified facts (same section) into one, citing every source.
+
+    One model call per eligible section; every group is validated by code — a group can
+    only use verified facts of that section, one id is used once per run, and a kept
+    fact gains the ordered union of the group's sources. Merged facts leave ``facts``
+    and move to ``merged`` (they are not rejected). Any per-section error means that
+    section is simply left unmerged; the run never fails."""
+    settings = state.get("settings", {})
+    outline = [dict(s) for s in state.get("outline", [])]
+    facts = [dict(f) for f in state.get("facts", [])]     # copies: kept facts gain sources below
+    merged = list(state.get("merged", []))
+    by_section = {}
+    for f in facts:
+        if f.get("status") == "verified":
+            by_section.setdefault(f.get("section"), []).append(f)
+    wanted = set(state.get("work") or [])
+    jobs = []
+    for sec in outline:
+        if wanted and sec["id"] not in wanted:
+            continue
+        group = by_section.get(sec["id"], [])
+        if len(group) < 2:
+            continue
+        lines = [f"{f['id']} [{f.get('kind', 'fact')} · {f.get('strength', 'n/a')}] {f['claim']}"
+                 f" — sources: {', '.join(f.get('source_ids', []))} "
+                 f"({_source_names(state, f.get('source_ids', []))})"
+                 for f in group]
+        user = (f"TOPIC: {state.get('topic', '')}\n"
+                f"SECTION {sec['id']}: {sec.get('title', '')}\n\n"
+                + "\n".join(lines) + "\n\nOutput ONLY the JSON object.")
+        jobs.append((sec, user))
+    if not jobs:
+        _log("merged 0 duplicate facts into 0")
+        return {"facts": facts, "merged": merged}
+    system_prompt = load_prompt("research/fact_merger")
+
+    def merge_one(job):
+        sec, user = job
+        try:
+            data, _ = call_llm_json(system_prompt, user, temperature=0.1, max_tokens=2000,
+                                    required=["groups"])
+            groups = pick(data, "groups", default=[]) or []
+            return sec["id"], groups if isinstance(groups, list) else []
+        except Exception as exc:                 # unreadable answer or any failure: skip section
+            _log(f"merge: {sec['id']} skipped ({type(exc).__name__}: {exc})")
+            return sec["id"], []
+
+    results = _parallel(merge_one, jobs, settings.get("parallel_calls", 4))
+    used = set()
+    done = 0
+    for sid, groups in results:
+        side = {f["id"]: f for f in by_section.get(sid, [])}
+        for g in groups:
+            if not isinstance(g, dict):
+                continue
+            keep_id = str(pick(g, "keep", default="") or "").strip().strip("[]")
+            merge_ids = [str(m).strip().strip("[]") for m in (pick(g, "merge", default=[]) or [])]
+            if keep_id not in side or keep_id in used:
+                continue
+            valid = [i for i in merge_ids if i in side and i != keep_id and i not in used]
+            valid = list(dict.fromkeys(valid))
+            if not valid:
+                continue
+            used.add(keep_id)
+            used.update(valid)
+            keep_fact = side[keep_id]
+            group_facts = [keep_fact] + [side[i] for i in valid]
+            strengths = {str(f.get("strength", "n/a")) for f in group_facts}
+            if len(strengths) == 1:              # all agree: keep the agreed label
+                keep_fact["strength"] = next(iter(strengths))
+            union = []
+            for f in group_facts:
+                for i in f.get("source_ids", []):
+                    if i not in union:
+                        union.append(i)
+            keep_fact["source_ids"] = union
+            supported = keep_fact.setdefault("also_supported_by", [])
+            for i in valid:
+                m = side[i]
+                supported.append({"id": i, "source_ids": list(m.get("source_ids", [])),
+                                  "quote": m.get("quote", "")})
+                m["merged_into"] = keep_id
+                merged.append(m)
+            done += 1
+    merged_ids = {m["id"] for m in merged if m.get("merged_into")}
+    facts = [f for f in facts if f["id"] not in merged_ids]
+    _log(f"merged {len(used) - done} duplicate facts into {done}")
+    return {"facts": facts, "merged": merged}
+
+
 def coverage_critic(state: dict) -> dict:
     settings = state.get("settings", {})
     lines = []
@@ -799,10 +935,20 @@ def coverage_critic(state: dict) -> dict:
         lines.append(f"## {sec['id']}: {sec['title']}\nQuestions: " + " | ".join(sec["questions"]))
         for f in state.get("facts", []):
             if f["section"] == sec["id"] and f["status"] == "verified":
-                lines.append(f"- {f['id']} [{f['kind']}] {f['claim']}")
+                strength = f.get("strength", "n/a")
+                tag = f" · {strength}" if strength and strength != "n/a" else ""
+                lines.append(f"- {f['id']} [{f['kind']}{tag}] {f['claim']}")
+    classic = state.get("classic_checks") or []
+    classic_lines = [f"- {c['item']} ({c['section']})" if c.get("section") else f"- {c['item']}"
+                     for c in classic if isinstance(c, dict) and c.get("item")] or ["(none)"]
+    special = state.get("special_groups") or []
     system_prompt = load_prompt("research/coverage_critic")
     user_prompt = f"""TOPIC: {state.get("topic", "")}
 ANGLE: {state.get("angle", "")}
+TOPIC TYPE: {state.get("topic_type") or "(not set)"}
+CLASSIC CHECKS:
+{chr(10).join(classic_lines)}
+SPECIAL GROUPS: {", ".join(str(g) for g in special) or "(none)"}
 MUST COVER: {" | ".join(state.get("must_cover", [])) or "(see topic)"}
 {("CREATOR'S REVIEW NOTES: " + state["review"].get("notes", "")) if state.get("review", {}).get("notes") else ""}
 

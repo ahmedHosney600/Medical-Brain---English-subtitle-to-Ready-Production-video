@@ -10,7 +10,10 @@ Each item is ATOMIC (one claim) and has:
 Coverage rules:
 - Answer every question you can from the sources; prioritise the strongest evidence (guidelines, meta-analyses).
 - Include the practical takeaways and the red flags — they are what viewers value most.
-- Prefer 8–20 high-value facts per section over many trivial ones. No duplicates.
+- THE "SO WHAT?" TEST: keep a fact only if it changes what a viewer would DO, or helps them UNDERSTAND their situation (is it serious, why it happens, what works). Leave out study-design details, narrow subgroup statistics, incidence in special research populations (e.g. dialysis patients, military recruits, competitive athletes) and background trivia — unless the section's questions are about that group.
+- When a source gives a result for the general population AND for a narrow subgroup, extract the general one.
+- For a treatment, remedy or practice, state the result plainly, including "no better than placebo" results — those are valuable to viewers.
+- Prefer 6–12 high-value facts per section over many trivial ones. No duplicates.
 - The audience is the general public. Skip single case reports, tiny case series and rare syndromes unless the section asks about them or they are a red flag viewers must know; one sentence from a guideline or review beats five details from a rare-disease paper.
 - Don't split one finding into several near-identical facts (e.g. a definition and its restatement).
 - If FIX THESE FACTS is given, re-extract those facts correctly (fix the claim or the quote) or leave them out if the sources do not support them. Each corrected fact must carry "fixes": the id of the fact it replaces (e.g. "F36").
