@@ -1,4 +1,9 @@
-"""Provider settings: defaults, llm_variables.json, API keys (llm_keys.env), model specs."""
+"""Provider settings: defaults, llm_variables.json, API keys (llm_keys.env), model specs.
+
+A provider may set "max_concurrency" (int >= 1) to cap how many of its calls the
+router runs at once across threads; absent/0/None means unlimited. The "gemini"
+Canvas proxy is capped at 1 because the local proxy serves one request at a time.
+"""
 import fnmatch
 import glob
 import json
@@ -27,7 +32,9 @@ DEFAULT_PROVIDERS = {
     # JSON mode, room for thinking tokens). Every other API is called normally.
     "gemini": {"type": "canvas_proxy", "label": "Gemini Canvas proxy", "base_url": "http://localhost:8765/v1",
                "api_key_env": "OPENAI_COMPATIBLE_API_KEY", "free": True,
-               "timeout_retries": 5, "retry_wait_seconds": 20, "min_max_tokens": 32000, "json_mode": True},
+               "timeout_retries": 5, "retry_wait_seconds": 20, "min_max_tokens": 32000, "json_mode": True,
+               # The local proxy serves one request at a time; parallel calls → 504.
+               "max_concurrency": 1},
     "claude": {"type": "claude", "label": "Claude", "transport": "claude_code", "effort": "high",
                "efforts": {}, "timeout_seconds": 900},
     "deepseek": {"type": "openai", "label": "DeepSeek", "base_url": "https://api.deepseek.com",
