@@ -166,6 +166,41 @@ def _convert(md_path: str, label: str) -> None:
 # --------------------------------------------------------------------------
 # Video workflow
 # --------------------------------------------------------------------------
+def _apply_script_sources(state: dict, research: dict, output_dir: str) -> None:
+    """Layer 3: the sources the FINAL script actually uses go into the document (appendix
+    + YouTube description), plus the claims no verified fact supports (for the doctor).
+    Built after the script is written, so no tags are needed inside the script. If the
+    mapping fails entirely, fall back to the old full reference list with one warning."""
+    from .research import dossier as rd
+    from .research import script_sources as ss
+
+    package = state.get("final_package", "")
+    error = ""
+    try:
+        sentences = ss.split_script(ew.production_script(package))
+        mapping = ss.map_sources(sentences, research)
+        guide = ss.build_sources_guide(sentences, mapping, research)
+    except Exception as e:
+        error = f"{type(e).__name__}: {e}"
+        sentences, mapping = [], {"links": {}, "unsupported": []}
+        guide = {"entries": [], "unsupported": [], "stats": {}}
+
+    if sentences and (mapping.get("links") or mapping.get("unsupported")):
+        document = package.rstrip() + "\n\n---\n\n" + ss.render_markdown(guide)
+        state["final_package"] = ew.insert_description_sources(document, ss.description_block(guide))
+        with open(os.path.join(output_dir, "sources_map.json"), "w", encoding="utf-8") as f:
+            json.dump({"sentences": sentences, "mapping": mapping, "guide": guide},
+                      f, ensure_ascii=False, indent=2)
+        stats = guide.get("stats") or {}
+        print(f"📚 Sources guide: {stats.get('sources', 0)} sources for {stats.get('linked', 0)} "
+              f"medical sentences; {stats.get('unsupported', 0)} claims to check")
+    else:
+        print("  ⚠️ Sources guide could not map this script"
+              + (f" ({error})" if error else "") + "; using the full reference list.")
+        state["final_package"] = ew.add_research_sources(
+            package, rd.reference_lines(research), rd.key_sources(research))
+
+
 def run_video(router, original_script: str, video_analysis: str = "", output_dir: str = "",
               extra_state: dict = None, research: dict = None) -> None:
     input_file = os.path.join(PROJECT_ROOT, "input_fields.json")
@@ -191,10 +226,9 @@ def run_video(router, original_script: str, video_analysis: str = "", output_dir
     state = run_graph(build_app(), initial_state, output_dir, router)
 
     if research:
-        # The verified sources go into the document (appendix + YouTube description).
-        from .research import dossier as rd
-        state["final_package"] = ew.add_research_sources(
-            state.get("final_package", ""), rd.reference_lines(research), rd.key_sources(research))
+        # The sources the finished script actually uses go into the document
+        # (appendix + YouTube description); the full list stays in the research folder.
+        _apply_script_sources(state, research, output_dir)
 
     for warning in (ew.quality_warning(state), ew.production_warning(state), ew.package_warning(state)):
         if warning:

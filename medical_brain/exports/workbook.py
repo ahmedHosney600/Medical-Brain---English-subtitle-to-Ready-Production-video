@@ -709,6 +709,19 @@ def production_warning(state: Optional[dict]) -> str:
             + (". Still to fix by hand: " + " · ".join(left) if left else "."))
 
 
+def insert_description_sources(package: str, block: str) -> str:
+    """Inserts `block` (an already-formatted source list) just before the closing fence of
+    the YouTube Description, so it stays inside the description. Returns the package
+    unchanged when there is no description fence or no block."""
+    if not (package or "").strip() or not (block or "").strip():
+        return package
+    m = re.search(r"(Description[^\n]*\n(?:(?!```)[^\n]*\n)*?```[^\n]*\n)(.*?)(\n```)",
+                  package, re.IGNORECASE | re.DOTALL)
+    if not m:
+        return package
+    return package[:m.end(2)] + "\n" + block.strip("\n") + package[m.end(2):]
+
+
 def add_research_sources(package: str, references: list, key_refs: list) -> str:
     """For a video built from a research dossier: the full reference list goes into the
     document, and the key sources into the YouTube description (before its closing fence)."""
@@ -716,10 +729,8 @@ def add_research_sources(package: str, references: list, key_refs: list) -> str:
         return package
     text = package.rstrip() + "\n\n---\n\n### 📚 VERIFIED SOURCES\n\n" + "\n".join(f"- {r}" for r in references) + "\n"
     if key_refs:
-        block = "\n📚 المصادر:\n" + "\n".join("- " + re.sub(r"^\[S\d+\]\s*", "", r) for r in key_refs) + "\n"
-        m = re.search(r"(Description[^\n]*\n(?:(?!```)[^\n]*\n)*?```[^\n]*\n)(.*?)(\n```)", text, re.IGNORECASE | re.DOTALL)
-        if m:
-            text = text[:m.end(2)] + "\n" + block.rstrip("\n") + text[m.end(2):]
+        block = "📚 المصادر:\n" + "\n".join("- " + re.sub(r"^\[S\d+\]\s*", "", r) for r in key_refs)
+        text = insert_description_sources(text, block)
     return text
 
 
