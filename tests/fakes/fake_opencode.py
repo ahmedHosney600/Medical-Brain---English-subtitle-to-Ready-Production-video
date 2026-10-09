@@ -1,13 +1,23 @@
 """Fake OpenCode Go server for tests (chat / responses / messages, non-streaming JSON +
 SSE for messages). Behaviour via env: TRUNC_BELOW, REJECT_ABOVE, REJECT_THINKING.
 usage: python3 fake_opencode.py <mode: ua|inactive> <port> <log file>"""
-import json, os, sys
+import json, os, socketserver, sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer as HTTPServer
 
 MODE = sys.argv[1] if len(sys.argv) > 1 else "ua"   # ua | inactive
 KEY = "ockey"
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else (18710 if MODE == "ua" else 18711)
 LOG = sys.argv[3] if len(sys.argv) > 3 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "oc.log")
+
+
+class Server(HTTPServer):
+    """ThreadingHTTPServer without the reverse-DNS lookup: server_bind()'s
+    socket.getfqdn() can block for tens of seconds and delay listen(), so the
+    tests would connect before the port is open."""
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 
 
 def log(x):
@@ -101,4 +111,4 @@ class H(BaseHTTPRequestHandler):
         self.send(404, {"error": {"message": "not found"}})
 
 
-HTTPServer(("127.0.0.1", PORT), H).serve_forever()
+Server(("127.0.0.1", PORT), H).serve_forever()

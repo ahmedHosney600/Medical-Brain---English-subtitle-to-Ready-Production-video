@@ -1,12 +1,22 @@
 """Fake OpenCode Go server that streams slowly: THINK thinking chunks then
 WORDS text chunks, DELAY seconds apart. Supports chat, responses, messages."""
-import json, os, sys, time
+import json, os, socketserver, sys, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(sys.argv[1])
 DELAY = float(os.environ.get("DELAY", "0.5"))
 THINK = int(os.environ.get("THINK", "4"))
 WORDS = int(os.environ.get("WORDS", "6"))
+
+
+class Server(ThreadingHTTPServer):
+    """ThreadingHTTPServer without the reverse-DNS lookup: server_bind()'s
+    socket.getfqdn() can block for tens of seconds and delay listen(), so the
+    tests would connect before the port is open."""
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 
 
 class H(BaseHTTPRequestHandler):
@@ -93,4 +103,4 @@ class H(BaseHTTPRequestHandler):
             return
 
 
-ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()
+Server(("127.0.0.1", PORT), H).serve_forever()

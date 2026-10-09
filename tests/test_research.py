@@ -180,6 +180,28 @@ class QuoteCheckTest(unittest.TestCase):
         self.assertIn("not found", nodes.quote_problem(dict(ok, quote="Sensitivity was perfect in every study"), state))
         self.assertIn("no valid source", nodes.quote_problem(dict(ok, source_ids=["S9"]), state))
 
+    def test_numbers_ignore_name_digits(self):
+        self.assertEqual(nodes._numbers("CoQ10"), set())
+        self.assertEqual(nodes._numbers("B12"), set())
+        self.assertEqual(nodes._numbers("HbA1c"), set())
+        self.assertEqual(nodes._numbers("SGLT2"), set())
+
+    def test_numbers_keep_statistics(self):
+        self.assertEqual(nodes._numbers("575 patients"), {"575"})
+        self.assertEqual(nodes._numbers("95% CI -2.31 to -1.24"), {"95", "2.31", "1.24"})
+        self.assertEqual(nodes._numbers("1,200"), {"1200"})
+        self.assertEqual(nodes._numbers("65mg"), {"65"})
+        self.assertEqual(nodes._numbers("COVID-19"), {"19"})
+        self.assertEqual(nodes._numbers("type 2 diabetes"), {"2"})
+
+    def test_quote_problem_accepts_name_digits(self):
+        text = "Coenzyme Q10 was given daily. Supplementation reduced statin-associated muscle cramps in patients."
+        state = {"sources": {"S1": {"text": text}}}
+        fact = {"claim": "CoQ10 supplementation reduced statin-associated muscle cramps.",
+                "quote": "Supplementation reduced statin-associated muscle cramps in patients.",
+                "source_ids": ["S1"]}
+        self.assertEqual(nodes.quote_problem(fact, state), "")
+
 
 class CliTest(unittest.TestCase):
     def test_find_latest_session_and_continue_without_requests(self):

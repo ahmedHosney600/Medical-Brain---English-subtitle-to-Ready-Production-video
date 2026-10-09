@@ -40,7 +40,11 @@ class ModelLayerTest(unittest.TestCase):
         backend._create = lambda params: (limits.append(params["max_tokens"]), self.reply("half", "length"))[1]
         with self.assertRaises(llm.AnswerCutOff) as cm:
             backend.call("s", "u", 0.3, 12000)
-        self.assertEqual(limits, [16000, 32000])
+        # Derived from the configured floor so raising min_max_tokens doesn't break this.
+        floor = int(backend.cfg.get("min_max_tokens") or 0)
+        cap = int(backend.cfg.get("max_output_cap", 65536) or 0)
+        first = max(12000, floor)
+        self.assertEqual(limits, [first, min(first * 2, cap)])
         self.assertEqual(cm.exception.text, "half")
         backend._create = lambda params: self.reply("whole answer", "stop")
         self.assertEqual(backend.call("s", "u", 0.3, 12000), "whole answer")

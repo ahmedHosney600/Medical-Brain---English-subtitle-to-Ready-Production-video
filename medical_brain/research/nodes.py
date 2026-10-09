@@ -53,7 +53,11 @@ def _norm(text: str) -> str:
 
 
 def _numbers(text: str) -> set:
-    return {n.replace(",", "") for n in re.findall(r"\d+(?:[.,]\d+)?", text or "")}
+    # A digit run glued to a preceding letter is part of a name (CoQ10, B12, HbA1c,
+    # SGLT2), not a statistic, so it is ignored. The digit in the lookbehind keeps the
+    # engine from restarting mid-run (otherwise "CoQ10" would still yield "0").
+    # "COVID-19" keeps "19" (preceded by "-").
+    return {n.replace(",", "") for n in re.findall(r"(?<![A-Za-z0-9])\d+(?:[.,]\d+)?", text or "")}
 
 
 def quote_problem(fact: dict, state: dict) -> str:

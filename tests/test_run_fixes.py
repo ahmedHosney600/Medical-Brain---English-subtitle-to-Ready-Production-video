@@ -184,6 +184,12 @@ class ProxyTokenTest(unittest.TestCase):
         os.environ["HOME"] = home
         self.addCleanup(os.environ.__setitem__, "HOME", old_home or "")
         self.home = home
+        # find_proxy_token_file() also searches next to the project: keep those root
+        # dirs inside the temp home so a real gemini-canvas-proxy on this machine
+        # can't leak its token into the test.
+        old_root = config.PROJECT_ROOT
+        config.PROJECT_ROOT = os.path.join(home, "code", "project", "repo")
+        self.addCleanup(setattr, config, "PROJECT_ROOT", old_root)
         os.environ["MB_TEST_TOKEN"] = "your_api_key_here"
         self.addCleanup(os.environ.pop, "MB_TEST_TOKEN", None)
         self.cfg = {"type": "canvas_proxy", "api_key_env": "MB_TEST_TOKEN"}
