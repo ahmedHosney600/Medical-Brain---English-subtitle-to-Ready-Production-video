@@ -56,16 +56,20 @@ class CanvasProxyBackend(OpenAICompatibleBackend):
                 safety = "blockReason" in body or "finishReason" in body or "safety" in body.lower()
                 if e.status_code in (502, 503, 504) and not safety and attempt < attempts:
                     why = "timed out after 60 s" if e.status_code == 504 else f"error {e.status_code}"
-                    print(f"  ⏳ Gemini Canvas {why}; retrying ({attempt}/{attempts - 1}) in {wait}s...")
-                    time.sleep(wait)
+                    # The Canvas tab can be down for minutes (e.g. its Google session
+                    # refreshing): back off 20, 40, 80 s … up to 3 min instead of a flat wait.
+                    pause = min(wait * 2 ** (attempt - 1), 180)
+                    print(f"  ⏳ Gemini Canvas {why}; retrying ({attempt}/{attempts - 1}) in {pause}s...")
+                    time.sleep(pause)
                     continue
                 raise
             except (openai.APIConnectionError, openai.APITimeoutError) as e:
                 timed_out = isinstance(e, openai.APITimeoutError)
                 why = "timed out" if timed_out else "not reachable"
                 if attempt < attempts:
-                    print(f"  ⏳ Gemini Canvas proxy {why} ({e}); retrying ({attempt}/{attempts - 1}) in {wait}s...")
-                    time.sleep(wait)
+                    pause = min(wait * 2 ** (attempt - 1), 180)
+                    print(f"  ⏳ Gemini Canvas proxy {why} ({e}); retrying ({attempt}/{attempts - 1}) in {pause}s...")
+                    time.sleep(pause)
                     continue
                 if timed_out:
                     raise StepTimeout(f"the Gemini Canvas proxy timed out {attempts} times ({e})")
