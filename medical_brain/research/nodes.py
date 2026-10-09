@@ -16,11 +16,12 @@ from . import sources as src
 from .sources import evidence
 
 KINDS = ("fact", "myth", "advice", "red_flag", "debated")
-STRENGTHS = ("proven", "probably_helps", "weak_or_disputed", "no_benefit", "harmful", "n/a")
+STRENGTHS = ("proven", "probably_helps", "weak_or_disputed", "no_benefit", "harmful", "untested", "n/a")
 _STRENGTH_ALIASES = {
     "probably_help": "probably_helps", "probably": "probably_helps",
     "weak_disputed": "weak_or_disputed", "disputed": "weak_or_disputed", "weak": "weak_or_disputed",
     "no_effect": "no_benefit", "no_benefits": "no_benefit",
+    "not_studied": "untested", "not_tested": "untested", "no_studies": "untested", "unstudied": "untested",
 }
 
 
@@ -173,11 +174,35 @@ Plan the research. Output ONLY the JSON object."""
         if item:
             classic.append({"item": item, "section": str(pick(c, "section", default="") or "").strip()})
     special = [str(g).strip() for g in (pick(data, "special_groups", default=[]) or []) if str(g).strip()]
+    # Complementary items are classic checks too: every one gets its own evidence row.
+    comp_raw = pick(data, "complementary", default={}) or {}
+    if not isinstance(comp_raw, dict):
+        comp_raw = {}
+    comp_items = pick(comp_raw, "items", default=[]) or []
+    if not isinstance(comp_items, list):
+        comp_items = []
+    comp = {"applies": bool(pick(comp_raw, "applies", default=False, kind=bool)),
+            "why": str(pick(comp_raw, "why", default="") or "").strip(),
+            "items": [str(i).strip() for i in comp_items if str(i).strip()]}
+    seen_items = {c["item"].strip().lower() for c in classic}
+    # Add a forgotten complementary item to the section that reads "complementary/traditional"
+    # (by its title), else to the last section — the same label the model would have used.
+    comp_section = next((s["title"] for s in outline
+                         if re.search(r"omplementary|raditional", s["title"], re.I)),
+                        outline[-1]["title"] if outline else "")
+    for item in comp["items"]:
+        if item.lower() not in seen_items:
+            classic.append({"item": item, "section": comp_section})
+            seen_items.add(item.lower())
     _log(f"type: {topic_type or '(none)'}; classic checks: {len(classic)}; "
          f"special groups: {', '.join(special) or '(none)'}")
+    _log("complementary: " + ("applies" if comp["applies"] else "not applicable")
+         + (f" — {comp['why']}" if comp["why"] else "")
+         + (f"; items: {', '.join(comp['items'])}" if comp["items"] else ""))
     ids = [s["id"] for s in outline]
     return {"outline": outline, "angle": str(pick(data, "angle", default="")),
-            "topic_type": topic_type, "classic_checks": classic, "special_groups": special,
+            "topic_type": topic_type, "classic_checks": classic, "complementary": comp,
+            "special_groups": special,
             "must_cover": [str(m) for m in (pick(data, "must_cover", default=[]) or [])],
             "focus": ids, "work": ids, "screen_round": 0, "verify_round": 0, "coverage_round": 0}
 
@@ -617,6 +642,28 @@ FIX_MODE = ("FIX MODE: return ONLY corrected versions of the facts listed under 
             "Drop a fact if the sources do not support it.")
 
 
+def _classic_canonical(state: dict) -> dict:
+    """lower-case item -> canonical item text (the only forms a fact may carry as ``check``)."""
+    return {str(c.get("item", "")).strip().lower(): str(c.get("item", "")).strip()
+            for c in (state.get("classic_checks") or []) if isinstance(c, dict) and str(c.get("item", "")).strip()}
+
+
+def _classic_for_section(state: dict, sec: dict) -> list:
+    """The classic-check items, the current section's first (matched by id or title)."""
+    title = str(sec.get("title", "")).strip().lower()
+    sid = str(sec.get("id", "")).strip().lower()
+
+    def mine(c) -> bool:
+        own = str(c.get("section", "")).strip().lower()
+        return bool(own) and (own == sid or own == title)
+
+    checks = [c for c in (state.get("classic_checks") or []) if isinstance(c, dict)]
+    first = [str(c["item"]).strip() for c in checks if mine(c) and str(c.get("item", "")).strip()]
+    rest = [str(c["item"]).strip() for c in checks
+            if not mine(c) and str(c.get("item", "")).strip()]
+    return list(dict.fromkeys(first + rest))
+
+
 def fact_extractor(state: dict) -> dict:
     settings = state.get("settings", {})
     system_prompt = load_prompt("research/fact_extractor")
@@ -635,6 +682,7 @@ def fact_extractor(state: dict) -> dict:
     user_notes = state.get("extractor_notes", {}) or {}
     budget = settings.get("max_facts_per_section", 12)
     outline = [dict(s) for s in state.get("outline", [])]
+    classic_map = _classic_canonical(state)          # canonical check names only
     # 1. Build each section's prompt up front (cheap); sections with no work are
     #    logged and skipped exactly as before.
     jobs = []
@@ -665,6 +713,7 @@ def fact_extractor(state: dict) -> dict:
         user_prompt = f"""TOPIC: {state.get("topic", "")}
 SECTION {sec['id']}: {sec['title']}
 QUESTIONS TO ANSWER: {" | ".join(sec["questions"])}
+CLASSIC CHECKS: {" | ".join(_classic_for_section(state, sec)) or "(none)"}
 {("CREATOR'S REQUEST FOR THIS SECTION: " + user_notes[sec['id']]) if user_notes.get(sec['id']) else ""}
 {("VERIFIER NOTES: " + notes[sec['id']]) if notes.get(sec['id']) else ""}
 ALREADY VERIFIED (don't repeat): {" | ".join(f["claim"] for f in have) or "(none)"}{fix_part}
@@ -711,11 +760,19 @@ Output ONLY the JSON object."""
             ids = [str(i).strip("[] ") for i in (pick(raw, "source_ids", default=[]) or [])]
             kind = str(pick(raw, "kind", default="fact")).lower().replace(" ", "_")
             levels = [state["sources"][i].get("level", 6) for i in ids if i in state["sources"]]
+            check = classic_map.get(str(pick(raw, "check", default="") or "").strip().lower(), "")
+            if not check and link:                   # fix mode: keep the original's check
+                orig = next((f for f in fixing if f["id"] == link), None)
+                orig_check = str((orig or {}).get("check", "") or "").strip()
+                if orig_check:
+                    check = classic_map.get(orig_check.lower(), orig_check)
             new = {
                 "id": f"F{next_fact}", "section": sec["id"], "kind": kind if kind in KINDS else "fact",
                 "claim": claim, "quote": str(pick(raw, "quote", default="")).strip(),
                 "source_ids": ids, "level": min(levels) if levels else 6,
                 "question": str(pick(raw, "question", default="")), "status": "new", "note": ""}
+            if check:
+                new["check"] = check
             if link:
                 new["fixes"] = link
                 linked.add(link)
@@ -908,6 +965,12 @@ def fact_merger(state: dict) -> dict:
             strengths = {str(f.get("strength", "n/a")) for f in group_facts}
             if len(strengths) == 1:              # all agree: keep the agreed label
                 keep_fact["strength"] = next(iter(strengths))
+            if not str(keep_fact.get("check", "") or "").strip():
+                # The kept fact carries no classic check: take one from a merged fact.
+                inherited = next((f.get("check") for f in group_facts[1:]
+                                  if str(f.get("check", "") or "").strip()), "")
+                if inherited:
+                    keep_fact["check"] = inherited
             union = []
             for f in group_facts:
                 for i in f.get("source_ids", []):
@@ -939,8 +1002,16 @@ def coverage_critic(state: dict) -> dict:
                 tag = f" · {strength}" if strength and strength != "n/a" else ""
                 lines.append(f"- {f['id']} [{f['kind']}{tag}] {f['claim']}")
     classic = state.get("classic_checks") or []
-    classic_lines = [f"- {c['item']} ({c['section']})" if c.get("section") else f"- {c['item']}"
-                     for c in classic if isinstance(c, dict) and c.get("item")] or ["(none)"]
+    from .dossier import classic_check_table      # lazy: dossier imports no research nodes
+    verdict_by_item = {str(r.get("item", "")).strip().lower(): r.get("verdict", "")
+                       for r in classic_check_table(state)}
+
+    def classic_line(c) -> str:
+        base = f"- {c['item']} ({c['section']})" if c.get("section") else f"- {c['item']}"
+        verdict = verdict_by_item.get(str(c.get("item", "")).strip().lower())
+        return f"{base} — {verdict}" if verdict else base
+
+    classic_lines = [classic_line(c) for c in classic if isinstance(c, dict) and c.get("item")] or ["(none)"]
     special = state.get("special_groups") or []
     system_prompt = load_prompt("research/coverage_critic")
     user_prompt = f"""TOPIC: {state.get("topic", "")}

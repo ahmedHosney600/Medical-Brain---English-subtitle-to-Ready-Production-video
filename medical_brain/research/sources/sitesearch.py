@@ -8,12 +8,12 @@ Three engines, all returning the same result dict shape as ``google``
 * ``nhs_search``       — NHS site search over plain HTTP; the result anchors point at a
                          ``/search/click?url=…`` redirect, which is decoded and never
                          followed (the URL embedded in the query string is the page).
-* ``catalog_search``   — the site's sitemap (Hopkins via Chrome, Cleveland via HTTP),
-                         cached as JSON and searched offline by URL slug. Used where
+* ``catalog_search``   — the site's sitemap (Hopkins via Chrome, Cleveland and NCCIH via
+                         HTTP), cached as JSON and searched offline by URL slug. Used where
                          robots.txt disallows the site's own ``/search``.
 
-``search`` merges the four sources (Mayo, Hopkins, NHS, Cleveland), round-robin so each
-site gets representation, dedupes by href and re-ranks. Every failure is logged to
+``search`` merges the five sources (Mayo, Hopkins, NHS, Cleveland, NCCIH), round-robin so
+each site gets representation, dedupes by href and re-ranks. Every failure is logged to
 ``http.log`` and swallowed — research must carry on without a site.
 """
 import html
@@ -35,7 +35,8 @@ NHS_SEARCH_URL = "https://www.nhs.uk/search/results?q={q}"
 CATALOG_MAX_AGE = 7 * 24 * 3600       # a week; older catalogs are refreshed
 
 # Site order for the merged search (interleave starts here).
-SITE_ORDER = ["mayoclinic.org", "hopkinsmedicine.org", "nhs.uk", "my.clevelandclinic.org"]
+SITE_ORDER = ["mayoclinic.org", "hopkinsmedicine.org", "nhs.uk", "my.clevelandclinic.org",
+              "nccih.nih.gov"]
 
 # The sitemap spec per site: ``browser`` marks the ones only reachable through Chrome.
 CATALOGS = {
@@ -43,6 +44,10 @@ CATALOGS = {
                             "browser": True},
     "my.clevelandclinic.org": {"url": "https://my.clevelandclinic.org/site.xml",
                                "browser": False},
+    # NCCIH (the US National Center for Complementary and Integrative Health): its
+    # robots.txt allows fetching, and the sitemap lists only patient health pages.
+    "nccih.nih.gov": {"url": "https://www.nccih.nih.gov/sitemap/sitemap-0.xml",
+                      "browser": False},
 }
 
 # Mayo sections that hold patient health content (everything else is search/navigation/
@@ -460,7 +465,7 @@ def _wanted_sites(sites) -> set:
 
 
 def search(query: str, sites=None, max_results: int = 8) -> list:
-    """Merged site-native results: Mayo, Hopkins, NHS, Cleveland, round-robin.
+    """Merged site-native results: Mayo, Hopkins, NHS, Cleveland, NCCIH, round-robin.
 
     Each site contributes up to ``max_results``; duplicates (same href) are dropped and
     the survivors re-ranked 1..N. Never raises — a dead site is logged and skipped."""
@@ -471,6 +476,7 @@ def search(query: str, sites=None, max_results: int = 8) -> list:
             "hopkinsmedicine.org": lambda: catalog_search("hopkinsmedicine.org", query, max_results),
             "nhs.uk": lambda: nhs_search(query, max_results),
             "my.clevelandclinic.org": lambda: catalog_search("my.clevelandclinic.org", query, max_results),
+            "nccih.nih.gov": lambda: catalog_search("nccih.nih.gov", query, max_results),
         }
         lists = []
         for domain in SITE_ORDER:

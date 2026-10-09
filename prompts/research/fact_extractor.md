@@ -6,6 +6,7 @@ Each item is ATOMIC (one claim) and has:
 - "quote": the EXACT text from the source that supports the claim — copied character for character (it is checked automatically against the source text; a paraphrased quote is rejected). When the supporting numbers sit in different sentences of the SAME source (e.g. "12 RCTs (575 patients)" in the methods and the effect size in the results), join the exact pieces with "..." — e.g. "A meta-analysis of 12 RCTs (575 patients) ... muscle cramp (WMD, -1.78; 95% CI, -2.31 to -1.24)". Use at most 3 pieces, all from one source; each piece must be copied exactly and be at least a few words long.
 - "source_ids": the [S#] ids the quote comes from (the quote must appear in at least one of them)
 - "question": which section question it answers
+- "check": when the fact gives evidence about one of the CLASSIC CHECKS listed in the prompt (a remedy, medicine, belief or practice), its exact item name from that list; otherwise omit it
 
 Coverage rules:
 - Answer every question you can from the sources; prioritise the strongest evidence (guidelines, meta-analyses).
@@ -13,6 +14,7 @@ Coverage rules:
 - THE "SO WHAT?" TEST: keep a fact only if it changes what a viewer would DO, or helps them UNDERSTAND their situation (is it serious, why it happens, what works). Leave out study-design details, narrow subgroup statistics, incidence in special research populations (e.g. dialysis patients, military recruits, competitive athletes) and background trivia — unless the section's questions are about that group.
 - When a source gives a result for the general population AND for a narrow subgroup, extract the general one.
 - For a treatment, remedy or practice, state the result plainly, including "no better than placebo" results — those are valuable to viewers.
+- For complementary, herbal and traditional remedies: extract what the source says about benefit FOR THIS CONDITION and about safety (side effects, interactions, who must avoid it). Never turn "traditionally used for", lab or animal findings into a benefit claim for people; if the source says evidence is lacking, extract that statement — it is a valid, valuable fact.
 - Prefer 6–12 high-value facts per section over many trivial ones. No duplicates.
 - The audience is the general public. Skip single case reports, tiny case series and rare syndromes unless the section asks about them or they are a red flag viewers must know; one sentence from a guideline or review beats five details from a rare-disease paper.
 - Don't split one finding into several near-identical facts (e.g. a definition and its restatement).
@@ -22,7 +24,7 @@ OUTPUT — ONLY valid JSON:
 ```json
 {
   "facts": [
-    {"kind": "fact", "claim": "…", "quote": "…", "source_ids": ["S3"], "question": "…", "fixes": "(only in fix mode: the F id this replaces)"}
+    {"kind": "fact", "claim": "…", "quote": "…", "source_ids": ["S3"], "question": "…", "check": "(only if it answers a classic check)", "fixes": "(only in fix mode: the F id this replaces)"}
   ]
 }
 ```

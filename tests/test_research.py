@@ -70,12 +70,16 @@ class SourceParsersTest(unittest.TestCase):
 
     def test_enabled_lists_sites_banner(self):
         from medical_brain.research.sources import enabled as sources_enabled
-        banner = "Sites: Mayo Clinic, Johns Hopkins, NHS, Cleveland Clinic"
+        banner = "Sites: Mayo Clinic, Johns Hopkins, NHS, Cleveland Clinic, NCCIH"
         with mock.patch("medical_brain.research.sources.browser.available", lambda: True):
             names = sources_enabled()
             self.assertIn(banner + " (+ Google)", names)
         with mock.patch("medical_brain.research.sources.browser.available", lambda: False):
             self.assertIn(banner, sources_enabled())
+
+    def test_nccih_pages_are_level_5(self):
+        self.assertEqual(evidence.level_of([], "Cupping", "https://www.nccih.nih.gov/health/cupping"), 5)
+        self.assertEqual(evidence.level_of([], "Turmeric", "https://www.nccih.nih.gov/health/turmeric"), 5)
 
     def test_evidence_ranking(self):
         self.assertGreater(evidence.score({"level": 1, "year": 2023, "text": "x"}),
@@ -349,10 +353,38 @@ class PlannerFieldsTest(unittest.TestCase):
         self.assertEqual(out["classic_checks"], [{"item": "magnesium", "section": "B"}])
         self.assertEqual(out["special_groups"], ["pregnancy", "children"])
 
+    def test_planner_stores_complementary_and_adds_items_to_checks(self):
+        reply = {"classic_checks": [{"item": "cupping", "section": "B"}],
+                 "complementary": {"applies": True, "why": "people try herbs",
+                                   "items": ["cupping", "turmeric", " ", 5]},
+                 "sections": [{"title": "Why it happens", "questions": ["q"], "literature_queries": [], "public_queries": []},
+                              {"title": "Complementary and traditional options", "questions": ["q"],
+                               "literature_queries": ["l"], "public_queries": ["p"]}]}
+        fake = FakeLlmJson(reply)
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            out = nodes.topic_planner(new_state("t"))
+        self.assertEqual(out["complementary"], {"applies": True, "why": "people try herbs",
+                                                "items": ["cupping", "turmeric", "5"]})
+        # "cupping" was already a check; turmeric is added to the complementary section.
+        self.assertIn({"item": "cupping", "section": "B"}, out["classic_checks"])
+        self.assertIn({"item": "turmeric", "section": "Complementary and traditional options"},
+                      out["classic_checks"])
+        self.assertEqual(len([c for c in out["classic_checks"] if c["item"].lower() == "cupping"]), 1)
+
+    def test_planner_falls_back_to_last_section_for_a_forgotten_item(self):
+        reply = {"complementary": {"applies": True, "why": "y", "items": ["honey"]},
+                 "sections": [{"title": "First", "questions": ["q"], "literature_queries": [], "public_queries": []},
+                              {"title": "Last one", "questions": ["q"], "literature_queries": [], "public_queries": []}]}
+        fake = FakeLlmJson(reply)
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            out = nodes.topic_planner(new_state("t"))
+        self.assertEqual(out["classic_checks"], [{"item": "honey", "section": "Last one"}])
+
     def test_defaults_and_old_checkpoint_still_works(self):
         st = new_state("t")
         self.assertEqual(st["topic_type"], "")
         self.assertEqual(st["classic_checks"], [])
+        self.assertEqual(st["complementary"], {"applies": False, "why": "", "items": []})
         self.assertEqual(st["special_groups"], [])
         self.assertEqual(st["merged"], [])
         self.assertEqual(st["settings"]["max_facts_per_section"], 12)
@@ -402,6 +434,19 @@ class VerifierStrengthTest(unittest.TestCase):
         md = rd.render_markdown(old)
         self.assertIn("Stretch the calf.", md)
         self.assertNotIn("Proven", md)
+
+    def test_untested_strength_is_accepted(self):
+        base = {"section": "A", "kind": "fact", "quote": "Pooled sensitivity was 94.2%",
+                "source_ids": ["S1"], "level": 2, "status": "new", "note": ""}
+        facts = [dict(base, id="F1", claim="Cupping is used for pain."),
+                 dict(base, id="F2", claim="Turmeric is used for arthritis.")]
+        out = self.verify([{"id": "F1", "verdict": "verified", "strength": "untested",
+                            "strength_reason": "no good studies"},
+                           {"id": "F2", "verdict": "verified", "strength": "not studied",
+                            "strength_reason": "no studies"}], facts)
+        by = {f["id"]: f for f in out["facts"]}
+        self.assertEqual(by["F1"]["strength"], "untested")
+        self.assertEqual(by["F2"]["strength"], "untested")      # alias normalised too
 
 
 class FactMergerTest(unittest.TestCase):
@@ -465,6 +510,28 @@ class FactMergerTest(unittest.TestCase):
         self.assertEqual(out["merged"], [])
         self.assertEqual(len(out["facts"]), 5)
 
+    def test_merger_carries_the_classic_check(self):
+        facts = self.facts()
+        facts[0]["check"] = "quinine"       # kept fact's own check wins
+        facts[1]["check"] = "magnesium"     # F2 merged into F1
+        st = state_of([section("A"), section("B")], sources=dict(self.SOURCES), facts=facts,
+                      work=[], rejected=[], merged=[])
+        fake = FakeLlmJson({"groups": [{"keep": "F1", "merge": ["F2"]}]})
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            out = nodes.fact_merger(st)
+        by = {f["id"]: f for f in out["facts"]}
+        self.assertEqual(by["F1"]["check"], "quinine")
+
+        facts2 = self.facts()               # kept has none; take the merged one's
+        facts2[1]["check"] = "magnesium"
+        st2 = state_of([section("A"), section("B")], sources=dict(self.SOURCES), facts=facts2,
+                       work=[], rejected=[], merged=[])
+        with mock.patch.object(nodes, "call_llm_json",
+                               FakeLlmJson({"groups": [{"keep": "F1", "merge": ["F2"]}]})):
+            out2 = nodes.fact_merger(st2)
+        by2 = {f["id"]: f for f in out2["facts"]}
+        self.assertEqual(by2["F1"]["check"], "magnesium")
+
     def test_route_verifier_to_merger_or_extractor(self):
         self.assertEqual(route_after_verifier({"need_fix": True}), "fact_extractor")
         self.assertEqual(route_after_verifier({"need_fix": False}), "fact_merger")
@@ -490,9 +557,21 @@ class CriticPromptTest(unittest.TestCase):
         self.assertIn("CLASSIC CHECKS:", user)
         self.assertIn("- magnesium (B)", user)
         self.assertIn("- quinine", user)
+        self.assertIn("— No evidence found in the sources searched", user)   # unresolved shown
         self.assertIn("SPECIAL GROUPS: pregnancy", user)
         self.assertIn("- F12 [advice · proven] Magnesium may help.", user)
         self.assertIn("- F13 [fact] A cramp is sudden.", user)
+
+    def test_prompt_shows_the_current_check_verdict(self):
+        facts = [{"id": "F12", "section": "A", "kind": "advice", "claim": "Magnesium may help.",
+                  "status": "verified", "strength": "proven", "check": "magnesium"}]
+        fake = FakeLlmJson({"coverage_score": 8, "accuracy_score": 8, "value_score": 8,
+                            "pass": True, "missing": []})
+        st = state_of([section("A")], facts=facts,
+                      classic_checks=[{"item": "magnesium", "section": "A"}])
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            nodes.coverage_critic(st)
+        self.assertIn("- magnesium (A) — Helps (proven)", fake.prompts[0])
 
 
 class DossierStrengthTest(unittest.TestCase):
@@ -531,6 +610,131 @@ class DossierStrengthTest(unittest.TestCase):
         src = rd.video_source(self.state())
         self.assertIn("Stretch the calf. [S1][S2] [evidence: proven]", src)
         self.assertIn("[S2] NHS", src)                      # reference includes merged source
+
+
+def _mk_fact(fid, check, strength, sid="S1", section="A"):
+    return {"id": fid, "section": section, "kind": "fact", "claim": f"{check} claim {fid}",
+            "quote": "supporting quote", "source_ids": [sid], "level": 2,
+            "status": "verified", "strength": strength, "check": check}
+
+
+class ClassicCheckTableTest(unittest.TestCase):
+    SOURCES = {"S1": {"title": "Cochrane review", "journal": "cochranelibrary.com", "year": 2024,
+                      "level": 2, "url": "u1"}}
+    CHECKS = [{"item": "magnesium", "section": "A"}, {"item": "quinine", "section": "A"},
+              {"item": "cupping", "section": "C"}]
+
+    def state(self, facts, **kw):
+        st = {"topic": "Cramps", "outline": [section("A")], "sources": dict(self.SOURCES),
+              "facts": facts, "rejected": [], "classic_checks": list(self.CHECKS),
+              "complementary": {"applies": True, "why": "people use them", "items": ["cupping"]},
+              "settings": {}, "work": []}
+        st.update(kw)
+        return st
+
+    def rows(self, facts, **kw):
+        return {r["item"]: r for r in rd.classic_check_table(self.state(facts, **kw))}
+
+    def test_harmful_overrides_proven(self):
+        rows = self.rows([_mk_fact("F1", "magnesium", "proven"),
+                          _mk_fact("F2", "magnesium", "harmful"),
+                          _mk_fact("F3", "quinine", "proven")])
+        self.assertEqual(rows["magnesium"]["verdict"], "Risky / harmful")
+        self.assertEqual(rows["quinine"]["verdict"], "Helps (proven)")
+
+    def test_each_lower_verdict_branch(self):
+        for strength, verdict in (("proven", "Helps (proven)"),
+                                  ("probably_helps", "May help (limited evidence)"),
+                                  ("no_benefit", "Doesn't help"),
+                                  ("weak_or_disputed", "Unclear / disputed"),
+                                  ("untested", "Not studied well")):
+            rows = self.rows([_mk_fact("F1", "magnesium", strength)])
+            self.assertEqual(rows["magnesium"]["verdict"], verdict, strength)
+
+    def test_no_facts_and_all_na(self):
+        rows = self.rows([])
+        self.assertEqual(rows["magnesium"]["verdict"], "No evidence found in the sources searched")
+        self.assertEqual(rows["magnesium"]["fact_ids"], [])
+        rows = self.rows([_mk_fact("F1", "magnesium", "n/a")])
+        self.assertEqual(rows["magnesium"]["verdict"], "See facts")
+        self.assertEqual(rows["magnesium"]["fact_ids"], ["F1"])
+        self.assertEqual(rows["magnesium"]["source_ids"], ["S1"])
+
+    def test_old_fact_without_a_strength_counts_as_na(self):
+        fact = _mk_fact("F1", "magnesium", "n/a")
+        del fact["strength"]
+        rows = self.rows([fact])
+        self.assertEqual(rows["magnesium"]["verdict"], "See facts")
+
+    def test_complementary_flag(self):
+        rows = self.rows([])
+        self.assertTrue(rows["cupping"]["complementary"])
+        self.assertFalse(rows["magnesium"]["complementary"])
+
+
+class DossierComplementaryTest(unittest.TestCase):
+    SOURCES = {"S1": {"title": "Cochrane review", "journal": "cochranelibrary.com", "year": 2024,
+                      "level": 2, "url": "u1"},
+               "S2": {"title": "NCCIH", "journal": "nccih.nih.gov", "year": 2024, "level": 5, "url": "u2"}}
+
+    CHECKS = [{"item": "magnesium", "section": "A"}, {"item": "acupuncture", "section": "C"},
+              {"item": "cupping", "section": "C"}, {"item": "black seed", "section": "C"}]
+    COMP = {"applies": True, "why": "people try them", "items": ["acupuncture", "cupping", "black seed"]}
+    FACTS = [_mk_fact("F1", "magnesium", "proven"),
+             _mk_fact("F2", "acupuncture", "proven"),
+             _mk_fact("F3", "cupping", "untested", sid="S2"),
+             _mk_fact("F4", "black seed", "harmful", sid="S2")]
+
+    def state(self, **kw):
+        st = {"topic": "Cramps", "outline": [section("A")], "sources": dict(self.SOURCES),
+              "facts": [dict(f) for f in self.FACTS], "rejected": [], "classic_checks": list(self.CHECKS),
+              "complementary": dict(self.COMP), "settings": {}, "work": []}
+        st.update(kw)
+        return st
+
+    def test_render_applies_true_two_lists(self):
+        md = rd.render_markdown(self.state())
+        self.assertIn("## Classic checks — what the evidence says", md)
+        self.assertIn("| magnesium | Helps (proven) | F1 [S1] |", md)
+        evidence = md.split("**Evidence-based options**")[1].split("**Popular but not proven**")[0]
+        self.assertIn("acupuncture — Helps (proven)", evidence)
+        self.assertNotIn("cupping", evidence)                  # untested never an option
+        self.assertNotIn("black seed", evidence)               # harmful never an option
+        popular = md.split("**Popular but not proven**")[1]
+        self.assertIn("cupping — Not studied well", popular)
+        self.assertIn("⛔ black seed — Risky / harmful", popular)
+
+    def test_render_applies_false_is_one_line(self):
+        md = rd.render_markdown(self.state(complementary={"applies": False, "why": "no such remedies here",
+                                                          "items": []}))
+        self.assertIn("Complementary medicine: not applicable — no such remedies here", md)
+        self.assertNotIn("## Complementary & traditional options", md)
+
+    def test_render_applies_false_without_a_reason_has_no_dangling_dash(self):
+        md = rd.render_markdown(self.state(complementary={"applies": False, "why": "", "items": []}))
+        self.assertIn("Complementary medicine: not applicable\n", md)
+        self.assertNotIn("not applicable —", md)
+
+    def test_render_without_complementary_key_is_quiet(self):
+        state = self.state()
+        del state["complementary"]
+        md = rd.render_markdown(state)
+        self.assertNotIn("Complementary medicine: not applicable", md)
+        self.assertIn("## Classic checks — what the evidence says", md)
+
+    def test_video_source_lists_verdicts_and_only_proven_options(self):
+        src = rd.video_source(self.state())
+        self.assertIn("CLASSIC CHECKS", src)
+        self.assertIn("magnesium → Helps (proven) → F1", src)
+        self.assertIn("cupping → Not studied well → F3", src)
+        self.assertIn("black seed → Risky / harmful → F4", src)
+        options = src.split("COMPLEMENTARY OPTIONS")[1].split("COMPLEMENTARY — popular but NOT proven")[0]
+        self.assertIn("acupuncture — Helps (proven)", options)
+        self.assertNotIn("cupping", options)
+        self.assertNotIn("black seed", options)
+        popular = src.split("COMPLEMENTARY — popular but NOT proven")[1]
+        self.assertIn("cupping — Not studied well", popular)
+        self.assertIn("RISKY — black seed — Risky / harmful", popular)
 
 
 class SourceScreenerTest(unittest.TestCase):
@@ -666,6 +870,51 @@ class ExtractorLoopTest(unittest.TestCase):
             nodes.fact_extractor(st)
         self.assertEqual(fake.prompts, [])
         self.assertIn("fact budget reached", " ".join(str(c) for c in printed.call_args_list))
+
+    def test_check_matches_classic_item_case_insensitively_and_unknown_is_dropped(self):
+        sec = section("A", source_ids=["S1"])
+        st = state_of([sec], sources={"S1": dict(SOURCE)}, facts=[], next_fact=1, to_extract=["A"],
+                      classic_checks=[{"item": "Magnesium", "section": "A"},
+                                      {"item": "Quinine", "section": "B"}])
+        reply = {"facts": [
+            {"claim": "Magnesium may help cramps.", "quote": "Pooled sensitivity was 94.2%",
+             "source_ids": ["S1"], "check": "magnesium"},
+            {"claim": "Quinine is used for cramps.", "quote": "Pooled sensitivity was 94.2%",
+             "source_ids": ["S1"], "check": "QUININE"},
+            {"claim": "Pickle juice may help.", "quote": "Pooled sensitivity was 94.2%",
+             "source_ids": ["S1"], "check": "pickle juice"}]}
+        out, fake = self.run_node(st, reply)
+        self.assertIn("CLASSIC CHECKS: Magnesium | Quinine", fake.prompts[0])   # section A first
+        by = {f["claim"]: f for f in out["facts"]}
+        self.assertEqual(by["Magnesium may help cramps."]["check"], "Magnesium")   # canonical text
+        self.assertEqual(by["Quinine is used for cramps."]["check"], "Quinine")
+        self.assertNotIn("check", by["Pickle juice may help."])                    # unknown dropped
+
+    def test_fix_mode_keeps_the_original_check(self):
+        fix = {"id": "F7", "section": "A", "kind": "fact", "claim": "Old claim", "quote": "bad",
+               "source_ids": ["S2"], "level": 2, "status": "fix", "note": "quote not found",
+               "check": "magnesium"}
+        sec = section("A", source_ids=["S2"], extracted=["S2"])
+        st = state_of([sec], sources={"S2": dict(SOURCE)}, facts=[fix], next_fact=8, to_extract=["A"],
+                      classic_checks=[{"item": "magnesium", "section": "A"}])
+        reply = {"facts": [{"claim": "Corrected claim", "quote": "Pooled sensitivity was 94.2%",
+                            "source_ids": ["S2"], "fixes": "F7"}]}
+        out, _ = self.run_node(st, reply)
+        self.assertEqual([f["id"] for f in out["facts"]], ["F8"])
+        self.assertEqual(out["facts"][0]["check"], "magnesium")      # preserved from the original
+
+    def test_fix_mode_correction_can_supply_its_own_check(self):
+        fix = {"id": "F7", "section": "A", "kind": "fact", "claim": "Old claim", "quote": "bad",
+               "source_ids": ["S2"], "level": 2, "status": "fix", "note": "quote not found",
+               "check": "magnesium"}
+        sec = section("A", source_ids=["S2"], extracted=["S2"])
+        st = state_of([sec], sources={"S2": dict(SOURCE)}, facts=[fix], next_fact=8, to_extract=["A"],
+                      classic_checks=[{"item": "magnesium", "section": "A"},
+                                      {"item": "quinine", "section": "A"}])
+        reply = {"facts": [{"claim": "Corrected claim", "quote": "Pooled sensitivity was 94.2%",
+                            "source_ids": ["S2"], "fixes": "F7", "check": "Quinine"}]}
+        out, _ = self.run_node(st, reply)
+        self.assertEqual(out["facts"][0]["check"], "quinine")
 
 
 class DossierCiteTest(unittest.TestCase):
@@ -1102,3 +1351,21 @@ class CliTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MixedEvidenceVerdictTest(unittest.TestCase):
+    def test_benefit_and_no_benefit_is_mixed_and_never_an_option(self):
+        from medical_brain.research import dossier
+        state = {"classic_checks": [{"item": "Magnesium", "section": "G"}],
+                 "complementary": {"applies": True, "why": "", "items": ["Magnesium"]},
+                 "sources": {"S1": {"title": "t", "level": 2}, "S2": {"title": "u", "level": 3}},
+                 "facts": [
+                     {"id": "F1", "section": "G", "kind": "fact", "claim": "a", "status": "verified",
+                      "source_ids": ["S1"], "check": "Magnesium", "strength": "no_benefit"},
+                     {"id": "F2", "section": "G", "kind": "fact", "claim": "b", "status": "verified",
+                      "source_ids": ["S2"], "check": "Magnesium", "strength": "probably_helps"}]}
+        rows = dossier.classic_check_table(state)
+        self.assertEqual(rows[0]["verdict"], dossier.MIXED_EVIDENCE)
+        options, others = dossier.complementary_lists(rows)
+        self.assertEqual(options, [])
+        self.assertEqual([r["item"] for r in others], ["Magnesium"])

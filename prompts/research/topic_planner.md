@@ -17,6 +17,11 @@ Plan the research for the topic:
 
 4. CLASSIC CHECKS — the specific remedies, medicines, tests, beliefs and practices people commonly ask about or already try for THIS topic, including ones popular in Egypt and the Arab world (foods, herbs, traditional practices) where relevant. Each will be checked against the evidence — list them even if you suspect they don't work. 4–10 items, each with the section it belongs to. Leave empty for topics where nothing like this applies.
 
+4b. COMPLEMENTARY & TRADITIONAL MEDICINE — decide whether people actually use complementary, herbal or traditional approaches for THIS topic (e.g. for pain, sleep, digestion, anxiety, chronic disease: yes; for a lab test or a vaccine schedule: usually no).
+   - If yes: set "applies": true, give "why", and list 3–8 "items" people use — include ones popular in Egypt and the Arab world (e.g. black seed / Nigella sativa, honey, cupping / hijama, specific herbs or teas, specific foods) only when they are really used for this topic, plus well-studied options (e.g. acupuncture, yoga, specific supplements) when relevant. Add ONE section titled like "Complementary and traditional options: what the evidence says" whose questions ask, per item, "does X help with <topic>, and is it safe?". Its literature_queries target systematic reviews and RCTs per item (e.g. "Nigella sativa AND <condition> AND (randomized OR systematic review)"); its public_queries target NCCIH-style pages (e.g. "<item> safety").
+   - If no: "applies": false with a one-line "why"; no such section.
+   These items are also classic checks: add them to "classic_checks" with that section.
+
 5. SPECIAL GROUPS — who needs different advice for this topic (e.g. pregnancy, children, older adults, kidney/heart/liver disease, diabetes, common interacting medicines). Only groups that genuinely matter for this topic.
 
 6. SECTIONS — 6 to 8 sections that follow the viewer-question spine in a natural order for a video. Each section has:
@@ -37,6 +42,7 @@ OUTPUT — ONLY valid JSON:
   "angle": "…",
   "must_cover": ["…"],
   "classic_checks": [{"item": "…", "section": "…"}],
+  "complementary": {"applies": true, "why": "…", "items": ["…"]},
   "special_groups": ["…"],
   "sections": [
     {"title": "…", "questions": ["…"], "literature_queries": ["…"], "public_queries": ["…"]}

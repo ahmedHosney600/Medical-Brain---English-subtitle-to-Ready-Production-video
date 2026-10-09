@@ -10,7 +10,7 @@ def enabled() -> list:
     names = list(LITERATURE) + ["MedlinePlus"]
     if web.available():
         names.append(f"Web ({web.available()})")
-    sites = "Sites: Mayo Clinic, Johns Hopkins, NHS, Cleveland Clinic"
+    sites = "Sites: Mayo Clinic, Johns Hopkins, NHS, Cleveland Clinic, NCCIH"
     try:
         from . import browser               # lazy: websockets may not be installed
         if browser.available():

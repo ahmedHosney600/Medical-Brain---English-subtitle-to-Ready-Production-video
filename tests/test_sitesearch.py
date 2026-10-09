@@ -13,6 +13,7 @@ MAYO = "mayo_search_night_leg_cramps.html"
 NHS = "nhs_search_night_leg_cramps.html"
 HOPKINS_XML = "hopkins_health_sitemap_sample.xml"
 CLEVELAND_XML = "cleveland_site_sitemap_sample.xml"
+NCCIH_XML = "nccih_sitemap_sample.xml"
 
 
 def fixture(name):
@@ -167,6 +168,19 @@ class SiteSearchCallsTest(unittest.TestCase):
         self.assertTrue(all("/health/" in u for u in urls))
         self.assertNotIn("https://my.clevelandclinic.org/about", urls)
 
+    def test_fetch_catalog_nccih_through_http(self):
+        with mock.patch("medical_brain.research.sources.http.get",
+                        return_value=fixture(NCCIH_XML)) as http_get:
+            urls = sitesearch._fetch_catalog("nccih.nih.gov")
+        self.assertTrue(urls)
+        self.assertTrue(all(u.startswith("https://www.nccih.nih.gov/health/") for u in urls))
+        self.assertIn("https://www.nccih.nih.gov/health/cupping", urls)
+        self.assertIn("https://www.nccih.nih.gov/health/turmeric", urls)
+        self.assertNotIn("https://www.nccih.nih.gov/about", urls)      # non-health dropped
+        self.assertNotIn("https://www.nccih.nih.gov/grants", urls)
+        self.assertIn("sitemap-0.xml", http_get.call_args[0][0])       # plain HTTP, no Chrome
+        self.assertEqual(sitesearch._catalog_key("www.nccih.nih.gov"), "nccih.nih.gov")
+
 
 class CatalogRankTest(unittest.TestCase):
     def test_catalog_rank_cleveland(self):
@@ -191,6 +205,23 @@ class CatalogRankTest(unittest.TestCase):
         self.assertEqual(results[0]["href"],
                          "https://www.hopkinsmedicine.org/health/conditions-and-diseases/"
                          "heatrelated-illnesses-heat-cramps-heat-exhaustion-heat-stroke")
+
+    def test_catalog_rank_nccih(self):
+        results = sitesearch.catalog_rank(health_urls(NCCIH_XML), "cupping")
+        print("\n--- NCCIH catalog hits for 'cupping' ---")
+        for r in results:
+            print(f"  {r['rank']:>2}. {r['title']}  {r['href']}")
+        self.assertEqual([r["href"] for r in results],
+                         ["https://www.nccih.nih.gov/health/cupping"])
+        self.assertEqual(results[0]["site"], "nccih.nih.gov")
+        self.assertTrue(results[0]["title"])
+
+        self.assertEqual(
+            sitesearch.catalog_rank(health_urls(NCCIH_XML), "black cohosh")[0]["href"],
+            "https://www.nccih.nih.gov/health/black-cohosh")
+        self.assertEqual(
+            sitesearch.catalog_rank(health_urls(NCCIH_XML), "massage therapy")[0]["href"],
+            "https://www.nccih.nih.gov/health/massage-therapy-what-you-need-to-know")
 
     def test_catalog_rank_uses_slug_words_and_prefix(self):
         urls = ["https://my.clevelandclinic.org/health/diseases/14170-leg-cramps",
@@ -282,11 +313,12 @@ class MergedSearchTest(unittest.TestCase):
         http.log.clear()
         self.calls = []
 
-    def _fake(self, *, mayo=None, hopkins=None, nhs=None, cleveland=None, raiser=None):
+    def _fake(self, *, mayo=None, hopkins=None, nhs=None, cleveland=None, nccih=None, raiser=None):
         self.mayo = [dict(r) for r in (mayo or [])]
         self.hopkins = [dict(r) for r in (hopkins or [])]
         self.nhs = [dict(r) for r in (nhs or [])]
         self.cleveland = [dict(r) for r in (cleveland or [])]
+        self.nccih = [dict(r) for r in (nccih or [])]
         calls = self.calls
 
         def mayo_search(query, max_results=8):
@@ -309,6 +341,8 @@ class MergedSearchTest(unittest.TestCase):
                 return [dict(r) for r in self.hopkins]
             if site == "my.clevelandclinic.org":
                 return [dict(r) for r in self.cleveland]
+            if site == "nccih.nih.gov":
+                return [dict(r) for r in self.nccih]
             return []
 
         patchers = [mock.patch("medical_brain.research.sources.sitesearch.mayo_search", mayo_search),
@@ -362,7 +396,32 @@ class MergedSearchTest(unittest.TestCase):
         self.assertEqual(sitesearch._wanted_sites(None), set(sitesearch.SITE_ORDER))
         self.assertEqual(sitesearch._wanted_sites(["clevelandclinic.org"]), {"my.clevelandclinic.org"})
         self.assertEqual(sitesearch._wanted_sites(["https://www.mayoclinic.org/x"]), {"mayoclinic.org"})
+        self.assertEqual(sitesearch._wanted_sites(["nccih.nih.gov"]), {"nccih.nih.gov"})
+        self.assertEqual(sitesearch._wanted_sites(["www.nccih.nih.gov"]), {"nccih.nih.gov"})
         self.assertEqual(sitesearch._wanted_sites(["webmd.com"]), set())
+
+    def test_nccih_is_searched_and_interleaves_last(self):
+        self._fake(
+            mayo=[{"title": "M1", "href": "https://www.mayoclinic.org/a", "site": "mayoclinic.org",
+                   "snippet": "", "rank": 1}],
+            cleveland=[{"title": "C1", "href": "https://my.clevelandclinic.org/health/y",
+                        "site": "my.clevelandclinic.org", "snippet": "", "rank": 1}],
+            nccih=[{"title": "NC1", "href": "https://www.nccih.nih.gov/health/cupping",
+                    "site": "nccih.nih.gov", "snippet": "", "rank": 1}])
+        results = sitesearch.search("cupping")
+        titles = [r["title"] for r in results]
+        self.assertIn("NC1", titles)
+        self.assertLess(titles.index("C1"), titles.index("NC1"))    # NCCIH sits after Cleveland
+        self.assertIn(("catalog", "nccih.nih.gov", "cupping"), self.calls)
+
+    def test_nccih_filter_selects_only_nccih(self):
+        self._fake(nccih=[{"title": "NC1", "href": "https://www.nccih.nih.gov/health/cupping",
+                           "site": "nccih.nih.gov", "snippet": "", "rank": 1}],
+                   mayo=[{"title": "M1", "href": "https://www.mayoclinic.org/a",
+                          "site": "mayoclinic.org", "snippet": "", "rank": 1}])
+        results = sitesearch.search("cupping", sites=["nccih.nih.gov"])
+        self.assertEqual([r["title"] for r in results], ["NC1"])
+        self.assertNotIn("mayo", [c[0] for c in self.calls])
 
 
 @unittest.skipUnless(os.environ.get("RUN_BROWSER_TESTS") == "1",

@@ -34,7 +34,117 @@ def _source_names(state: dict, ids) -> str:
 
 STRENGTH_LABELS = {"proven": "✅ Proven", "probably_helps": "🟢 Probably helps",
                    "weak_or_disputed": "⚠️ Weak / disputed", "no_benefit": "❌ No benefit",
-                   "harmful": "⛔ Harmful"}
+                   "harmful": "⛔ Harmful", "untested": "❔ Untested"}
+
+# Classic-check verdicts, strongest evidence first: any harmful fact dominates.
+CLASSIC_VERDICTS = (("harmful", "Risky / harmful"),
+                    ("proven", "Helps (proven)"),
+                    ("probably_helps", "May help (limited evidence)"),
+                    ("no_benefit", "Doesn't help"),
+                    ("weak_or_disputed", "Unclear / disputed"),
+                    ("untested", "Not studied well"))
+_EVIDENCE_OPTION_VERDICTS = {"Helps (proven)", "May help (limited evidence)"}
+NO_EVIDENCE = "No evidence found in the sources searched"
+SEE_FACTS = "See facts"
+
+
+def _complementary(state: dict) -> dict:
+    comp = state.get("complementary") or {}
+    return comp if isinstance(comp, dict) else {}
+
+
+def _is_complementary_item(state: dict, item: str) -> bool:
+    key = str(item or "").strip().lower()
+    return any(key == str(x).strip().lower() for x in (_complementary(state).get("items") or []))
+
+
+def _classic_item_texts(state: dict) -> list:
+    """The classic-check items in plan order, non-empty and de-duplicated."""
+    out, seen = [], set()
+    for c in (state.get("classic_checks") or []):
+        if not isinstance(c, dict):
+            continue
+        item = str(c.get("item", "")).strip()
+        if item and item.lower() not in seen:
+            seen.add(item.lower())
+            out.append(item)
+    return out
+
+
+MIXED_EVIDENCE = "Mixed evidence (studies disagree)"
+
+
+def classic_check_table(state: dict) -> list:
+    """One row per classic-check item: the strongest verdict from its verified facts.
+
+    Precedence: harmful > (benefit AND no-benefit facts -> "Mixed evidence") > proven >
+    probably_helps > no_benefit > weak_or_disputed > untested; facts that all have n/a ->
+    "See facts"; no facts -> "No evidence found…".
+    Built only from verified facts whose ``check`` names the item."""
+    facts = verified_facts(state)
+    rows = []
+    for item in _classic_item_texts(state):
+        matched = [f for f in facts if str(f.get("check", "") or "").strip().lower() == item.lower()]
+        strengths = {str(f.get("strength", "n/a") or "n/a") for f in matched}
+        verdict = next((label for strength, label in CLASSIC_VERDICTS if strength in strengths), None)
+        # A benefit finding next to a no-benefit finding is a conflict, not a "helps":
+        # say so (and never offer it as an option) instead of picking the hopeful one.
+        if "harmful" not in strengths and "no_benefit" in strengths \
+                and strengths & {"proven", "probably_helps"}:
+            verdict = MIXED_EVIDENCE
+        if verdict is None:
+            verdict = SEE_FACTS if matched else NO_EVIDENCE
+        source_ids = []
+        for f in matched:
+            for i in f.get("source_ids", []):
+                if i not in source_ids:
+                    source_ids.append(i)
+        rows.append({"item": item, "verdict": verdict,
+                     "fact_ids": [f["id"] for f in matched],
+                     "source_ids": source_ids, "sources": _source_names(state, source_ids),
+                     "harmful": "harmful" in strengths,
+                     "complementary": _is_complementary_item(state, item)})
+    return rows
+
+
+def complementary_lists(rows: list) -> tuple:
+    """(evidence-based, popular-but-not-proven) complementary rows, from the table only.
+
+    An option needs a proven / probably-helps verdict and no harmful fact; everything
+    else is listed honestly under "popular but not proven"."""
+    comp = [r for r in rows if r.get("complementary")]
+    evidence = [r for r in comp if r.get("verdict") in _EVIDENCE_OPTION_VERDICTS and not r.get("harmful")]
+    chosen = {r["item"].strip().lower() for r in evidence}
+    return evidence, [r for r in comp if r["item"].strip().lower() not in chosen]
+
+
+def _classic_table_markdown(rows: list) -> list:
+    md = ["## Classic checks — what the evidence says", "",
+          "| Item | Verdict | Facts |", "|---|---|---|"]
+    for r in rows:
+        cell = ", ".join(r["fact_ids"]) if r["fact_ids"] else "—"
+        cites = "".join(f"[{i}]" for i in r["source_ids"])
+        md.append(f"| {r['item'].replace('|', '/')} | {r['verdict']} | {cell}{(' ' + cites) if cites else ''} |")
+    return md + [""]
+
+
+def _complementary_markdown(rows: list) -> list:
+    evidence, popular = complementary_lists(rows)
+    md = ["## Complementary & traditional options", "",
+          "**Evidence-based options** (proven or limited evidence, no safety signal):", ""]
+    if evidence:
+        md += [f"- {r['item']} — {r['verdict']}" + (f" ({r['sources']})" if r["sources"] else "")
+               for r in evidence]
+    else:
+        md.append("- (none has good evidence for this topic yet)")
+    md += ["", "**Popular but not proven** (shown for honesty, never as a recommendation):", ""]
+    if popular:
+        for r in popular:
+            flag = "⛔ " if r["verdict"] == "Risky / harmful" else ""
+            md.append(f"- {flag}{r['item']} — {r['verdict']}")
+    else:
+        md.append("- (none)")
+    return md + [""]
 
 
 _CITE_RUN = re.compile(r"\[S\d+\](?:[ \t]*\[S\d+\])*")
@@ -110,6 +220,15 @@ def render_markdown(state: dict) -> str:
                 for c in classic if isinstance(c, dict) and c.get("item")), ""]
         if special:
             md += ["**Special groups:** " + " · ".join(str(g) for g in special), ""]
+    rows = classic_check_table(state)
+    if rows:
+        md += _classic_table_markdown(rows)
+    comp = _complementary(state)
+    if comp.get("applies"):
+        md += _complementary_markdown(rows)
+    elif "complementary" in state:              # the planner made an explicit decision
+        md += ["Complementary medicine: not applicable" + (f" — {comp['why']}" if comp.get("why") else ""),
+               ""]
     if state.get("summary"):
         md += ["## Overview", "", _link_refs(state["summary"], by_id), ""]
     md += ["## Outline", ""] + [f"{s['id']}. {s['title']}" for s in state.get("outline", [])] + [""]
@@ -236,6 +355,25 @@ def video_source(state: dict) -> str:
         out += [f"ANGLE: {state['angle']}", ""]
     if state.get("summary"):
         out += ["OVERVIEW: " + _link_refs(state["summary"], by_id), ""]
+    rows = classic_check_table(state)
+    if rows:
+        out.append("CLASSIC CHECKS (item → evidence verdict → fact ids):")
+        out += [f"- {r['item']} → {r['verdict']} → {', '.join(r['fact_ids']) or '—'}" for r in rows]
+        out.append("")
+    comp = _complementary(state)
+    if comp.get("applies"):
+        evidence, popular = complementary_lists(rows)
+        out.append("COMPLEMENTARY OPTIONS — evidence-based (safe to present as options):")
+        out += [f"- {r['item']} — {r['verdict']}" for r in evidence] or \
+               ["- (none has good evidence for this topic yet)"]
+        out.append("")
+        out.append("COMPLEMENTARY — popular but NOT proven (never present as an option):")
+        if popular:
+            out += [f"- {'RISKY — ' if r['verdict'] == 'Risky / harmful' else ''}{r['item']} — {r['verdict']}"
+                    for r in popular]
+        else:
+            out.append("- (none)")
+        out.append("")
     for sec in state.get("outline", []):
         sec_facts = [f for f in facts if f["section"] == sec["id"]]
         if not sec_facts:

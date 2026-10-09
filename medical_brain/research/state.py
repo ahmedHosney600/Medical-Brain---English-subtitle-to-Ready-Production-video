@@ -19,6 +19,7 @@ class ResearchState(TypedDict, total=False):
     topic_type: str              # planner's classification ("" on old checkpoints)
     must_cover: list
     classic_checks: list         # [{"item": str, "section": str}]
+    complementary: dict          # {"applies": bool, "why": str, "items": [str]}
     special_groups: list         # [str]
     outline: list
     sources: dict
@@ -75,7 +76,8 @@ DEFAULT_SETTINGS = {
 def new_state(topic: str, audience: str = "", notes: str = "", settings: dict = None) -> ResearchState:
     return ResearchState(
         topic=topic.strip(), audience=audience, user_notes=notes, angle="", topic_type="",
-        must_cover=[], classic_checks=[], special_groups=[], outline=[],
+        must_cover=[], classic_checks=[], complementary={"applies": False, "why": "", "items": []},
+        special_groups=[], outline=[],
         sources={}, facts=[], merged=[], rejected=[], focus=[], work=[], to_extract=[], extractor_notes={},
         need_sources=False, need_fix=False, need_research=False, queries_done=[], next_source=1, next_fact=1,
         screen_round=0, verify_round=0, coverage_round=0, coverage_pass=False, coverage_report="",
