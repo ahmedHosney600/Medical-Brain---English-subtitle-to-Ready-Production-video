@@ -49,9 +49,13 @@ class ResearchState(TypedDict, total=False):
 
 
 DEFAULT_SETTINGS = {
-    "max_screen_rounds": 2,       # extra source searches for gaps
-    "max_verify_rounds": 2,       # extractor ↔ verifier fix rounds
-    "max_coverage_rounds": 2,     # coverage critic → more research
+    "max_screen_rounds": 1,           # extra source searches for gaps
+    "max_verify_rounds": 2,           # extractor ↔ verifier fix rounds
+    "max_coverage_rounds": 2,         # coverage critic → more research
+    "max_coverage_sections": 3,       # sections re-researched per coverage round
+    "max_sources_per_section": 12,    # hard cap on kept sources in a section
+    "max_facts_per_section": 20,      # verified facts a section needs, then stop
+    "coverage_pass_score": 7,         # each coverage score that counts as a pass
     "sources_per_query": 6,
     "sources_per_section": 8,
     "research_years": 10,

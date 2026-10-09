@@ -203,6 +203,215 @@ class QuoteCheckTest(unittest.TestCase):
         self.assertEqual(nodes.quote_problem(fact, state), "")
 
 
+class FakeLlmJson:
+    """Stands in for nodes.call_llm_json: records prompts, returns canned JSON."""
+
+    def __init__(self, reply):
+        self.reply = reply
+        self.prompts = []
+
+    def __call__(self, system, user, temperature=None, max_tokens=None, required=()):
+        self.prompts.append(user)
+        data = self.reply(user, len(self.prompts)) if callable(self.reply) else self.reply
+        return data, json.dumps(data)
+
+
+SOURCE = {"title": "A source", "journal": "Heart Rhythm", "year": 2023, "level": 2,
+          "text": "Pooled sensitivity was 94.2% and specificity 95.3% for detecting atrial fibrillation."}
+
+
+def section(sid="A", **kw):
+    sec = {"id": sid, "title": f"Section {sid}", "questions": ["q?"], "queries": {},
+           "pending": {"literature": [], "public": []}, "candidates": [], "source_ids": [], "extracted": []}
+    sec.update(kw)
+    return sec
+
+
+def state_of(outline, **kw):
+    st = {"topic": "T", "settings": {}, "outline": outline, "facts": [], "sources": {}, "work": []}
+    st.update(kw)
+    return st
+
+
+class CoverageCriticTest(unittest.TestCase):
+    def critic(self, data, **state):
+        fake = FakeLlmJson(data)
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            return nodes.coverage_critic(state_of([section("A")], **state)), fake
+
+    def test_dedupe_and_merge_same_section(self):
+        missing = [
+            {"section_id": "A", "questions": ["Q1"], "literature_queries": ["q1"], "public_queries": ["p1"]},
+            {"section_id": "A", "questions": ["Q1", "Q2"], "literature_queries": ["q2", "q1"], "public_queries": ["p2"]},
+            {"section_id": "A", "questions": ["Q3"], "literature_queries": ["q3"], "public_queries": []},
+        ]
+        out, _ = self.critic({"coverage_score": 5, "accuracy_score": 5, "value_score": 5, "pass": False,
+                              "missing": missing})
+        self.assertTrue(out["need_research"])
+        self.assertEqual(out["focus"], ["A"])                       # once, not three times
+        self.assertEqual(out["work"], ["A"])
+        sec = out["outline"][0]
+        self.assertEqual(sec["pending"]["literature"], ["q1", "q2", "q3"])   # merged, not overwritten
+        self.assertEqual(sec["pending"]["public"], ["p1", "p2"])
+        self.assertEqual(sec["questions"], ["q?", "Q1", "Q2", "Q3"])          # deduped
+
+    def test_caps_sections_per_round(self):
+        outline = [section(s) for s in ("A", "B", "C", "D")]
+        missing = [{"section_id": s, "literature_queries": [f"q{s}"], "questions": []}
+                   for s in ("A", "B", "C", "D")]
+        fake = FakeLlmJson({"coverage_score": 4, "accuracy_score": 4, "value_score": 4, "pass": False,
+                            "missing": missing})
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            out = nodes.coverage_critic(state_of(outline))
+        self.assertEqual(out["focus"], ["A", "B", "C"])             # first ones the critic listed
+
+    def test_separate_new_sections_stay_separate(self):
+        missing = [{"title": "New one", "questions": ["n1"], "public_queries": ["p1"]},
+                   {"title": "New two", "questions": ["n2"], "public_queries": ["p2"]}]
+        fake = FakeLlmJson({"coverage_score": 4, "accuracy_score": 4, "value_score": 4, "pass": False,
+                            "missing": missing})
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            out = nodes.coverage_critic(state_of([section("A")]))
+        self.assertEqual(len(out["outline"]), 3)                    # A + two new, not collapsed
+        self.assertEqual(out["work"], ["B", "C"])
+
+    def test_pass_rule_or_scores(self):
+        one = [{"section_id": "A", "literature_queries": ["q"], "questions": []}]
+        out, _ = self.critic({"coverage_score": 7, "accuracy_score": 7, "value_score": 7, "pass": False,
+                              "missing": one})
+        self.assertTrue(out["coverage_pass"])                       # all >= pass score is enough
+        self.assertFalse(out["need_research"])
+        out, _ = self.critic({"coverage_score": 6, "accuracy_score": 9, "value_score": 9, "pass": False,
+                              "missing": one})
+        self.assertFalse(out["coverage_pass"])
+        self.assertTrue(out["need_research"])
+        out, _ = self.critic({"coverage_score": 1, "accuracy_score": 1, "value_score": 1, "pass": True,
+                              "missing": one})
+        self.assertTrue(out["coverage_pass"])                       # model pass is enough
+
+    def test_plateau_stops_research(self):
+        one = [{"section_id": "A", "literature_queries": ["q"], "questions": []}]
+        prev = {"coverage": 6, "accuracy": 6, "value": 6}
+        fake = FakeLlmJson({"coverage_score": 6, "accuracy_score": 6, "value_score": 6, "pass": False,
+                            "missing": one})
+        with mock.patch.object(nodes, "call_llm_json", fake), mock.patch("builtins.print") as printed:
+            out = nodes.coverage_critic(state_of([section("A")], coverage_round=1, coverage_scores=prev))
+        self.assertFalse(out["need_research"])
+        self.assertIn("scores stopped improving", " ".join(str(c) for c in printed.call_args_list))
+
+    def test_improvement_keeps_researching(self):
+        one = [{"section_id": "A", "literature_queries": ["q"], "questions": []}]
+        out, _ = self.critic({"coverage_score": 7, "accuracy_score": 6, "value_score": 6, "pass": False,
+                              "missing": one}, coverage_round=1,
+                             coverage_scores={"coverage": 6, "accuracy": 6, "value": 6})
+        self.assertTrue(out["need_research"])
+
+
+class SourceScreenerTest(unittest.TestCase):
+    def screen(self, sec, data, **state):
+        fake = FakeLlmJson(data)
+        st = state_of([sec], sources={f"S{i}": dict(SOURCE) for i in range(1, 15)},
+                      focus=["A"], screen_round=0, work=["A"], **state)
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            return nodes.source_screener(st), fake
+
+    def test_source_ids_are_capped(self):
+        sec = section("A", candidates=["S1", "S2", "S3", "S9", "S10"], source_ids=["S9", "S10"])
+        out, _ = self.screen(sec, {"sections": [{"id": "A", "keep": ["S1", "S2", "S3"], "gaps": []}]},
+                             settings={"max_sources_per_section": 4, "sources_per_section": 8})
+        self.assertEqual(out["outline"][0]["source_ids"], ["S1", "S2", "S3", "S9"])
+
+    def test_no_research_when_section_already_stocked(self):
+        sec = section("A", candidates=[f"S{i}" for i in range(1, 9)],
+                      source_ids=[f"S{i}" for i in range(1, 9)])
+        out, _ = self.screen(sec, {"sections": [{"id": "A", "keep": [f"S{i}" for i in range(1, 9)],
+                                                 "gaps": ["unanswered"], "literature_queries": ["q"]}]},
+                             settings={"sources_per_section": 8})
+        self.assertFalse(out["need_sources"])
+
+    def test_research_when_gap_and_thin(self):
+        sec = section("A", candidates=["S1"], source_ids=["S1"])
+        out, _ = self.screen(sec, {"sections": [{"id": "A", "keep": ["S1"], "gaps": ["missing"],
+                                                 "literature_queries": ["q"]}]},
+                             settings={"sources_per_section": 8})
+        self.assertTrue(out["need_sources"])
+        self.assertEqual(out["focus"], ["A"])
+
+
+class ExtractorLoopTest(unittest.TestCase):
+    def run_node(self, state, reply):
+        fake = FakeLlmJson(reply)
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            out = nodes.fact_extractor(state)
+        return out, fake
+
+    def test_second_pass_sends_only_new_sources_then_skips(self):
+        sec = section("A", source_ids=["S1", "S2"], extracted=["S1"])
+        st = state_of([sec], sources={"S1": dict(SOURCE), "S2": dict(SOURCE)},
+                      facts=[], next_fact=1, to_extract=["A"])
+        out, fake = self.run_node(st, {"facts": [{"claim": "New claim", "quote": "Pooled sensitivity was 94.2%",
+                                                  "source_ids": ["S2"]}]})
+        self.assertEqual(len(fake.prompts), 1)
+        self.assertIn("[S2]", fake.prompts[0])
+        self.assertNotIn("[S1]", fake.prompts[0])                   # already extracted
+        self.assertEqual(out["outline"][0]["extracted"], ["S1", "S2"])
+
+        st2 = {**st, **out, "to_extract": ["A"]}
+        second = FakeLlmJson({"facts": []})
+        with mock.patch.object(nodes, "call_llm_json", second), mock.patch("builtins.print") as printed:
+            nodes.fact_extractor(st2)
+        self.assertEqual(second.prompts, [])                        # no new sources → no LLM call
+        self.assertIn("nothing new", " ".join(str(c) for c in printed.call_args_list))
+
+    def test_fix_mode_only_cites_flagged_sources_and_adds_no_extras(self):
+        fix = {"id": "F1", "section": "A", "kind": "fact", "claim": "Old claim", "quote": "bad quote",
+               "source_ids": ["S2"], "level": 2, "status": "fix", "note": "quote not found"}
+        done = {"id": "F0", "section": "A", "kind": "fact", "claim": "Existing claim", "quote": "x",
+                "source_ids": ["S1"], "level": 2, "status": "verified", "note": ""}
+        sec = section("A", source_ids=["S1", "S2"], extracted=["S1", "S2"])
+        st = state_of([sec], sources={"S1": dict(SOURCE), "S2": dict(SOURCE)},
+                      facts=[done, fix], next_fact=2, to_extract=["A"])
+        reply = {"facts": [{"claim": "Corrected claim", "quote": "Pooled sensitivity was 94.2%",
+                            "source_ids": ["S2"]},
+                           {"claim": "Sneaky extra fact", "quote": "Pooled sensitivity was 94.2%",
+                            "source_ids": ["S1"]}]}
+        out, fake = self.run_node(st, reply)
+        prompt = fake.prompts[0]
+        self.assertIn("FIX MODE", prompt)
+        self.assertIn("FIX THESE FACTS", prompt)
+        self.assertIn("[S2]", prompt)
+        self.assertNotIn("[S1]", prompt)                            # only the cited source is sent
+        claims = [f["claim"] for f in out["facts"] if f["section"] == "A"]
+        self.assertIn("Corrected claim", claims)
+        self.assertNotIn("Sneaky extra fact", claims)               # corrections only
+        self.assertNotIn("Old claim", claims)
+        self.assertEqual(out["outline"][0]["extracted"], ["S1", "S2"])
+
+    def test_fact_budget_limits_new_facts(self):
+        done = [{"id": f"F{i}", "section": "A", "kind": "fact", "claim": f"Existing {i}", "quote": "x",
+                 "source_ids": ["S1"], "level": 2, "status": "verified", "note": ""} for i in range(2)]
+        sec = section("A", source_ids=["S1"], extracted=[])
+        st = state_of([sec], sources={"S1": dict(SOURCE)}, facts=done, next_fact=3, to_extract=["A"],
+                      settings={"max_facts_per_section": 3})
+        reply = {"facts": [{"claim": f"Fresh {i}", "quote": "Pooled sensitivity was 94.2%", "source_ids": ["S1"]}
+                           for i in range(3)]}
+        out, fake = self.run_node(st, reply)
+        self.assertIn("EXTRACT AT MOST 1 NEW FACTS", fake.prompts[0])
+        self.assertEqual(len([f for f in out["facts"] if f["section"] == "A"]), 3)   # 2 + 1
+
+    def test_fact_budget_reached_skips_llm(self):
+        done = [{"id": f"F{i}", "section": "A", "kind": "fact", "claim": f"Existing {i}", "quote": "x",
+                 "source_ids": ["S1"], "level": 2, "status": "verified", "note": ""} for i in range(3)]
+        sec = section("A", source_ids=["S1"], extracted=[])
+        st = state_of([sec], sources={"S1": dict(SOURCE)}, facts=done, next_fact=4, to_extract=["A"],
+                      settings={"max_facts_per_section": 3})
+        fake = FakeLlmJson({"facts": []})
+        with mock.patch.object(nodes, "call_llm_json", fake), mock.patch("builtins.print") as printed:
+            nodes.fact_extractor(st)
+        self.assertEqual(fake.prompts, [])
+        self.assertIn("fact budget reached", " ".join(str(c) for c in printed.call_args_list))
+
+
 class CliTest(unittest.TestCase):
     def test_find_latest_session_and_continue_without_requests(self):
         from medical_brain import cli

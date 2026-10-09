@@ -198,10 +198,19 @@ Output ONLY the JSON object."""
         keep = [i for i in (pick(v, "keep", default=[]) or []) if i in sec["candidates"]]
         if not keep:                       # no verdict: keep the best-ranked sources
             keep = sec["candidates"][:settings.get("sources_per_section", 8)]
-        sec["source_ids"] = list(dict.fromkeys(sec.get("source_ids", []) + keep))
+        # The model's pick first, then earlier keeps; capped so the section's source
+        # list cannot grow without bound each screening round.
+        sec["source_ids"] = list(dict.fromkeys(keep + sec.get("source_ids", [])))[
+            :settings.get("max_sources_per_section", 12)]
         lit = [q for q in (pick(v, "literature_queries", default=[]) or []) if q]
         pub = [q for q in (pick(v, "public_queries", default=[]) or []) if q]
-        if (pick(v, "gaps", default=[]) or len(sec["source_ids"]) < 2) and (lit or pub):
+        has_queries = bool(lit or pub)
+        # Only search again for a section with a real, unfilled gap (or almost no
+        # sources at all): a reported gap when the section is already stocked is not
+        # worth a full extra search round.
+        need_more = (bool(pick(v, "gaps", default=[]) or [])
+                     and len(sec["source_ids"]) < settings.get("sources_per_section", 8))
+        if has_queries and (need_more or len(sec["source_ids"]) < 2):
             sec["pending"] = {"literature": lit, "public": pub}
             gaps.append(sec["id"])
     rounds = state.get("screen_round", 0)
@@ -213,7 +222,13 @@ Output ONLY the JSON object."""
             "to_extract": state.get("work", []), "screen_notes": str(pick(data, "notes", default=""))}
 
 
+FIX_MODE = ("FIX MODE: return ONLY corrected versions of the facts listed under FIX THESE FACTS "
+            "(same meaning, corrected claim and/or exact quote). Do not add any other facts. "
+            "Drop a fact if the sources do not support it.")
+
+
 def fact_extractor(state: dict) -> dict:
+    settings = state.get("settings", {})
     system_prompt = load_prompt("research/fact_extractor")
     facts = [f for f in state.get("facts", []) if f.get("status") != "fix"]
     # Facts sent back for fixing are replaced by this extraction; if they don't come
@@ -221,21 +236,39 @@ def fact_extractor(state: dict) -> dict:
     rejected = list(state.get("rejected", [])) + [
         dict(f, status="rejected", note=f"{f.get('note', '')} (sent back for correction)")
         for f in state.get("facts", []) if f.get("status") == "fix"]
-    redo = {f["section"]: [] for f in state.get("facts", []) if f.get("status") == "fix"}
+    redo = {}
     for f in state.get("facts", []):
         if f.get("status") == "fix":
-            redo[f["section"]].append(f)
+            redo.setdefault(f["section"], []).append(f)
     next_fact = state.get("next_fact", 1)
     notes = state.get("verify_notes", {}) or {}
     user_notes = state.get("extractor_notes", {}) or {}
-    for sec in _sections(state, state.get("to_extract")):
-        if not sec.get("source_ids"):
+    budget = settings.get("max_facts_per_section", 20)
+    outline = [dict(s) for s in state.get("outline", [])]
+    for sec in _sections({"outline": outline}, state.get("to_extract")):
+        fixing = redo.get(sec["id"]) or []
+        extracted = list(sec.get("extracted", []))
+        if fixing:
+            # FIX MODE: only the flagged facts and the sources they cite. A normal
+            # new-source pass here is what inflated the facts on every fix round.
+            send_ids = list(dict.fromkeys(i for f in fixing for i in f.get("source_ids", [])
+                                          if i in state.get("sources", {})))
+        else:
+            send_ids = [i for i in sec.get("source_ids", []) if i not in extracted]
+        if not send_ids:
+            _log(f"{sec['id']} {sec['title'][:50]}: nothing new")
             continue
         have = [f for f in facts if f["section"] == sec["id"] and f["status"] == "verified"]
-        fix_part = ""
-        if redo.get(sec["id"]):
-            fix_part = "\n\nFIX THESE FACTS (re-extract them correctly, or drop them if the sources don't support them):\n" + \
-                "\n".join(f"- {f['claim']} — problem: {f.get('note', '')}" for f in redo[sec["id"]])
+        room = budget - len(have)
+        if not fixing:
+            if room <= 0:
+                _log(f"{sec['id']} {sec['title'][:50]}: fact budget reached")
+                continue
+            fix_part = f"\n\nEXTRACT AT MOST {room} NEW FACTS — the most valuable ones."
+        else:
+            fix_part = ("\n\n" + FIX_MODE + "\nFIX THESE FACTS:\n" + "\n".join(
+                f"- {f['claim']}\n  problem: {f.get('note', '')}\n  quote: \"{f.get('quote', '')}\""
+                for f in fixing))
         user_prompt = f"""TOPIC: {state.get("topic", "")}
 SECTION {sec['id']}: {sec['title']}
 QUESTIONS TO ANSWER: {" | ".join(sec["questions"])}
@@ -244,7 +277,7 @@ QUESTIONS TO ANSWER: {" | ".join(sec["questions"])}
 ALREADY VERIFIED (don't repeat): {" | ".join(f["claim"] for f in have) or "(none)"}{fix_part}
 
 SOURCES (quote ONLY from these texts):
-{chr(10).join(_source_block(state, sid) for sid in sec["source_ids"])}
+{chr(10).join(_source_block(state, sid) for sid in send_ids)}
 
 Output ONLY the JSON object."""
         try:
@@ -252,8 +285,13 @@ Output ONLY the JSON object."""
                                     required=["facts"])
         except UnreadableAnswer:
             data = {}
+        if not fixing and data:
+            # These sources are done; a later pass must not send them again (an
+            # unreadable answer leaves them for the next pass).
+            sec["extracted"] = list(dict.fromkeys(extracted + send_ids))
         added = 0
         seen = {_norm(f["claim"]) for f in facts}
+        limit = len(fixing) if fixing else room          # fix mode: corrections only
         for raw in pick(data, "facts", default=[]) or []:
             if not isinstance(raw, dict) or not str(pick(raw, "claim", default="")).strip():
                 continue
@@ -270,12 +308,14 @@ Output ONLY the JSON object."""
                 "question": str(pick(raw, "question", default="")), "status": "new", "note": ""})
             next_fact += 1
             added += 1
+            if added >= limit:
+                break
         _log(f"{sec['id']} {sec['title'][:50]}: {added} facts extracted")
     # A corrected fact that made it back is no longer "not included".
     kept = {_norm(f["claim"]) for f in facts}
     rejected = [r for r in rejected if not (r.get("note", "").endswith("(sent back for correction)")
                                             and _norm(r["claim"]) in kept)]
-    return {"facts": facts, "next_fact": next_fact, "rejected": rejected}
+    return {"facts": facts, "next_fact": next_fact, "rejected": rejected, "outline": outline}
 
 
 def fact_verifier(state: dict) -> dict:
@@ -390,28 +430,64 @@ Output ONLY the JSON object."""
     except UnreadableAnswer as e:
         data, raw = {}, e.raw
     scores = {k: pick(data, k + "_score", kind=int) for k in ("coverage", "accuracy", "value")}
-    passed = bool(pick(data, "pass", default=False, kind=bool)) and all((v or 0) >= 8 for v in scores.values())
+    pass_score = settings.get("coverage_pass_score", 7)
+    passed = bool(pick(data, "pass", default=False, kind=bool)) or all((v or 0) >= pass_score
+                                                                        for v in scores.values())
     rounds = state.get("coverage_round", 0)
     outline = [dict(s) for s in state.get("outline", [])]
+    # Plateau: once scores have stopped moving, more searching is wasted work.
+    prev = state.get("coverage_scores") or {}
+    improved = any((scores.get(k) or 0) - (prev.get(k) or 0) >= 1 for k in scores)
+    plateau = rounds > 0 and bool(prev) and not improved
     new_work = []
-    if not passed and rounds < settings.get("max_coverage_rounds", 2):
+    if not passed and rounds < settings.get("max_coverage_rounds", 2) and not plateau:
+        # Merge everything a section is missing into ONE work item: the critic may list
+        # a section more than once and a later item used to wipe the earlier queries.
+        merged, order = {}, []
         for m in pick(data, "missing", default=[]) or []:
             if not isinstance(m, dict):
                 continue
-            target = next((s for s in outline if s["id"] == str(pick(m, "section_id", default=""))), None)
             lit = [q for q in (pick(m, "literature_queries", default=[]) or []) if q]
             pub = [q for q in (pick(m, "public_queries", default=[]) or []) if q]
             if not (lit or pub):
                 continue
+            sid = str(pick(m, "section_id", default="")).strip()
+            if not sid:
+                # A brand-new section has no id yet: key it by title (or a unique
+                # placeholder) so separate new sections don't merge into one.
+                title = str(pick(m, "title", default="")).strip().lower()
+                sid = "__new:" + (title or str(len(order)))
+            if sid not in merged:
+                merged[sid] = {"literature": [], "public": [], "questions": [], "raw": m}
+                order.append(sid)
+            e = merged[sid]
+            e["literature"] = list(dict.fromkeys(e["literature"] + lit))
+            e["public"] = list(dict.fromkeys(e["public"] + pub))
+            e["questions"] = list(dict.fromkeys(
+                e["questions"] + [str(q) for q in (pick(m, "questions", default=[]) or [])]))
+        cap = settings.get("max_coverage_sections", 3)
+        for sid in order[:cap]:
+            e = merged[sid]
+            target = next((s for s in outline if s["id"] == sid), None)
             if target is None:
-                target = _new_section(state, len(outline), m)
+                target = _new_section(state, len(outline), e["raw"])
+                target["questions"] = list(e["questions"])
+                target["pending"] = {"literature": list(e["literature"]), "public": list(e["public"])}
                 outline.append(target)
             else:
-                target["questions"] = target["questions"] + [str(q) for q in (pick(m, "questions", default=[]) or [])]
-                target["pending"] = {"literature": lit, "public": pub}
+                pending = target.setdefault("pending", {"literature": [], "public": []})
+                pending["literature"] = list(dict.fromkeys(list(pending.get("literature", [])) + e["literature"]))
+                pending["public"] = list(dict.fromkeys(list(pending.get("public", [])) + e["public"]))
+                target["questions"] = list(dict.fromkeys(target.get("questions", []) + e["questions"]))
             new_work.append(target["id"])
     more = bool(new_work)
-    _log(f"coverage round {rounds + 1}: scores {scores}" + (f"; researching more for {', '.join(new_work)}" if more else ""))
+    if more:
+        why = f"; researching more for {', '.join(new_work)}"
+    elif not passed and plateau:
+        why = "; scores stopped improving"
+    else:
+        why = ""
+    _log(f"coverage round {rounds + 1}: scores {scores}" + why)
     out = {"coverage_round": rounds + 1, "coverage_pass": passed, "coverage_scores": scores,
            "coverage_report": str(pick(data, "report", default="") or raw or ""), "need_research": more,
            "outline": outline}
