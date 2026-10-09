@@ -310,7 +310,7 @@ def fact_extractor(state: dict) -> dict:
             fix_part = f"\n\nEXTRACT AT MOST {room} NEW FACTS — the most valuable ones."
         else:
             fix_part = ("\n\n" + FIX_MODE + "\nFIX THESE FACTS:\n" + "\n".join(
-                f"- {f['claim']}\n  problem: {f.get('note', '')}\n  quote: \"{f.get('quote', '')}\""
+                f"- {f['id']}: {f['claim']}\n  problem: {f.get('note', '')}\n  quote: \"{f.get('quote', '')}\""
                 for f in fixing))
         user_prompt = f"""TOPIC: {state.get("topic", "")}
 SECTION {sec['id']}: {sec['title']}
@@ -344,29 +344,43 @@ Output ONLY the JSON object."""
             sec["extracted"] = list(dict.fromkeys(extracted + send_ids))
         added = 0
         limit = len(fixing) if fixing else room          # fix mode: corrections only
+        fixing_ids = {f["id"] for f in fixing}
+        linked = set()                                   # originals corrected in this section
         for raw in pick(data, "facts", default=[]) or []:
             if not isinstance(raw, dict) or not str(pick(raw, "claim", default="")).strip():
                 continue
-            if _norm(str(pick(raw, "claim"))) in seen:
+            claim = str(pick(raw, "claim")).strip()
+            if _norm(claim) in seen:
                 continue                       # already have it
-            seen.add(_norm(str(pick(raw, "claim"))))
+            # Each correction names its original; link at most one correction to each.
+            link = str(pick(raw, "fixes", default="") or "").strip()
+            link = link if fixing and link in fixing_ids else ""
+            if link and link in linked:
+                continue
+            seen.add(_norm(claim))
             ids = [str(i).strip("[] ") for i in (pick(raw, "source_ids", default=[]) or [])]
             kind = str(pick(raw, "kind", default="fact")).lower().replace(" ", "_")
             levels = [state["sources"][i].get("level", 6) for i in ids if i in state["sources"]]
-            facts.append({
+            new = {
                 "id": f"F{next_fact}", "section": sec["id"], "kind": kind if kind in KINDS else "fact",
-                "claim": str(pick(raw, "claim")).strip(), "quote": str(pick(raw, "quote", default="")).strip(),
+                "claim": claim, "quote": str(pick(raw, "quote", default="")).strip(),
                 "source_ids": ids, "level": min(levels) if levels else 6,
-                "question": str(pick(raw, "question", default="")), "status": "new", "note": ""})
+                "question": str(pick(raw, "question", default="")), "status": "new", "note": ""}
+            if link:
+                new["fixes"] = link
+                linked.add(link)
+            facts.append(new)
             next_fact += 1
             added += 1
             if added >= limit:
                 break
         _log(f"{sec['id']} {sec['title'][:50]}: {added} facts extracted")
-    # A corrected fact that made it back is no longer "not included".
+    # A corrected fact that made it back (by id link or same wording) is no longer
+    # "not included"; the rest stay in rejected with their note.
+    fixed_ids = {f["fixes"] for f in facts if f.get("fixes")}
     kept = {_norm(f["claim"]) for f in facts}
     rejected = [r for r in rejected if not (r.get("note", "").endswith("(sent back for correction)")
-                                            and _norm(r["claim"]) in kept)]
+                                            and (r.get("id") in fixed_ids or _norm(r["claim"]) in kept))]
     return {"facts": facts, "next_fact": next_fact, "rejected": rejected, "outline": outline}
 
 

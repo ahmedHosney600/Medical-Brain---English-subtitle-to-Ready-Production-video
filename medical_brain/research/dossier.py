@@ -18,9 +18,26 @@ def _cites(f: dict) -> str:
     return "".join(f"[{i}]" for i in f.get("source_ids", []))
 
 
+_CITE_RUN = re.compile(r"\[S\d+\](?:[ \t]*\[S\d+\])*")
+
+
+def _collapse_cites(text: str) -> str:
+    """One source once per adjacent citation run: [S2][S2][S2] → [S2]. Only runs of
+    citations are touched, so text elsewhere (and distinct runs) is unchanged."""
+    def dedupe(run):
+        seen, out = set(), []
+        for ws, cite in re.findall(r"([ \t]*)(\[S\d+\])", run.group(0)):
+            if cite not in seen:               # keep its first place, drop repeats
+                seen.add(cite)
+                out.append(ws + cite)
+        return "".join(out)
+    return _CITE_RUN.sub(dedupe, text)
+
+
 def _link_refs(text: str, facts: dict) -> str:
-    """[F12] in an editor's overview → that fact's source citations."""
-    return re.sub(r"\[?(F\d+)\]?", lambda m: _cites(facts[m.group(1)]) if m.group(1) in facts else "", text or "")
+    """[F12] in an editor's overview → that fact's source citations (no repeats)."""
+    linked = re.sub(r"\[?(F\d+)\]?", lambda m: _cites(facts[m.group(1)]) if m.group(1) in facts else "", text or "")
+    return _collapse_cites(linked)
 
 
 def verified_facts(state: dict) -> list:

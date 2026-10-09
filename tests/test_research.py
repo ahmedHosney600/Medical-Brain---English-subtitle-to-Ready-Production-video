@@ -390,6 +390,36 @@ class ExtractorLoopTest(unittest.TestCase):
         self.assertNotIn("Old claim", claims)
         self.assertEqual(out["outline"][0]["extracted"], ["S1", "S2"])
 
+    def test_fix_mode_links_correction_by_id_and_clears_rejected(self):
+        fix = {"id": "F1", "section": "A", "kind": "fact", "claim": "Old claim", "quote": "bad quote",
+               "source_ids": ["S2"], "level": 2, "status": "fix", "note": "quote not found"}
+        unfixed = {"id": "F2", "section": "A", "kind": "fact", "claim": "Other bad claim", "quote": "bad",
+                   "source_ids": ["S2"], "level": 2, "status": "fix", "note": "quote not found"}
+        sec = section("A", source_ids=["S2"], extracted=["S2"])
+        st = state_of([sec], sources={"S2": dict(SOURCE)}, facts=[fix, unfixed], next_fact=3, to_extract=["A"])
+        reply = {"facts": [{"claim": "Reworded corrected claim", "quote": "Pooled sensitivity was 94.2%",
+                            "source_ids": ["S2"], "fixes": "F1"},
+                           {"claim": "A later repeat for F1", "quote": "Pooled sensitivity was 94.2%",
+                            "source_ids": ["S2"], "fixes": "F1"}]}
+        out, _ = self.run_node(st, reply)
+        new = [f for f in out["facts"] if f.get("fixes") == "F1"]
+        self.assertEqual(len(new), 1)                       # at most one correction per original
+        self.assertEqual(new[0]["claim"], "Reworded corrected claim")
+        self.assertEqual([f["id"] for f in out["facts"]], ["F3"])   # F1/F2 removed, link recorded
+        rejected_ids = {r["id"] for r in out["rejected"]}
+        self.assertNotIn("F1", rejected_ids)                # corrected → no longer "left out"
+        self.assertIn("F2", rejected_ids)                   # no correction → still left out
+        self.assertTrue(any(r["id"] == "F2" and "sent back for correction" in r["note"]
+                            for r in out["rejected"]))
+
+    def test_fix_mode_prompt_lists_original_ids(self):
+        fix = {"id": "F7", "section": "A", "kind": "fact", "claim": "Old claim", "quote": "bad",
+               "source_ids": ["S2"], "level": 2, "status": "fix", "note": "quote not found"}
+        sec = section("A", source_ids=["S2"], extracted=["S2"])
+        st = state_of([sec], sources={"S2": dict(SOURCE)}, facts=[fix], next_fact=8, to_extract=["A"])
+        _, fake = self.run_node(st, {"facts": []})
+        self.assertIn("- F7: Old claim", fake.prompts[0])   # the id travels with the fact
+
     def test_fact_budget_limits_new_facts(self):
         done = [{"id": f"F{i}", "section": "A", "kind": "fact", "claim": f"Existing {i}", "quote": "x",
                  "source_ids": ["S1"], "level": 2, "status": "verified", "note": ""} for i in range(2)]
@@ -413,6 +443,23 @@ class ExtractorLoopTest(unittest.TestCase):
             nodes.fact_extractor(st)
         self.assertEqual(fake.prompts, [])
         self.assertIn("fact budget reached", " ".join(str(c) for c in printed.call_args_list))
+
+
+class DossierCiteTest(unittest.TestCase):
+    def link(self, text, source_ids):
+        facts = {f"F{i}": {"source_ids": ids} for i, ids in enumerate(source_ids, 1)}
+        return rd._link_refs(text, facts)
+
+    def test_collapses_repeated_citations_in_one_run(self):
+        self.assertEqual(self.link("[F1]", [["S2", "S2", "S2"]]), "[S2]")
+        self.assertEqual(self.link("[F1] [F2]", [["S2"], ["S2"]]), "[S2]")
+        self.assertEqual(self.link("[F1]", [["S2", "S7", "S2"]]), "[S2][S7]")
+
+    def test_leaves_text_without_duplicates_unchanged(self):
+        self.assertEqual(self.link("[F1]", [["S2", "S7"]]), "[S2][S7]")
+        self.assertEqual(self.link("[F1] [F2]", [["S2"], ["S7"]]), "[S2] [S7]")
+        self.assertEqual(self.link("See [F1] and later [F2].", [["S2"], ["S7"]]),
+                         "See [S2] and later [S7].")
 
 
 class ParallelCallsTest(unittest.TestCase):

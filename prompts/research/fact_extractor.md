@@ -11,13 +11,15 @@ Coverage rules:
 - Answer every question you can from the sources; prioritise the strongest evidence (guidelines, meta-analyses).
 - Include the practical takeaways and the red flags — they are what viewers value most.
 - Prefer 8–20 high-value facts per section over many trivial ones. No duplicates.
-- If FIX THESE FACTS is given, re-extract those facts correctly (fix the claim or the quote) or leave them out if the sources do not support them.
+- The audience is the general public. Skip single case reports, tiny case series and rare syndromes unless the section asks about them or they are a red flag viewers must know; one sentence from a guideline or review beats five details from a rare-disease paper.
+- Don't split one finding into several near-identical facts (e.g. a definition and its restatement).
+- If FIX THESE FACTS is given, re-extract those facts correctly (fix the claim or the quote) or leave them out if the sources do not support them. Each corrected fact must carry "fixes": the id of the fact it replaces (e.g. "F36").
 
 OUTPUT — ONLY valid JSON:
 ```json
 {
   "facts": [
-    {"kind": "fact", "claim": "…", "quote": "…", "source_ids": ["S3"], "question": "…"}
+    {"kind": "fact", "claim": "…", "quote": "…", "source_ids": ["S3"], "question": "…", "fixes": "(only in fix mode: the F id this replaces)"}
   ]
 }
 ```
