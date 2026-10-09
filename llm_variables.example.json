@@ -17,7 +17,8 @@
             "timeout_retries": 5,
             "retry_wait_seconds": 20,
             "min_max_tokens": 16000,
-            "json_mode": true
+            "json_mode": true,
+            "max_concurrency": 1
         },
         "claude": {
             "transport": "claude_code",

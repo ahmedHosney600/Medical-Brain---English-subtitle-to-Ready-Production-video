@@ -29,6 +29,7 @@ class LLMRouter:
         self.calls = {}
         self.node_models = {}
         self._backends = {}
+        self._semaphores = {}           # provider -> BoundedSemaphore (lazy, only if max_concurrency set)
         self._lock = threading.Lock()   # guards the book-keeping dicts and lazy backends
 
     def model_for(self, node: Optional[str]) -> str:
@@ -60,10 +61,35 @@ class LLMRouter:
             return spec in self.down_specs or parse_spec(spec)[0] in self.down
 
     def _ask(self, spec: str, system_prompt, user_prompt, temperature, max_tokens) -> str:
-        result = self._backend(spec).call(system_prompt, user_prompt, temperature, max_tokens)
+        backend = self._backend(spec)
+        # Cap how many calls to one provider run at once (0/absent = unlimited). The
+        # wait happens before backend.call(), so a queued call's step time-out only
+        # starts once it actually runs. Nothing is printed per call, even when waiting.
+        sem = self._semaphore(parse_spec(spec)[0])
+        if sem is None:
+            result = backend.call(system_prompt, user_prompt, temperature, max_tokens)
+        else:
+            with sem:
+                result = backend.call(system_prompt, user_prompt, temperature, max_tokens)
         if not (result or "").strip():
             raise StepFailed(f"{spec} returned an empty answer")
         return result
+
+    def _semaphore(self, provider: str):
+        """The provider's concurrency semaphore, or None when it is unlimited.
+        Created lazily under the lock so parallel first-calls share one."""
+        cfg = (self.config.get("providers") or {}).get(provider) or {}
+        try:
+            limit = int(cfg.get("max_concurrency") or 0)
+        except (TypeError, ValueError):
+            limit = 0
+        if limit < 1:
+            return None
+        with self._lock:
+            sem = self._semaphores.get(provider)
+            if sem is None:
+                sem = self._semaphores[provider] = threading.BoundedSemaphore(limit)
+            return sem
 
     def _backend(self, spec: str):
         with self._lock:               # two steps may need the same backend at once
