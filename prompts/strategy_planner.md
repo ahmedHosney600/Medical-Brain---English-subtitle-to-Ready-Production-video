@@ -131,6 +131,28 @@ CHAPTER NAME RULES (these become the YouTube chapters viewers click on): viewer-
 | Element | Position | Reason |
 |---|---|---|
 
+### Script Blueprint (machine-readable — REQUIRED, always the LAST block of your output)
+The script is written chapter by chapter from this blueprint, so long videos never need one giant answer. It is also what keeps the chapters ONE story: every chapter writer receives it.
+- If the input gives TARGET MINUTES, use exactly that duration; otherwise use the duration you chose above.
+- Hook and CTA/outro are written separately — the chapters cover the body only. Chapter words must add up to the body budget (target words minus hook and CTA).
+- Videos up to ~10 minutes: ONE chapter (the whole body). Longer videos: chapters of about 3–5 minutes (≈400–700 words each), each with one clear job in the story.
+- "promise": what the viewer will be able to do or understand by the end — the hook makes it, the last chapter and CTA pay it off.
+- "through_lines": what runs through the whole video so it feels like one story: a recurring example or patient scenario (built from the source, never invented medical facts), the key terms and how they are first said, and the one thing to remember.
+- Per chapter: "covers" names the parts of the source/patient guide it uses (section titles or fact ids), so no two chapters repeat the same facts unless one is a deliberate callback; "opens_loops"/"closes_loops" are the questions a chapter raises and the ones it answers (every opened loop must be closed by a later chapter); "depends_on_previous" is false only when the chapter can be written without reading the one before it (e.g. a myths list).
+
+```json
+{
+  "target_minutes": 0,
+  "words_per_minute": 135,
+  "promise": "…",
+  "arc": "hook → stakes → understanding → action → reassurance → call to action (adapt to the topic)",
+  "through_lines": {"recurring_example": "…", "key_terms": [{"term": "…", "first_mention": "…"}], "remember": "…"},
+  "chapters": [
+    {"id": "C1", "title": "Arabic viewer-facing chapter title", "job": "…", "words": 0, "covers": ["…"], "opens_loops": ["…"], "closes_loops": [], "depends_on_previous": true}
+  ]
+}
+```
+
 VIDEO ANALYSIS INTEGRATION (when provided):
 - The Editorial Intelligence Brief in the source analysis (extracted from the Video Analysis) is your PRIMARY creative direction. It contains Egyptian cultural context, emphasis reweighting directives, approved analogies, and risk guardrails that the source script does NOT have.
 - The Egyptian angle from the Video Analysis is your PRIMARY hook angle and framing direction — build your hook angle, analogy bank, and cultural sensitivity notes around it.

@@ -29,6 +29,15 @@ class PipelineState(TypedDict):
     max_translation_revision_count: int
     max_quality_revision_count: int
 
+    # Long-form / chapter mode
+    target_minutes: int                # optional input; 0 = let the planner choose
+    blueprint: dict                    # machine-readable chapter plan from strategy_planner
+    script_memory: dict                # merged memory after the written chapters
+    chapter_memory: dict               # per-chapter memory (keyed by chapter id)
+    chapter_drafts: dict               # chapter texts already written (checkpoint)
+    dialect_script: str                # dialect output segments joined, without its notes
+    integrity_report: dict             # the whole-script integrity pass result
+
     # Upstream node outputs
     source_analysis: str
     strategy_plan: str
@@ -138,10 +147,19 @@ def apply_defaults(state: dict) -> dict:
         "max_shorts_revision_count": 2,
         "packaging_revision_count": 0,
         "max_packaging_revision_count": 2,
+        "target_minutes": 0,
+        "chapter_drafts_round": -1,
     }
     for field, default in default_int_fields.items():
         if field not in state:
             state[field] = default
+
+    # Dict-valued fields a step may read before it is written.
+    for field in ("blueprint", "script_memory", "chapter_memory", "chapter_drafts"):
+        if not isinstance(state.get(field), dict):
+            state[field] = {}
+    if "chapter_drafts_key" not in state:
+        state["chapter_drafts_key"] = ""
 
     default_bool_fields = {"medical_accuracy_pass": False}
     for field, default in default_bool_fields.items():

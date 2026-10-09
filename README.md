@@ -23,6 +23,8 @@ Run `python3 main.py` with no arguments to get a menu. Or start one directly:
 
 In `--workflow research-video`, approval starts the video workflow with the dossier as its source. Its fact-checkers then reject any claim that isn't in the dossier, and the verified sources are added to the final document and to the YouTube description (المصادر). Research limits (rounds, sources per section, years) are in `input_fields.json`.
 
+**Long videos (15–30 min).** Add `"target_minutes": 20` (any number; the default `0` lets the planner choose) to `input_fields.json`. The strategy planner then fixes the Arabic word budget, and the body, dialect/warmth and refinement steps write the script **chapter by chapter** from the planner's script blueprint, sharing a running script memory (terms defined, facts used, open loops, earlier summaries, the previous chapter's last lines). A final integrity pass reads the chapters together and applies targeted edits, so the result still reads as one coherent talk. With a short video (a one-chapter blueprint, ≤ ~10 min) the pipeline behaves exactly as before: one call per step.
+
 ## Titles and thumbnails
 
 The packaging steps produce, per video:

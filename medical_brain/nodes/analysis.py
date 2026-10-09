@@ -9,6 +9,7 @@ from ..prompts import load_prompt
 from ..state import PipelineState
 from ..utils.llm_json import UnreadableAnswer, strip_json_fence
 from ..utils.seo import fetch_autocomplete_grounding
+from . import chapters
 
 
 def source_script_analyzer(state: PipelineState) -> dict:
@@ -158,5 +159,21 @@ AVOID LIST:
 
 Produce the full Restructure Strategy Plan. Do not write any script content."""
 
-    response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=5000)
-    return {"strategy_plan": response}
+    # Long-form runs may pin the duration: one "TARGET MINUTES" line drives the
+    # planner's word budget, chapter split and the machine-readable blueprint.
+    try:
+        target_minutes = int(float(state.get("target_minutes", 0) or 0))
+    except (TypeError, ValueError):
+        target_minutes = 0
+    if target_minutes > 0:
+        user_prompt = f"TARGET MINUTES: {target_minutes}\n\n{user_prompt}"
+
+    response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=9000)
+
+    # The plan ends with the chapter blueprint; parse it now so the writers know
+    # whether to work chapter by chapter. Invalid/absent ⇒ no chapter mode.
+    blueprint = chapters.parse_blueprint(response)
+    if not chapters.valid_blueprint(blueprint):
+        print("  🧭 strategy_planner: no valid script blueprint; script stays single-call")
+        blueprint = {}
+    return {"strategy_plan": response, "blueprint": blueprint}

@@ -1,0 +1,369 @@
+"""Chapter-mode helpers: the script blueprint, the shared script memory, and the
+small text utilities that let the writers work chapter by chapter.
+
+Everything here is pure (no model calls, no state mutation) so it can be tested on
+its own; the nodes in script_writing.py/analysis.py call into it.
+"""
+import contextvars
+import json
+import re
+from concurrent.futures import ThreadPoolExecutor
+
+from ..llm.progress import quiet
+from ..utils.llm_json import parse_llm_json
+
+# A chapter header line: "=== <title> ===" (the writer's chapter format).
+_HEADER_RE = re.compile(r"^\s*===\s*(.*?)\s*===\s*$")
+_MEMORY_RE = re.compile(r"```memory\s*\n?(.*?)```", re.DOTALL | re.IGNORECASE)
+_NOTES_RE = re.compile(r"^\s*={0,3}\s*SEGMENT NOTES\s*={0,3}\s*:?\s*$", re.IGNORECASE | re.MULTILINE)
+_SEGMENT_NOTES_HEADING_RE = re.compile(r"^\s*#{1,6}\s*SEGMENT NOTES\b", re.IGNORECASE | re.MULTILINE)
+
+
+# --------------------------------------------------------------------------
+# token budget
+# --------------------------------------------------------------------------
+def budget_for_words(words) -> int:
+    """max_tokens for a call that must produce `words` Arabic words: Arabic tokenises
+    heavily, and the answer also carries headers, cues and the memory block."""
+    try:
+        words = int(float(words or 0))
+    except (TypeError, ValueError):
+        words = 0
+    return max(3000, int(words * 3.2) + 2500)
+
+
+# --------------------------------------------------------------------------
+# script blueprint
+# --------------------------------------------------------------------------
+def parse_blueprint(text: str) -> dict:
+    """The blueprint JSON from a strategy plan: the last ```json block under
+    "Script Blueprint" (or, failing that, the last fenced block). {} when unreadable."""
+    raw = text or ""
+    marker = raw.find("Script Blueprint")
+    scope = raw[marker:] if marker >= 0 else raw
+
+    # Prefer the last fenced json block in scope.
+    blocks = re.findall(r"```(?:json|JSON)?\s*\n?(.*?)```", scope, re.DOTALL)
+    candidates = [b for b in blocks if "{" in b]
+    if candidates:
+        try:
+            data = parse_llm_json(candidates[-1])
+            if isinstance(data, dict):
+                return data
+        except ValueError:
+            pass
+
+    # An unclosed fence (a cut-off answer still starts with ```json): take from the
+    # last opening fence to the end and let the tolerant parser repair it.
+    idx = scope.rfind("```")
+    if idx >= 0:
+        tail = re.sub(r"^```(?:json|JSON)?\s*", "", scope[idx:])
+        tail = re.sub(r"\s*```.*$", "", tail, flags=re.DOTALL)
+        try:
+            data = parse_llm_json(tail)
+            if isinstance(data, dict):
+                return data
+        except ValueError:
+            pass
+    return {}
+
+
+def valid_blueprint(blueprint) -> bool:
+    """A usable blueprint: a non-empty chapters list, each with an id, a title and
+    words > 0."""
+    if not isinstance(blueprint, dict):
+        return False
+    chapters = blueprint.get("chapters")
+    if not isinstance(chapters, list) or not chapters:
+        return False
+    seen = set()
+    for ch in chapters:
+        if not isinstance(ch, dict):
+            return False
+        cid = str(ch.get("id", "") or "").strip()
+        title = str(ch.get("title", "") or "").strip()
+        try:
+            words = int(float(ch.get("words", 0) or 0))
+        except (TypeError, ValueError):
+            return False
+        if not cid or not title or words <= 0 or cid in seen:
+            return False
+        seen.add(cid)
+    return True
+
+
+def chapter_mode_on(blueprint) -> bool:
+    """Chapter mode only when the blueprint has at least two chapters. One chapter
+    (or none) keeps the original single-call behaviour."""
+    if not valid_blueprint(blueprint):
+        return False
+    return len(blueprint.get("chapters") or []) >= 2
+
+
+def blueprint_signature(blueprint) -> str:
+    """A stable key for a blueprint (so a checkpoint is only reused for the same plan)."""
+    try:
+        chapters = blueprint.get("chapters") or []
+        shape = [(str(c.get("id", "")), str(c.get("title", "")), c.get("words", 0))
+                 for c in chapters if isinstance(c, dict)]
+        return json.dumps(shape, ensure_ascii=False)
+    except Exception:
+        return ""
+
+
+# --------------------------------------------------------------------------
+# script memory
+# --------------------------------------------------------------------------
+def _as_list(value) -> list:
+    if isinstance(value, list):
+        return [str(x).strip() for x in value if str(x).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def _dedupe(items) -> list:
+    out, seen = [], set()
+    for x in items:
+        key = str(x).strip().lower()
+        if key and key not in seen:
+            seen.add(key)
+            out.append(str(x).strip())
+    return out
+
+
+def split_memory(text: str):
+    """(chapter_text, memory_dict). Removes the writer's ```memory block from the text."""
+    raw = text or ""
+    match = _MEMORY_RE.search(raw)
+    if not match:
+        return raw.strip(), {}
+    memory = {}
+    try:
+        parsed = parse_llm_json(match.group(1))
+        if isinstance(parsed, dict):
+            memory = parsed
+    except ValueError:
+        memory = {}
+    cleaned = (raw[:match.start()] + raw[match.end():]).strip()
+    return cleaned, memory
+
+
+def merge_memory(memory, new=None, chapter_id: str = "") -> dict:
+    """The running memory after one more chapter: terms_defined unique by term,
+    facts_used unioned, open loops = opened − closed, plus per-chapter summaries."""
+    memory = memory or {}
+    new = new or {}
+
+    seen_terms, terms = set(), []
+    for source in (memory.get("terms_defined"), new.get("terms_defined")):
+        for term in (source or []):
+            if isinstance(term, dict):
+                name = str(term.get("term", "") or "").strip()
+                phrasing = str(term.get("phrasing", "") or "").strip()
+            else:
+                name, phrasing = str(term or "").strip(), ""
+            if not name or name.lower() in seen_terms:
+                continue
+            seen_terms.add(name.lower())
+            terms.append({"term": name, "phrasing": phrasing})
+
+    def union(field):
+        return _dedupe(_as_list(memory.get(field)) + _as_list(new.get(field)))
+
+    all_closed = union("loops_closed")
+    closed_keys = {x.lower() for x in all_closed}
+    all_open = _dedupe(_as_list(memory.get("loops_open")) + _as_list(new.get("loops_opened")))
+    open_loops = [x for x in all_open if x.lower() not in closed_keys]
+
+    summaries = []
+    for source in (memory.get("summaries") or []):
+        if isinstance(source, dict):
+            summaries.append(dict(source))
+        elif str(source).strip():
+            summaries.append({"chapter": "", "summary": str(source).strip()})
+    summary = str(new.get("summary", "") or "").strip()
+    if summary:
+        summaries.append({"chapter": chapter_id, "summary": summary})
+
+    return {"terms_defined": terms, "facts_used": union("facts_used"),
+            "loops_open": open_loops, "loops_closed": all_closed, "summaries": summaries}
+
+
+def render_memory(memory) -> str:
+    """The memory block handed to the next chapter writer."""
+    memory = memory or {}
+    lines = []
+    terms = memory.get("terms_defined") or []
+    if terms:
+        lines.append("TERMS ALREADY DEFINED (use the same wording; never re-define):")
+        for term in terms:
+            if isinstance(term, dict):
+                name, phrasing = term.get("term", ""), term.get("phrasing", "")
+            else:
+                name, phrasing = term, ""
+            lines.append(f"- {name}" + (f" — said as: {phrasing}" if phrasing else ""))
+    facts = memory.get("facts_used") or []
+    if facts:
+        lines.append("FACTS ALREADY USED (don't repeat; a short callback only):")
+        lines.append("- " + "; ".join(str(f) for f in facts))
+    if memory.get("loops_open"):
+        lines.append("OPEN LOOPS STILL TO PAY OFF:")
+        lines.append("- " + "; ".join(str(l) for l in memory["loops_open"]))
+    if memory.get("loops_closed"):
+        lines.append("LOOPS ALREADY CLOSED:")
+        lines.append("- " + "; ".join(str(l) for l in memory["loops_closed"]))
+    summaries = memory.get("summaries") or []
+    if summaries:
+        lines.append("WHAT EARLIER CHAPTERS ALREADY SAID:")
+        for s in summaries:
+            if isinstance(s, dict):
+                cid, summary = str(s.get("chapter", "") or ""), str(s.get("summary", "") or "")
+                lines.append(f"- {cid}: {summary}" if cid else f"- {summary}")
+            else:
+                lines.append(f"- {s}")
+    return "\n".join(lines)
+
+
+def last_lines(text: str, n_words: int = 150) -> str:
+    """The last `n_words` words of a text (the handover sentence for the next writer)."""
+    words = (text or "").split()
+    return " ".join(words[-n_words:]) if n_words and n_words > 0 else ""
+
+
+def first_lines(text: str, n_words: int = 120) -> str:
+    """The first `n_words` words of a text (for flow into a segment)."""
+    words = (text or "").split()
+    return " ".join(words[:n_words])
+
+
+# --------------------------------------------------------------------------
+# chapter / segment text
+# --------------------------------------------------------------------------
+def split_by_chapters(script: str) -> list:
+    """[(title, text)] split on "=== title ===" headers. Text before the first
+    header is returned as ("", preamble); each segment's text includes its header
+    line, so concatenating the texts reproduces the script."""
+    text = script or ""
+    headers, offset = [], 0
+    for line in text.splitlines(keepends=True):
+        stripped = line.rstrip("\n")
+        match = _HEADER_RE.match(stripped)
+        if match:
+            headers.append((offset, match.group(1).strip()))
+        offset += len(line)
+    if not headers:
+        return [("", text)]
+    parts = []
+    if headers[0][0] > 0:
+        parts.append(("", text[:headers[0][0]]))
+    for i, (start, title) in enumerate(headers):
+        end = headers[i + 1][0] if i + 1 < len(headers) else len(text)
+        parts.append((title, text[start:end]))
+    return parts
+
+
+def join_chapters(parts) -> str:
+    """Join chapter/segment texts (strings or (title, text)) into one script."""
+    texts = []
+    for part in parts:
+        if isinstance(part, (tuple, list)):
+            part = part[1] if len(part) > 1 else part[0]
+        if part and str(part).strip():
+            texts.append(str(part).strip())
+    return "\n\n".join(texts)
+
+
+def split_segment_answer(text: str):
+    """(rewritten_segment, notes) — notes is whatever the model wrote after the
+    "SEGMENT NOTES" marker; the segment is everything before it."""
+    raw = text or ""
+    match = _NOTES_RE.search(raw)
+    if not match:
+        return raw.strip(), ""
+    return raw[:match.start()].strip(), raw[match.end():].strip()
+
+
+def strip_segment_notes(text: str) -> str:
+    """The script part of a dialogue output, without the trailing SEGMENT NOTES section."""
+    raw = text or ""
+    match = _SEGMENT_NOTES_HEADING_RE.search(raw)
+    return raw[:match.start()].rstrip() if match else raw
+
+
+# --------------------------------------------------------------------------
+# integrity edits
+# --------------------------------------------------------------------------
+def _chapter_key(chapter: dict) -> str:
+    return str(chapter.get("id", "") or chapter.get("title", "") or "").strip()
+
+
+def apply_integrity_edits(script: str, blueprint, edits) -> tuple:
+    """Apply the integrity editor's targeted edits in code.
+
+    An edit is applied only when its "find" occurs exactly once inside the named
+    chapter's text. Returns (new_script, applied, skipped, log_lines)."""
+    chapters = [c for c in ((blueprint or {}).get("chapters") or []) if isinstance(c, dict)]
+    segments = split_by_chapters(script)
+    chapter_title_text = [(t, x) for (t, x) in segments if t]
+    texts = [x for _, x in chapter_title_text]
+    applied, skipped, log = 0, 0, []
+
+    def locate(where: str):
+        for i, chapter in enumerate(chapters):
+            cid = str(chapter.get("id", "") or "").strip()
+            title = str(chapter.get("title", "") or "").strip()
+            if where and (where == cid or where == title or (title and where in title)):
+                return i if i < len(texts) else None
+        for i, (title, _) in enumerate(chapter_title_text):
+            if where and (where == title or (title and where in title)):
+                return i
+        return None
+
+    for edit in (edits or []):
+        if not isinstance(edit, dict):
+            continue
+        where = str(edit.get("chapter", "") or "").strip()
+        find = str(edit.get("find", "") or "")
+        replace = str(edit.get("replace", "") or "")
+        if not find:
+            skipped += 1
+            log.append(f"skipped an edit for '{where}': empty find")
+            continue
+        idx = locate(where)
+        if idx is None:
+            skipped += 1
+            log.append(f"skipped an edit: no chapter matches '{where}'")
+            continue
+        count = texts[idx].count(find)
+        if count == 1:
+            texts[idx] = texts[idx].replace(find, replace)
+            applied += 1
+        else:
+            skipped += 1
+            log.append(f"skipped an edit in '{where}': find occurs {count} times (needs exactly one)")
+
+    out, k = [], 0
+    for title, text in segments:
+        if title:
+            out.append(texts[k])
+            k += 1
+        else:
+            out.append(text)
+    return join_chapters(out), applied, skipped, log
+
+
+# --------------------------------------------------------------------------
+# small parallel helper (same contextvars fix as the research workflow)
+# --------------------------------------------------------------------------
+def parallel_map(fn, items, workers: int = 4) -> list:
+    """Run fn(item) for every item, results in the original order. A fresh copy of
+    the caller's contextvars goes to each task so call_llm still sees current_node
+    (model routing). workers <= 1 or a single item keeps the plain loop."""
+    items = list(items)
+    if workers <= 1 or len(items) <= 1:
+        return [fn(item) for item in items]
+    with quiet():
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(contextvars.copy_context().run, fn, item) for item in items]
+            return [f.result() for f in futures]

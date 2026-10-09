@@ -212,6 +212,8 @@ def run_video(router, original_script: str, video_analysis: str = "", output_dir
     if video_analysis:
         initial_state["video_analysis"] = video_analysis
     initial_state.update(extra_state or {})
+    # Long-form hint: 0 (the default) lets the strategy planner choose the duration.
+    initial_state.setdefault("target_minutes", 0)
     apply_defaults(initial_state)
 
     if output_dir:
