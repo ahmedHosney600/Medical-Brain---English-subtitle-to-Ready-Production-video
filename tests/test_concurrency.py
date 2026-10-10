@@ -141,3 +141,31 @@ class MaxConcurrencyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _Flaky:
+    """Fails the first `fails` calls with an empty answer, then answers."""
+    def __init__(self, fails):
+        self.fails, self.calls = fails, 0
+
+    def call(self, *a):
+        self.calls += 1
+        return "" if self.calls <= self.fails else "answer"
+
+
+class MainRetryTest(unittest.TestCase):
+    def test_transient_failure_is_retried_on_the_main_model(self):
+        router = llm.LLMRouter(config("solo:m", solo={"type": "openai"}), provider="main")
+        flaky = _Flaky(fails=2)
+        router._backends = {"solo:m": flaky}
+        out = llm.track_node("step", lambda state: router.call("s", "u", 0.3, 100))({})
+        self.assertEqual(out, "answer")
+        self.assertEqual(flaky.calls, 3)
+
+    def test_gives_up_after_the_retries(self):
+        router = llm.LLMRouter(config("solo:m", solo={"type": "openai"}), provider="main")
+        flaky = _Flaky(fails=10)
+        router._backends = {"solo:m": flaky}
+        with self.assertRaises(Exception):
+            llm.track_node("step", lambda state: router.call("s", "u", 0.3, 100))({})
+        self.assertEqual(flaky.calls, 3)

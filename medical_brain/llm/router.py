@@ -75,6 +75,25 @@ class LLMRouter:
             raise StepFailed(f"{spec} returned an empty answer")
         return result
 
+    MAIN_RETRY_WAITS = (10, 30)     # seconds before the 2nd and 3rd try of the main model
+
+    def _ask_retrying(self, node, spec, system_prompt, user_prompt, temperature, max_tokens) -> str:
+        """The main model gets a couple more tries for transient failures (an empty
+        answer, a time-out, a server error) before the step falls back or stops: free
+        web proxies fail now and then, and one blip shouldn't end a 30-minute run.
+        A missing key / unknown model (ProviderUnavailable) or a cut-off answer is not retried."""
+        import time
+        for wait in (*self.MAIN_RETRY_WAITS, None):
+            try:
+                return self._ask(spec, system_prompt, user_prompt, temperature, max_tokens)
+            except (ProviderUnavailable, AnswerCutOff):
+                raise
+            except Exception as e:
+                if wait is None:
+                    raise
+                self._log(f"⏳ {node}: {spec} failed ({_short(e)}); trying again in {wait}s.")
+                time.sleep(wait)
+
     def _semaphore(self, provider: str):
         """The provider's concurrency semaphore, or None when it is unlimited.
         Created lazily under the lock so parallel first-calls share one."""
@@ -160,7 +179,7 @@ class LLMRouter:
                         cut_text = e.text
                     self._log(f"⚠️ {node}: {spec} failed ({_short(e)}). Running this step on {self.main}.")
         try:
-            result = self._ask(self.main, system_prompt, user_prompt, temperature, max_tokens)
+            result = self._ask_retrying(node, self.main, system_prompt, user_prompt, temperature, max_tokens)
             self._count(node, self.main)
             return result
         except Exception as e:
