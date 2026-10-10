@@ -10,6 +10,10 @@ Run `python3 main.py` with no arguments to get a menu. Or start one directly:
 | Only a topic | `python3 main.py --topic "smartwatches and atrial fibrillation"` | A verified research dossier to review |
 | Only a topic, want the video too | `python3 main.py --topic "…" --workflow research-video` | Dossier → your review → video package |
 | A dossier you reviewed | `python3 main.py --continue output/<session>` | Next research round, or the video |
+| A run that stopped | `python3 main.py --resume [output/<session>]` | The run continues where it stopped |
+
+### Resume a stopped run
+If a run stops — a quota error, a crash, Ctrl+C, a closed laptop — every finished step is already saved in the session checkpoint, and the message ends with the exact command to continue. `python3 main.py --resume` (or menu option **5**) resumes the newest stopped session; add a session (`output/<id>` or `<id>`) to pick one. The run restarts at the step that was interrupted, keeping the state it had reached, then does the normal post-run work (research: dossier + patient guide + `review.md`; video: sources guide + exports). Answers the model already produced **inside** the interrupted step are kept in that session's `llm_cache/` and reused instead of being paid for again. `--provider main|single|hybrid` still selects the model setup. The eval harness has the same command: `python3 -m medical_brain.evals resume <session> --slug <slug>`.
 
 ### Topic → research (verified facts from trusted sources)
 1. **Plan.** An outline of 6–10 sections, the questions each must answer, and search queries.

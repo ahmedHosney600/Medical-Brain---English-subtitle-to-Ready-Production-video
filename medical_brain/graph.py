@@ -38,14 +38,61 @@ NODES = [
     ("shorts_quality_gate", shorts.shorts_quality_gate),
 ]
 
+FIRST_NODE = "source_script_analyzer"
 
-def build_app():
+# The node that always follows another (the static edges of build_app).
+_STATIC_NEXT = {
+    "source_script_analyzer": "seo_keyword_researcher",
+    "seo_keyword_researcher": "strategy_planner",
+    "strategy_planner": "hook_writer",
+    "hook_writer": "body_restructurer",
+    "cta_retention_writer": "dialect_warmth_layer",
+    "dialect_warmth_layer": "fidelity_auditor",
+    "fidelity_auditor": "script_refinement",
+    "script_refinement": "medical_truth_verifier",
+    "medical_truth_verifier": "self_critique",
+    "packaging_creative_director": "packaging_generator",
+    "packaging_generator": "packaging_honesty_ctr_auditor",
+    "transition_designer": "text_animation_overlay_designer",
+    "text_animation_overlay_designer": "broll_prompt_generator",
+    "broll_prompt_generator": "production_quality_critique",
+    "final_script_package": "shorts_moment_identifier",
+    "shorts_moment_identifier": "shorts_script_extractor",
+    "shorts_script_extractor": "shorts_caption_packager",
+    "shorts_caption_packager": "shorts_quality_gate",
+}
+
+# Nodes whose next step depends on the state — the same routing functions the edges use.
+_CONDITIONAL_NEXT = {
+    "translation_fidelity_auditor": route_translation_fidelity,
+    "self_critique": route_quality_loop,
+    "packaging_honesty_ctr_auditor": route_packaging_quality,
+    "production_quality_critique": route_production_quality,
+    "shorts_quality_gate": route_shorts_quality,
+}
+
+
+def next_after(node, state):
+    """The node the graph runs after `node` (or END), following its edges. `node` is the
+    last completed step, so None (nothing completed yet) gives the graph's first node."""
+    if node is None:
+        return FIRST_NODE
+    if node in _CONDITIONAL_NEXT:
+        return _CONDITIONAL_NEXT[node](state)
+    return _STATIC_NEXT.get(node, END)
+
+
+def build_app(entry=None):
     workflow = StateGraph(PipelineState)
     for name, fn in NODES:
         # track_node lets the model router know which step is calling
         workflow.add_node(name, track_node(name, fn))
 
-    workflow.add_edge(START, "source_script_analyzer")
+    if entry:
+        # Resume: start exactly at the step that was running when the run stopped.
+        workflow.add_edge(START, entry)
+    else:
+        workflow.add_edge(START, "source_script_analyzer")
     workflow.add_edge("source_script_analyzer", "seo_keyword_researcher")
     workflow.add_edge("seo_keyword_researcher", "strategy_planner")
     workflow.add_edge("strategy_planner", "hook_writer")

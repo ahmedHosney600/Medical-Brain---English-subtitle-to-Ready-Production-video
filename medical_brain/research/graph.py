@@ -46,11 +46,45 @@ def route_after_coverage(state: dict) -> str:
     return "source_collector" if state.get("need_research") else "dossier_editor"
 
 
-def build_research_app():
+# The node that always follows another (the static edges of build_research_app).
+_STATIC_NEXT = {
+    "topic_planner": "source_collector",
+    "source_collector": "source_screener",
+    "fact_extractor": "fact_verifier",
+    "fact_merger": "coverage_critic",
+    "dossier_editor": "guide_editor",
+    "guide_editor": END,
+}
+
+# Nodes whose next step depends on the state — the same routing functions the edges use.
+_CONDITIONAL_NEXT = {
+    "review_planner": route_after_review,
+    "source_screener": route_after_screener,
+    "fact_verifier": route_after_verifier,
+    "coverage_critic": route_after_coverage,
+}
+
+
+def next_after(node, state):
+    """The node the graph runs after `node` (or END), following its edges. `node` is the
+    last completed step, so None (nothing completed yet) gives the graph's first node."""
+    if node is None:
+        return route_start(state)
+    if node in _CONDITIONAL_NEXT:
+        return _CONDITIONAL_NEXT[node](state)
+    return _STATIC_NEXT.get(node, END)
+
+
+def build_research_app(entry=None):
     g = StateGraph(ResearchState)
     for name, fn in NODES:
         g.add_node(name, track_node(name, fn))
-    g.add_conditional_edges(START, route_start, {"topic_planner": "topic_planner", "review_planner": "review_planner"})
+    if entry:
+        # Resume: start exactly at the step that was running when the run stopped.
+        g.add_edge(START, entry)
+    else:
+        g.add_conditional_edges(START, route_start,
+                                {"topic_planner": "topic_planner", "review_planner": "review_planner"})
     g.add_edge("topic_planner", "source_collector")
     g.add_conditional_edges("review_planner", route_after_review,
                             {"source_collector": "source_collector", "dossier_editor": "dossier_editor"})

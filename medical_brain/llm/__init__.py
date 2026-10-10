@@ -30,12 +30,24 @@ from .progress import _client_timeout, _node_state, _Progress, _step_timeout, cu
 from .router import LLMRouter
 
 _router = None
+_cache_dir = None
 
 
 def set_router(router) -> None:
     """Use this router (or any object with .call(system, user, temperature, max_tokens)) for call_llm."""
     global _router
     _router = router
+    if _cache_dir and hasattr(router, "set_cache_dir"):
+        router.set_cache_dir(_cache_dir)
+
+
+def set_cache_dir(path) -> None:
+    """Keep model answers for this session under `path` (see LLMRouter.set_cache_dir) so a
+    resumed run reuses them. Applies to the active router and to the next one set."""
+    global _cache_dir
+    _cache_dir = path or None
+    if _router is not None and hasattr(_router, "set_cache_dir"):
+        _router.set_cache_dir(_cache_dir)
 
 
 def get_router():

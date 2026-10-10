@@ -2,11 +2,13 @@
 frozen topic bank and append one comparable scorecard row.
 
   python3 -m medical_brain.evals run <slug> [--label L]
+  python3 -m medical_brain.evals resume <session_dir|id> --slug <slug> [--label L]
   python3 -m medical_brain.evals score <session_dir|id> --slug <slug> [--label L]
   python3 -m medical_brain.evals table
 
 `run` does what `main.py --topic … --workflow research --provider main` does, then
-scores the session (like `score`). `score` works on an existing session folder/id.
+scores the session (like `score`). `resume` continues a stopped research run (like
+`main.py --resume`), then scores it. `score` works on an existing session folder/id.
 Scoring calls the research judge once (prompts/evals/research_judge.md) and computes
 the rest of the metrics from the session itself, then appends a line to
 evals/results.jsonl and regenerates evals/scorecard.md.
@@ -653,13 +655,43 @@ def _run_research(topic: str) -> str:
     from .research.state import new_state
 
     _configure_env()
-    router = start_router(load_llm_config(), "main")
+    config = load_llm_config()
+    router = start_router(config, config.get("provider") or "main")   # the mode chosen in setup_models (hybrid routes judges)
     session_id, session_dir = _new_session_dir()
     state = new_state(topic, "", "", _research_settings())
     state["workflow"] = "research"
     state["session"] = session_id
     run_research(router, state, session_dir)
     return session_dir
+
+
+def _resume_research(session: str) -> str:
+    """Continue the stopped research run in `session` (like `main.py --resume`); returns its folder."""
+    from .cli import _resolve_resume, load_checkpoint, resume_research, start_router
+
+    _configure_env()
+    session_dir, path = _resolve_resume(session)
+    if not path or not path.endswith("research_checkpoint.json"):
+        raise SystemExit(f"no stopped research run to resume for '{session}' "
+                         f"(expected <dir>/research/research_checkpoint.json with status != done)")
+    state, meta = load_checkpoint(path)
+    from .research.graph import next_after
+    entry = next_after(meta.get("last_node"), state)
+    print(f"▶ Resuming research for '{state.get('topic', '')}' at step {entry} "
+          f"({len(meta.get('completed') or [])} steps already done)")
+    config = load_llm_config()
+    router = start_router(config, config.get("provider") or "main")   # the mode chosen in setup_models (hybrid routes judges)
+    resume_research(router, state, session_dir, entry, meta)
+    return session_dir
+
+
+def _cost_note(before, after) -> float:
+    cost = balance_delta(before, after)
+    if cost is None:
+        print("💰 DeepSeek balance unavailable before/after; recording cost=null (approximate).")
+    else:
+        print(f"💰 DeepSeek balance delta: ${cost:.4f} (approximate).")
+    return cost
 
 
 def cmd_run(slug: str, label: str = "") -> dict:
@@ -670,12 +702,19 @@ def cmd_run(slug: str, label: str = "") -> dict:
         raise SystemExit(f"slug '{slug}' is not in {os.path.relpath(TOPICS_PATH, PROJECT_ROOT)}")
     before = fetch_deepseek_balance()
     session_dir = _run_research(topic.get("topic", ""))
-    after = fetch_deepseek_balance()
-    cost = balance_delta(before, after)
-    if cost is None:
-        print("💰 DeepSeek balance unavailable before/after; recording cost=null (approximate).")
-    else:
-        print(f"💰 DeepSeek balance delta: ${cost:.4f} (approximate).")
+    cost = _cost_note(before, fetch_deepseek_balance())
+    return score_session(session_dir, slug, label, cost_usd=cost)
+
+
+def cmd_resume(session: str, slug: str, label: str = "") -> dict:
+    _configure_env()
+    topics = load_topics()
+    topic = find_topic(topics, slug)
+    if not topic:
+        raise SystemExit(f"slug '{slug}' is not in {os.path.relpath(TOPICS_PATH, PROJECT_ROOT)}")
+    before = fetch_deepseek_balance()
+    session_dir = _resume_research(session)
+    cost = _cost_note(before, fetch_deepseek_balance())
     return score_session(session_dir, slug, label, cost_usd=cost)
 
 
@@ -699,6 +738,11 @@ def main(argv=None) -> None:
     p_run.add_argument("slug")
     p_run.add_argument("--label", default="")
 
+    p_resume = sub.add_parser("resume", help="resume a stopped research run, then score it")
+    p_resume.add_argument("session")
+    p_resume.add_argument("--slug", required=True)
+    p_resume.add_argument("--label", default="")
+
     p_score = sub.add_parser("score", help="score an existing research session")
     p_score.add_argument("session")
     p_score.add_argument("--slug", required=True)
@@ -709,6 +753,8 @@ def main(argv=None) -> None:
     args = parser.parse_args(argv)
     if args.command == "run":
         cmd_run(args.slug, args.label)
+    elif args.command == "resume":
+        cmd_resume(args.session, args.slug, args.label)
     elif args.command == "score":
         cmd_score(args.session, args.slug, args.label)
     else:

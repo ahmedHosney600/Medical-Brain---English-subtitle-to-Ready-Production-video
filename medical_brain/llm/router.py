@@ -1,5 +1,8 @@
 """LLMRouter: picks the model for each step (main / single / hybrid) and falls back on failure."""
+import hashlib
+import json
 import os
+import tempfile
 import threading
 from typing import Optional
 
@@ -8,6 +11,13 @@ from .checks import test_model
 from .config import MODE_ALIASES, MODES, parse_spec
 from .errors import AnswerCutOff, ProviderUnavailable, StepFailed, _short
 from .progress import _node_state, current_node
+
+
+def _cache_key(spec: str, system_prompt, user_prompt, temperature, max_tokens) -> str:
+    """One key per exact request: the model, the two prompts and the sampling settings."""
+    payload = json.dumps([spec, system_prompt, user_prompt, temperature, max_tokens],
+                         ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 class LLMRouter:
@@ -31,6 +41,49 @@ class LLMRouter:
         self._backends = {}
         self._semaphores = {}           # provider -> BoundedSemaphore (lazy, only if max_concurrency set)
         self._lock = threading.Lock()   # guards the book-keeping dicts and lazy backends
+        self.cache_dir = None           # optional: a folder of one JSON file per answered request
+        self.cache_hits = 0             # answers served from that folder instead of the model
+
+    def set_cache_dir(self, path: Optional[str]) -> None:
+        """Remember every successful model answer under `path` (one JSON file per request),
+        so a resumed run reuses the answers it already paid for. None turns the cache off."""
+        self.cache_dir = path or None
+        if self.cache_dir:
+            os.makedirs(self.cache_dir, exist_ok=True)
+
+    def _cache_path(self, key: str) -> str:
+        return os.path.join(self.cache_dir, key + ".json")
+
+    def _cache_get(self, key: str) -> Optional[str]:
+        try:
+            with open(self._cache_path(key), encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            return None
+        answer = data.get("answer") if isinstance(data, dict) else data
+        if isinstance(answer, str) and answer.strip():
+            with self._lock:                # a hit still lands in report()
+                self.cache_hits += 1
+            return answer
+        return None
+
+    def _cache_put(self, key: str, answer: str) -> None:
+        """Write to a temp file then os.replace: parallel calls never see a half-written file."""
+        if not self.cache_dir:
+            return
+        tmp = ""
+        try:
+            os.makedirs(self.cache_dir, exist_ok=True)   # also when cache_dir was set directly
+            fd, tmp = tempfile.mkstemp(dir=self.cache_dir, prefix=key + ".", suffix=".tmp")
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                json.dump({"answer": answer}, f, ensure_ascii=False)
+            os.replace(tmp, self._cache_path(key))
+        except OSError:
+            if tmp:
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
 
     def model_for(self, node: Optional[str]) -> str:
         if self.mode == "single":
@@ -61,6 +114,11 @@ class LLMRouter:
             return spec in self.down_specs or parse_spec(spec)[0] in self.down
 
     def _ask(self, spec: str, system_prompt, user_prompt, temperature, max_tokens) -> str:
+        cache_key = _cache_key(spec, system_prompt, user_prompt, temperature, max_tokens) if self.cache_dir else ""
+        if cache_key:
+            cached = self._cache_get(cache_key)
+            if cached is not None:
+                return cached
         backend = self._backend(spec)
         # Cap how many calls to one provider run at once (0/absent = unlimited). The
         # wait happens before backend.call(), so a queued call's step time-out only
@@ -73,6 +131,8 @@ class LLMRouter:
                 result = backend.call(system_prompt, user_prompt, temperature, max_tokens)
         if not (result or "").strip():
             raise StepFailed(f"{spec} returned an empty answer")
+        if cache_key:                       # only a complete, non-empty answer is remembered
+            self._cache_put(cache_key, result)
         return result
 
     MAIN_RETRY_WAITS = (10, 30)     # seconds before the 2nd and 3rd try of the main model
@@ -215,6 +275,7 @@ class LLMRouter:
                 "mode": self.mode,
                 "setup": self.describe(),
                 "calls": dict(self.calls),
+                "cache_hits": self.cache_hits,
                 "node_models": dict(self.node_models),
                 "unavailable": {**self.down, **self.down_specs},
                 "events": list(self.events),

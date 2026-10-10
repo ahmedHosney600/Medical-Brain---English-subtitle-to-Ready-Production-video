@@ -4,6 +4,7 @@
   python3 main.py --topic "…" [--workflow research]         topic → verified research dossier
   python3 main.py --topic "…" --workflow research-video     topic → research → video package
   python3 main.py --continue [session]                      apply review.md / approve research
+  python3 main.py --resume [session]                        continue a stopped run
   python3 main.py                                           menu
 Options: --provider main|single|hybrid (skips the model menu)."""
 import datetime
@@ -15,11 +16,12 @@ import sys
 import time
 
 from dotenv import load_dotenv
+from langgraph.graph import END
 
 from .exports import workbook as ew
 from .exports.prompt_files import export_broll_prompt_files, export_whiteboard_prompt_files
 from .graph import build_app
-from .llm import LLMRouter, ProviderUnavailable, load_llm_config, set_router
+from .llm import LLMRouter, ProviderUnavailable, load_llm_config, set_cache_dir, set_router
 from .paths import PROJECT_ROOT
 from .state import apply_defaults
 
@@ -36,11 +38,14 @@ def with_heading(heading: str, content: str) -> str:
 
 
 def stop_run(error, checkpoint_path: str = ""):
-    """Ends the run with the fix, not a traceback."""
+    """Ends the run with the fix, not a traceback. A saved checkpoint can be resumed."""
     kind = "" if isinstance(error, (ProviderUnavailable, ValueError)) else f"{type(error).__name__}: "
     print(f"\n❌ Stopped: {kind}{error}")
     if checkpoint_path:
         print(f"   Steps finished so far are saved in: {checkpoint_path}")
+        session = _session_of_checkpoint(checkpoint_path)
+        if session:
+            print(f"   → resume with: python3 main.py --resume {os.path.relpath(session, PROJECT_ROOT)}")
     print("   Check your models with: python3 setup_models.py")
     sys.exit(1)
 
@@ -68,11 +73,13 @@ def choose_workflow() -> str:
     print("  2) Topic → research (verified facts from trusted sources) → video package")
     print("  3) Topic → research only (review the dossier first)")
     print("  4) Continue a research session (apply your review.md, or approve it)")
+    print("  5) Resume a stopped run")
     while True:
-        choice = input("Choose 1-4 [1]: ").strip() or "1"
-        if choice in ("1", "2", "3", "4"):
-            return {"1": "video", "2": "research-video", "3": "research", "4": "continue"}[choice]
-        print("Please type 1, 2, 3 or 4.")
+        choice = input("Choose 1-5 [1]: ").strip() or "1"
+        if choice in ("1", "2", "3", "4", "5"):
+            return {"1": "video", "2": "research-video", "3": "research", "4": "continue",
+                    "5": "resume"}[choice]
+        print("Please type 1, 2, 3, 4 or 5.")
 
 
 def choose_mode(llm_config: dict) -> str:
@@ -106,12 +113,77 @@ def start_router(llm_config: dict, provider):
     return router
 
 
-def run_graph(app, initial_state: dict, out_dir: str, router, label: str = "workflow") -> dict:
+def _checkpoint_path(out_dir: str, label: str = "workflow") -> str:
+    return os.path.join(out_dir, "checkpoint.json" if label == "workflow" else f"{label}_checkpoint.json")
+
+
+def _write_checkpoint(path: str, state: dict, label: str, completed: list, status: str, error: str = "") -> None:
+    """The full run state plus a small "_resume" record, so a stopped run can continue."""
+    doc = dict(state)
+    doc["_resume"] = {
+        "label": label,
+        "graph": "research" if label == "research" else "video",
+        "last_node": completed[-1] if completed else None,
+        "completed": list(completed),
+        "updated": datetime.datetime.now().isoformat(timespec="seconds"),
+        "status": status,
+        "error": error,
+    }
+    with open(path, "w", encoding="utf-8") as cp:
+        json.dump(doc, cp, ensure_ascii=False, indent=2)
+
+
+def load_checkpoint(path: str) -> tuple:
+    """(state, _resume metadata). The state is exactly what a graph expects: _resume is gone."""
+    with open(path, encoding="utf-8") as f:
+        doc = json.load(f)
+    meta = doc.pop("_resume", None) or {}
+    return doc, meta
+
+
+def _mark_checkpoint_done(out_dir: str, label: str = "workflow") -> None:
+    """Flip a checkpoint to status "done" once the post-run work is finished too."""
+    path = _checkpoint_path(out_dir, label)
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+    except (OSError, ValueError):
+        return
+    meta = doc.get("_resume") or {}
+    meta["status"] = "done"
+    meta["error"] = ""
+    meta["updated"] = datetime.datetime.now().isoformat(timespec="seconds")
+    doc["_resume"] = meta
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(doc, f, ensure_ascii=False, indent=2)
+    except OSError as e:
+        print(f"  [warning] Could not update checkpoint: {e}")
+
+
+def _session_of_checkpoint(path: str) -> str:
+    """The session folder a checkpoint lives in ('<s>/research/research_checkpoint.json'
+    or '<s>/checkpoint.json')."""
+    base = os.path.basename(path)
+    if base == "research_checkpoint.json":
+        return os.path.dirname(os.path.dirname(path))
+    if base == "checkpoint.json":
+        return os.path.dirname(path)
+    return ""
+
+
+def run_graph(app, initial_state: dict, out_dir: str, router, label: str = "workflow",
+              resume_meta: dict = None) -> dict:
     """Streams a graph step by step, with a log line, a session log and a checkpoint
-    after every step. Any failure stops cleanly with the checkpoint saved."""
+    after every step. Any failure stops cleanly with the checkpoint saved.
+
+    `resume_meta` is a previous checkpoint's "_resume": the steps it lists are kept in
+    the new checkpoint's history (they were not re-run). The status stays "running"
+    until the caller marks the whole run done after its post-run work."""
     log_path = os.path.join(out_dir, "session_log.jsonl" if label == "workflow" else f"{label}_log.jsonl")
-    checkpoint_path = os.path.join(out_dir, "checkpoint.json" if label == "workflow" else f"{label}_checkpoint.json")
+    checkpoint_path = _checkpoint_path(out_dir, label)
     state = dict(initial_state)
+    completed = [n for n in (resume_meta or {}).get("completed", []) if n]
     with open(log_path, "a", encoding="utf-8") as log_file:
         step_start = time.time()
         stream = app.stream(initial_state)
@@ -122,8 +194,11 @@ def run_graph(app, initial_state: dict, out_dir: str, router, label: str = "work
                 break
             except Exception as e:
                 log_file.flush()
-                with open(checkpoint_path, "w", encoding="utf-8") as cf:
-                    json.dump(state, cf, ensure_ascii=False, indent=2)
+                try:
+                    _write_checkpoint(checkpoint_path, state, label, completed, "stopped",
+                                      f"{type(e).__name__}: {e}"[:300])
+                except Exception as werr:
+                    print(f"  [warning] Could not save checkpoint: {werr}")
                 stop_run(e, checkpoint_path)
             for key, value in output.items():
                 state.update(value or {})
@@ -131,12 +206,12 @@ def run_graph(app, initial_state: dict, out_dir: str, router, label: str = "work
                 step_start = time.time()
                 model = router.model_for_node(key)
                 print(f"✅ Node '{key}' completed. ({elapsed:.0f}s" + (f", {model})" if model else ")"))
+                completed.append(key)      # loops may revisit a node, so record every run
                 log_file.write(json.dumps({"timestamp": datetime.datetime.now().isoformat(), "node": key,
                                            "state_updates": value}, ensure_ascii=False) + "\n")
                 log_file.flush()
                 try:
-                    with open(checkpoint_path, "w", encoding="utf-8") as cp:
-                        json.dump(state, cp, ensure_ascii=False, indent=2)
+                    _write_checkpoint(checkpoint_path, state, label, completed, "running")
                 except Exception as e:
                     print(f"  [warning] Could not save checkpoint: {e}")
     return state
@@ -202,30 +277,51 @@ def _apply_script_sources(state: dict, research: dict, output_dir: str) -> None:
 
 
 def run_video(router, original_script: str, video_analysis: str = "", output_dir: str = "",
-              extra_state: dict = None, research: dict = None) -> None:
-    input_file = os.path.join(PROJECT_ROOT, "input_fields.json")
-    if not os.path.exists(input_file):
-        stop_run(FileNotFoundError("input_fields.json is missing (the channel settings)"))
-    with open(input_file, "r", encoding="utf-8") as f:
-        initial_state = json.load(f)
-    initial_state["original_script"] = original_script
-    if video_analysis:
-        initial_state["video_analysis"] = video_analysis
-    initial_state.update(extra_state or {})
-    # Long-form hint: 0 (the default) lets the strategy planner choose the duration.
-    initial_state.setdefault("target_minutes", 0)
-    apply_defaults(initial_state)
-
-    if output_dir:
+              extra_state: dict = None, research: dict = None,
+              resume_state: dict = None, entry=None, resume_meta: dict = None) -> None:
+    if resume_state is not None:
+        # Resume: the checkpoint already holds the whole state; only the steps after
+        # `entry` run. research is loaded from the session so the sources guide still works.
+        state = dict(resume_state)
+        if not output_dir:
+            stop_run(ValueError("resuming a video run needs its session folder"))
         session_id = os.path.basename(output_dir.rstrip("/"))
         os.makedirs(output_dir, exist_ok=True)
+        set_cache_dir(os.path.join(output_dir, "llm_cache"))
+        if research is None:
+            research_path = os.path.join(output_dir, "research", "research_state.json")
+            if os.path.exists(research_path):
+                with open(research_path, encoding="utf-8") as f:
+                    research = json.load(f)
+        print(f"Starting video workflow... Session ID: {session_id}")
+        print(f"Logs: {output_dir}")
+        if entry != END:
+            state = run_graph(build_app(entry=entry), state, output_dir, router, resume_meta=resume_meta)
     else:
-        session_id, output_dir = _new_session_dir()
-    final_script_path = os.path.join(output_dir, "final_script.md")
-    print(f"Starting video workflow... Session ID: {session_id}")
-    print(f"Logs: {output_dir}")
+        input_file = os.path.join(PROJECT_ROOT, "input_fields.json")
+        if not os.path.exists(input_file):
+            stop_run(FileNotFoundError("input_fields.json is missing (the channel settings)"))
+        with open(input_file, "r", encoding="utf-8") as f:
+            initial_state = json.load(f)
+        initial_state["original_script"] = original_script
+        if video_analysis:
+            initial_state["video_analysis"] = video_analysis
+        initial_state.update(extra_state or {})
+        # Long-form hint: 0 (the default) lets the strategy planner choose the duration.
+        initial_state.setdefault("target_minutes", 0)
+        apply_defaults(initial_state)
 
-    state = run_graph(build_app(), initial_state, output_dir, router)
+        if output_dir:
+            session_id = os.path.basename(output_dir.rstrip("/"))
+            os.makedirs(output_dir, exist_ok=True)
+        else:
+            session_id, output_dir = _new_session_dir()
+        set_cache_dir(os.path.join(output_dir, "llm_cache"))
+        print(f"Starting video workflow... Session ID: {session_id}")
+        print(f"Logs: {output_dir}")
+        state = run_graph(build_app(), initial_state, output_dir, router)
+
+    final_script_path = os.path.join(output_dir, "final_script.md")
 
     if research:
         # The sources the finished script actually uses go into the document
@@ -257,6 +353,7 @@ def run_video(router, original_script: str, video_analysis: str = "", output_dir
     if not longform_deliverable:
         print("\nWorkflow finished, but no final package was generated.")
         print(f"Checkpoint with all intermediate outputs saved to: {os.path.join(output_dir, 'checkpoint.json')}")
+        _mark_checkpoint_done(output_dir, "workflow")
         return
     # Reorder into the editing workflow (pure Python, nothing is retyped).
     try:
@@ -281,6 +378,7 @@ def run_video(router, original_script: str, video_analysis: str = "", output_dir
     _convert(final_script_path, "final script")
     if shorts_section and os.path.exists(shorts_path):
         _convert(shorts_path, "shorts package")
+    _mark_checkpoint_done(output_dir, "workflow")
 
 
 # --------------------------------------------------------------------------
@@ -311,16 +409,21 @@ def _find_session(arg: str) -> str:
     return ""
 
 
-def run_research(router, state: dict, session_dir: str) -> dict:
-    from .research import dossier as rd
-    from .research.graph import build_research_app
-    from .research.sources import enabled, google, http
+def _prepare_research(state: dict, session_dir: str) -> str:
+    """The session's research folder, with its HTTP and model-answer caches in place."""
+    from .research.sources import google, http
     folder = os.path.join(session_dir, "research")
     os.makedirs(folder, exist_ok=True)
     http.set_cache_dir(os.path.join(folder, "cache"))
+    set_cache_dir(os.path.join(folder, "llm_cache"))
     google.reset_run(max_queries=state.get("settings", {}).get("max_google_queries", 40))
-    print(f"\n🔬 Researching: {state['topic']}  (sources: {', '.join(enabled())})")
-    state = run_graph(build_research_app(), state, folder, router, label="research")
+    return folder
+
+
+def _finish_research(session_dir: str, state: dict) -> dict:
+    """Everything after the research graph: dossier + patient guide + review.md + exports."""
+    from .research import dossier as rd
+    folder = os.path.join(session_dir, "research")
     state["review"] = {}
     paths = rd.save(state, folder)
     review_path = os.path.join(folder, "review.md")
@@ -340,6 +443,31 @@ def run_research(router, state: dict, session_dir: str) -> dict:
     print(f"✍️  Review it, then edit {review_path}")
     print(f"   → python3 main.py --continue {os.path.relpath(session_dir, PROJECT_ROOT)}")
     print("     (APPROVED: yes to finish" + (" and build the video)" if state.get("workflow") == "research-video" else ")"))
+    return state
+
+
+def run_research(router, state: dict, session_dir: str) -> dict:
+    from .research.graph import build_research_app
+    from .research.sources import enabled
+    folder = _prepare_research(state, session_dir)
+    print(f"\n🔬 Researching: {state['topic']}  (sources: {', '.join(enabled())})")
+    state = run_graph(build_research_app(), state, folder, router, label="research")
+    _finish_research(session_dir, state)
+    _mark_checkpoint_done(folder, "research")
+    return state
+
+
+def resume_research(router, state: dict, session_dir: str, entry, resume_meta: dict) -> dict:
+    """Continue a stopped research run from `entry`, then do the normal post-run work."""
+    from .research.graph import build_research_app
+    from .research.sources import enabled
+    folder = _prepare_research(state, session_dir)
+    print(f"\n🔬 Resuming research: {state.get('topic', '')}  (sources: {', '.join(enabled())})")
+    if entry != END:
+        state = run_graph(build_research_app(entry=entry), state, folder, router,
+                          label="research", resume_meta=resume_meta)
+    _finish_research(session_dir, state)
+    _mark_checkpoint_done(folder, "research")
     return state
 
 
@@ -390,6 +518,110 @@ def continue_research(router_factory, arg: str) -> None:
 
 
 # --------------------------------------------------------------------------
+# Resume a stopped run
+# --------------------------------------------------------------------------
+def _checkpoint_kind(path: str) -> str:
+    base = os.path.basename(path)
+    if base == "research_checkpoint.json":
+        return "research"
+    if base == "checkpoint.json":
+        return "video"
+    return ""
+
+
+def _read_checkpoint_meta(path: str) -> dict:
+    with open(path, encoding="utf-8") as f:
+        return (json.load(f) or {}).get("_resume") or {}
+
+
+def _checkpoint_for_session(session_dir: str) -> str:
+    """A session folder's checkpoint: the newest one that is not "done" (a research-video
+    session has both), else research, else video. '' when the folder has none."""
+    found = []
+    for rel in (os.path.join("research", "research_checkpoint.json"), "checkpoint.json"):
+        path = os.path.join(session_dir, rel)
+        if not os.path.exists(path):
+            continue
+        try:
+            status = _read_checkpoint_meta(path).get("status")
+        except (OSError, ValueError):
+            status = None
+        found.append((path, status))
+    if not found:
+        return ""
+    stopped = [p for p, status in found if status != "done"]
+    return max(stopped or [p for p, _ in found], key=os.path.getmtime)
+
+
+def _latest_stopped_checkpoint() -> str:
+    """The most recently written checkpoint whose status is not "done"."""
+    best = None
+    for pattern in ("output/*/research/research_checkpoint.json", "output/*/checkpoint.json"):
+        for path in glob.glob(os.path.join(PROJECT_ROOT, pattern)):
+            try:
+                meta = _read_checkpoint_meta(path)
+            except (OSError, ValueError):
+                continue
+            if not meta or meta.get("status") == "done":
+                continue
+            mtime = os.path.getmtime(path)
+            if best is None or mtime > best[0]:
+                best = (mtime, path)
+    return best[1] if best else ""
+
+
+def _resolve_resume(arg: str) -> tuple:
+    """(session_dir, checkpoint path) for 'output/<id>', '<id>', a path, or ""
+    (the latest stopped run). Returns ('', '') when there is nothing to resume."""
+    if arg:
+        for cand in (arg, os.path.join(PROJECT_ROOT, arg), os.path.join(PROJECT_ROOT, "output", arg)):
+            if cand and os.path.isdir(cand):
+                path = _checkpoint_for_session(cand)
+                if path:
+                    return os.path.abspath(cand), path
+        return "", ""
+    path = _latest_stopped_checkpoint()
+    return (_session_of_checkpoint(path), path) if path else ("", "")
+
+
+def _topic_of(state: dict) -> str:
+    if state.get("topic"):
+        return str(state["topic"])
+    text = (state.get("original_script") or "").strip()
+    return text.splitlines()[0][:80] if text else "(untitled)"
+
+
+def resume_video(router, state: dict, session_dir: str, entry, resume_meta: dict) -> None:
+    run_video(router, "", output_dir=session_dir, resume_state=state, entry=entry, resume_meta=resume_meta)
+
+
+def resume_run(router_factory, arg: str = "") -> None:
+    """`python3 main.py --resume [session]`: continue the newest stopped research or
+    video run from the step it was on, then do the normal post-run work for that graph."""
+    session_dir, path = _resolve_resume(arg or "")
+    if not path:
+        where = f"'{arg}'" if arg else "the output folder"
+        stop_run(ValueError(f"no stopped run to resume in {where} (nothing with status != done)"))
+    kind = _checkpoint_kind(path)
+    state, meta = load_checkpoint(path)
+    completed = [n for n in (meta.get("completed") or []) if n]
+    if kind == "research":
+        from .research.graph import next_after
+    else:
+        from .graph import next_after
+    entry = next_after(meta.get("last_node"), state)
+    label = meta.get("label") or kind
+    step = "the final step" if entry == END else entry
+    print(f"▶ Resuming {label} for '{_topic_of(state)}' at step {step} "
+          f"({len(completed)} steps already done)")
+    router = router_factory()
+    if kind == "research":
+        resume_research(router, state, session_dir, entry, meta)
+    else:
+        resume_video(router, state, session_dir, entry, meta)
+
+
+# --------------------------------------------------------------------------
 def main():
     load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
     llm_config = load_llm_config()
@@ -403,11 +635,15 @@ def main():
     audience = _take_flag("--audience") or ""
     cont = _take_flag("--continue")
     continuing = cont is not None
+    resume = _take_flag("--resume")
+    resuming = resume is not None
 
     if workflow and workflow not in WORKFLOWS:
         stop_run(ValueError(f"--workflow must be one of: {', '.join(WORKFLOWS)}"))
     if continuing:
         chosen = "continue"
+    elif resuming:
+        chosen = "resume"
     elif workflow:
         chosen = workflow
     elif topic:
@@ -448,6 +684,10 @@ def main():
                 if pick.isdigit() and 1 <= int(pick) <= len(sessions):
                     cont = os.path.dirname(os.path.dirname(list(reversed(sessions))[int(pick) - 1]))
         continue_research(make_router, cont or "")
+        return
+
+    if chosen == "resume":
+        resume_run(make_router, resume or "")
         return
 
     if chosen in ("research", "research-video"):
