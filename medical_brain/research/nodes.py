@@ -78,6 +78,26 @@ def _source_block(state: dict, sid: str, limit: int = 3500) -> str:
     return head + "\n" + (s.get("text") or "")[:limit]
 
 
+_WORD = re.compile(r"[a-z]{4,}")
+
+
+def _word_set(text: str) -> set:
+    """The 4+ letter words of a phrase, for matching a brief point to a section."""
+    return set(_WORD.findall((text or "").lower()))
+
+
+def _expert_brief_block(state: dict) -> str:
+    """The EXPERT BRIEF block for the planner: the checklist to cover, never evidence."""
+    brief = state.get("expert_brief") or {}
+    lines = [f"- {p.get('id', '')} [{p.get('confidence', '')}] {p.get('point', '')}"
+             for p in (brief.get("points") or []) if isinstance(p, dict)]
+    guidelines = "; ".join(str(g) for g in (brief.get("key_guidelines") or []) if str(g).strip()) or "(none)"
+    misconceptions = "; ".join(str(m) for m in (brief.get("misconceptions") or []) if str(m).strip()) or "(none)"
+    return ("EXPERT BRIEF: a specialist's checklist — cover every point, never treat it as evidence:\n"
+            + ("\n".join(lines) if lines else "- (none)")
+            + f"\nKey guidelines: {guidelines}\nMisconceptions: {misconceptions}")
+
+
 def _norm(text: str) -> str:
     t = (text or "").lower()
     t = t.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
@@ -146,11 +166,72 @@ def _parallel(fn, items, workers: int) -> list:
 # --------------------------------------------------------------------------
 # steps
 # --------------------------------------------------------------------------
+_EXPERT_CONFIDENCE = ("high", "medium", "low")
+
+
+def expert_brief(state: dict) -> dict:
+    """The model's own specialist knowledge, written BEFORE the search as directions.
+
+    Never evidence: the points are searched for and only what the sources confirm reaches
+    the facts and the patient guide. One call; an unreadable answer gives an empty brief
+    (logged) so the research always continues."""
+    system_prompt = load_prompt("research/expert_brief")
+    user_prompt = f"""TOPIC: {state.get("topic", "")}
+AUDIENCE: {state.get("audience") or "Egyptian general public watching a medical YouTube channel (Dr. Ahmed Hosney)"}
+CREATOR'S NOTES: {state.get("user_notes") or "(none)"}
+
+Write the expert brief. Output ONLY the JSON object."""
+    try:
+        data, _ = call_llm_json(system_prompt, user_prompt, temperature=0.3, max_tokens=6000,
+                                required=["points"])
+    except UnreadableAnswer:
+        data = {}
+        _log("expert brief: answer unreadable — continuing without a brief")
+    points, seen = [], set()
+    for raw in pick(data, "points", default=[]) or []:
+        if not isinstance(raw, dict):
+            continue
+        point = str(pick(raw, "point", default="") or "").strip()
+        if not point:
+            continue
+        pid = str(pick(raw, "id", default="") or "").strip()
+        if not pid or pid in seen:               # missing/duplicate id → next free K-number
+            n = len(points) + 1
+            pid = f"K{n}"
+            while pid in seen:
+                n += 1
+                pid = f"K{n}"
+        seen.add(pid)
+        confidence = str(pick(raw, "confidence", default="") or "").strip().lower()
+        if confidence not in _EXPERT_CONFIDENCE:
+            confidence = "low"
+        points.append({
+            "id": pid, "point": point, "confidence": confidence,
+            "why": str(pick(raw, "why", default="") or "").strip(),
+            "literature_queries": [str(q).strip() for q in (pick(raw, "literature_queries", default=[]) or [])
+                                   if str(q).strip()],
+            "public_queries": [str(q).strip() for q in (pick(raw, "public_queries", default=[]) or [])
+                               if str(q).strip()],
+        })
+    brief = {
+        "points": points,
+        "key_guidelines": [str(g).strip() for g in (pick(data, "key_guidelines", default=[]) or [])
+                           if str(g).strip()],
+        "misconceptions": [str(m).strip() for m in (pick(data, "misconceptions", default=[]) or [])
+                           if str(m).strip()],
+    }
+    _log(f"expert brief: {len(points)} points, {len(brief['key_guidelines'])} guidelines, "
+         f"{len(brief['misconceptions'])} misconceptions")
+    return {"expert_brief": brief}
+
+
 def topic_planner(state: dict) -> dict:
     system_prompt = load_prompt("research/topic_planner")
     user_prompt = f"""TOPIC: {state.get("topic", "")}
 AUDIENCE: {state.get("audience") or "Egyptian general public watching a medical YouTube channel (Dr. Ahmed Hosney)"}
 CREATOR'S NOTES: {state.get("user_notes") or "(none)"}
+
+{_expert_brief_block(state)}
 
 Plan the research. Output ONLY the JSON object."""
     try:
@@ -525,9 +606,45 @@ def _web_research(state: dict, sections_with_queries: list, settings: dict) -> d
         return {}
 
 
+def _expert_seed_queries(state: dict) -> bool:
+    """Add the expert brief's queries to their best-matching section's pending queries.
+
+    Each point goes to the section whose title + questions share the most words with it
+    (first section on a tie). Done exactly once per run, deduped against ``queries_done``
+    and against what the section already has pending. Returns True when it ran."""
+    if state.get("expert_queries_added"):
+        return False
+    points = (state.get("expert_brief") or {}).get("points") or []
+    outline = state.get("outline", [])
+    if not points or not outline:
+        return False
+    done = set(state.get("queries_done", []))
+    for point in points:
+        if not isinstance(point, dict):
+            continue
+        words = _word_set(str(point.get("point", "")))
+        best, best_score = outline[0], -1
+        for sec in outline:
+            sec_words = _word_set(str(sec.get("title", "")) + " " + " ".join(sec.get("questions", [])))
+            score = len(words & sec_words)
+            if score > best_score:
+                best, best_score = sec, score
+        pending = best.setdefault("pending", {"literature": [], "public": []})
+        for kind in ("literature", "public"):
+            bucket = pending.setdefault(kind, [])
+            for raw in point.get(f"{kind}_queries") or []:
+                query = str(raw).strip()
+                if not query or f"{kind}:{query}" in done or query in bucket:
+                    continue
+                bucket.append(query)
+    state["expert_queries_added"] = True
+    return True
+
+
 def source_collector(state: dict) -> dict:
     settings = state.get("settings", {})
     per_query, years = settings.get("sources_per_query", 6), settings.get("research_years", 10)
+    _expert_seed_queries(state)
     outline = [dict(s) for s in state.get("outline", [])]
     sources = {k: dict(v) for k, v in state.get("sources", {}).items()}
     by_key = {v["key"]: k for k, v in sources.items()}
@@ -574,7 +691,8 @@ def source_collector(state: dict) -> dict:
         _log(f"{sec['id']} {sec['title'][:50]}: {new_here + web_here} new sources, "
              f"{len(sec['candidates'])} candidates")
     return {"outline": outline, "sources": sources, "next_source": next_id, "queries_done": done,
-            "source_log": list(src.http.log)}
+            "source_log": list(src.http.log),
+            "expert_queries_added": bool(state.get("expert_queries_added"))}
 
 
 def source_screener(state: dict) -> dict:
@@ -1013,6 +1131,10 @@ def coverage_critic(state: dict) -> dict:
 
     classic_lines = [classic_line(c) for c in classic if isinstance(c, dict) and c.get("item")] or ["(none)"]
     special = state.get("special_groups") or []
+    expert_points = [p for p in ((state.get("expert_brief") or {}).get("points") or [])
+                     if isinstance(p, dict)]
+    checklist_lines = [f"- {p.get('id', '')} [{p.get('confidence', '')}] {p.get('point', '')}"
+                       for p in expert_points] or ["(none)"]
     system_prompt = load_prompt("research/coverage_critic")
     user_prompt = f"""TOPIC: {state.get("topic", "")}
 ANGLE: {state.get("angle", "")}
@@ -1021,6 +1143,8 @@ CLASSIC CHECKS:
 {chr(10).join(classic_lines)}
 SPECIAL GROUPS: {", ".join(str(g) for g in special) or "(none)"}
 MUST COVER: {" | ".join(state.get("must_cover", [])) or "(see topic)"}
+EXPERT CHECKLIST:
+{chr(10).join(checklist_lines)}
 {("CREATOR'S REVIEW NOTES: " + state["review"].get("notes", "")) if state.get("review", {}).get("notes") else ""}
 
 VERIFIED FACTS BY SECTION:
@@ -1032,6 +1156,23 @@ Output ONLY the JSON object."""
                                   required=["coverage_score", "missing"])
     except UnreadableAnswer as e:
         data, raw = {}, e.raw
+    # The expert checklist verdicts: only known K-ids and verified fact ids are kept; a
+    # point left out of this round's answer keeps its earlier verdict (latest round wins
+    # per id). A point the model never addressed stays absent (unknown → "missing").
+    point_ids = {str(p.get("id", "")) for p in expert_points}
+    valid_facts = {f["id"] for f in state.get("facts", []) if f.get("status") == "verified"}
+    expert_status = dict(state.get("expert_status") or {})
+    for raw_point in pick(data, "expert_points", default=[]) or []:
+        if not isinstance(raw_point, dict):
+            continue
+        pid = str(pick(raw_point, "id", default="") or "").strip()
+        if pid not in point_ids:
+            continue
+        status = str(pick(raw_point, "status", default="") or "").strip().lower()
+        if status not in ("covered", "contradicted", "missing"):
+            status = "missing"
+        facts = [str(f).strip().strip("[]") for f in (pick(raw_point, "facts", default=[]) or [])]
+        expert_status[pid] = {"status": status, "facts": [f for f in facts if f in valid_facts]}
     scores = {k: pick(data, k + "_score", kind=int) for k in ("coverage", "accuracy", "value")}
     pass_score = settings.get("coverage_pass_score", 7)
     passed = bool(pick(data, "pass", default=False, kind=bool)) or all((v or 0) >= pass_score
@@ -1093,7 +1234,7 @@ Output ONLY the JSON object."""
     _log(f"coverage round {rounds + 1}: scores {scores}" + why)
     out = {"coverage_round": rounds + 1, "coverage_pass": passed, "coverage_scores": scores,
            "coverage_report": str(pick(data, "report", default="") or raw or ""), "need_research": more,
-           "outline": outline}
+           "outline": outline, "expert_status": expert_status}
     if more:
         out.update(focus=new_work, work=new_work, screen_round=0, verify_round=0)
     return out
@@ -1289,12 +1430,20 @@ def guide_editor(state: dict) -> dict:
                   f"{f['claim']} — sources: {_source_names(state, f.get('source_ids', [])) or '—'}"
                   for f in facts]
     special = state.get("special_groups") or []
+    # The planned viewer questions (from the outline) must each be answered somewhere; the
+    # expert brief is deliberately NOT sent here — only the verified facts reach the guide.
+    planned = [str(q).strip() for sec in state.get("outline", [])
+               for q in (sec.get("questions") or []) if str(q).strip()]
+    planned_lines = "\n".join(f"- {q}" for q in planned) or "(none)"
     user_prompt = f"""TOPIC: {state.get("topic", "")}
 TOPIC TYPE: {state.get("topic_type") or "(not set)"}
 ANGLE: {state.get("angle", "")}
 SPECIAL GROUPS: {", ".join(str(g) for g in special) or "(none)"}
 CLASSIC CHECKS (item — verdict — facts — complementary — harmful):
 {chr(10).join(classic_lines)}
+
+PLANNED VIEWER QUESTIONS (answer every one somewhere when the facts allow; put any the facts do not settle under "uncertain"):
+{planned_lines}
 
 VERIFIED FACTS (id [section · kind · strength] claim — sources):
 {chr(10).join(fact_lines)}

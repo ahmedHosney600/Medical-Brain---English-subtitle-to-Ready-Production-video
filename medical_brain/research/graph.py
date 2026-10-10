@@ -1,6 +1,6 @@
 """The research workflow graph (topic → verified fact dossier).
 
-    start → topic_planner (or review_planner on a review round)
+    start → expert_brief → topic_planner (or review_planner on a review round)
           → source_collector → source_screener ──gaps──┐ (back to collector)
           → fact_extractor → fact_verifier ──fixes──┐ (back to extractor)
                                  └─ else ─→ fact_merger → coverage_critic ──missing──┐ (back to collector)
@@ -13,6 +13,7 @@ from . import nodes
 from .state import ResearchState
 
 NODES = [
+    ("expert_brief", nodes.expert_brief),
     ("topic_planner", nodes.topic_planner),
     ("review_planner", nodes.review_planner),
     ("source_collector", nodes.source_collector),
@@ -27,7 +28,9 @@ NODES = [
 
 
 def route_start(state: dict) -> str:
-    return "review_planner" if state.get("review") and state.get("outline") else "topic_planner"
+    # A review round has an outline already → plan the changes; a fresh run writes the
+    # expert brief first, so the planner gets the specialist's checklist.
+    return "review_planner" if state.get("review") and state.get("outline") else "expert_brief"
 
 
 def route_after_review(state: dict) -> str:
@@ -48,6 +51,7 @@ def route_after_coverage(state: dict) -> str:
 
 # The node that always follows another (the static edges of build_research_app).
 _STATIC_NEXT = {
+    "expert_brief": "topic_planner",
     "topic_planner": "source_collector",
     "source_collector": "source_screener",
     "fact_extractor": "fact_verifier",
@@ -84,7 +88,8 @@ def build_research_app(entry=None):
         g.add_edge(START, entry)
     else:
         g.add_conditional_edges(START, route_start,
-                                {"topic_planner": "topic_planner", "review_planner": "review_planner"})
+                                {"expert_brief": "expert_brief", "review_planner": "review_planner"})
+    g.add_edge("expert_brief", "topic_planner")
     g.add_edge("topic_planner", "source_collector")
     g.add_conditional_edges("review_planner", route_after_review,
                             {"source_collector": "source_collector", "dossier_editor": "dossier_editor"})

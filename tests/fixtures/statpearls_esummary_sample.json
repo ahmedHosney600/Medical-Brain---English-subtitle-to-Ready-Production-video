@@ -1,0 +1,28 @@
+{
+  "header": {"type": "esummary", "version": "0.3"},
+  "result": {
+    "uids": ["NBK279180", "NBK279180/table/T1", "NBK548891", "NBK441902"],
+    "NBK279180": {
+      "uid": "5922342", "rid": "NBK279180", "accessionid": "NBK279180", "rtype": "chapter",
+      "title": "Muscle Cramps",
+      "pubdate": "2023/11/21 00:00",
+      "authors": [{"name": "Bordoni B"}, {"name": "Sugumar K"}, {"name": "Varacallo M"}]
+    },
+    "NBK279180/table/T1": {
+      "uid": "5922343", "rid": "NBK279180/table/article.table1", "accessionid": "NBK279180",
+      "rtype": "table",
+      "title": "Table 1: Causes of muscle cramps",
+      "pubdate": "2023"
+    },
+    "NBK548891": {
+      "uid": "5901540", "rid": "NBK548891", "accessionid": "NBK548891", "rtype": "chapter",
+      "title": "Restless Legs Syndrome",
+      "pubdate": "2022/09/05 00:00"
+    },
+    "NBK441902": {
+      "uid": "5858616", "rid": "NBK441902", "accessionid": "NBK441902", "rtype": "chapter",
+      "title": "Hypokalemia",
+      "pubdate": "2019/01/02 00:00"
+    }
+  }
+}

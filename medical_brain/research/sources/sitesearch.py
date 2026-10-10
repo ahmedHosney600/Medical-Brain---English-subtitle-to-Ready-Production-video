@@ -8,14 +8,18 @@ Three engines, all returning the same result dict shape as ``google``
 * ``nhs_search``       — NHS site search over plain HTTP; the result anchors point at a
                          ``/search/click?url=…`` redirect, which is decoded and never
                          followed (the URL embedded in the query string is the page).
-* ``catalog_search``   — the site's sitemap (Hopkins via Chrome, Cleveland and NCCIH via
-                         HTTP), cached as JSON and searched offline by URL slug. Used where
-                         robots.txt disallows the site's own ``/search``.
+* ``catalog_search``   — the site's sitemap (Hopkins via Chrome; the rest via HTTP), cached
+                         as JSON and searched offline by URL slug. Used where robots.txt
+                         disallows the site's own ``/search``. Sitemap indexes are followed
+                         to their content sitemaps, gzip-compressed sitemaps are unpacked,
+                         and each site keeps only its patient-health pages.
 
-``search`` merges the five sources (Mayo, Hopkins, NHS, Cleveland, NCCIH), round-robin so
+``search`` merges the site-native sources (Mayo, NHS, MSD Manual, Cleveland Clinic,
+Patient.info, Johns Hopkins, familydoctor.org, Harvard Health, NCCIH, WHO), round-robin so
 each site gets representation, dedupes by href and re-ranks. Every failure is logged to
 ``http.log`` and swallowed — research must carry on without a site.
 """
+import gzip
 import html
 import html.parser
 import json
@@ -35,10 +39,13 @@ NHS_SEARCH_URL = "https://www.nhs.uk/search/results?q={q}"
 CATALOG_MAX_AGE = 7 * 24 * 3600       # a week; older catalogs are refreshed
 
 # Site order for the merged search (interleave starts here).
-SITE_ORDER = ["mayoclinic.org", "hopkinsmedicine.org", "nhs.uk", "my.clevelandclinic.org",
-              "nccih.nih.gov"]
+SITE_ORDER = ["mayoclinic.org", "nhs.uk", "msdmanuals.com", "my.clevelandclinic.org",
+              "patient.info", "hopkinsmedicine.org", "familydoctor.org", "health.harvard.edu",
+              "nccih.nih.gov", "who.int"]
 
-# The sitemap spec per site: ``browser`` marks the ones only reachable through Chrome.
+# The sitemap spec per site: ``browser`` marks the ones only reachable through Chrome;
+# ``pick`` keeps only the sub-sitemaps whose URL contains one of the given strings (an
+# index's other sub-sitemaps are skipped); ``max_sitemaps`` caps how many are followed.
 CATALOGS = {
     "hopkinsmedicine.org": {"url": "https://www.hopkinsmedicine.org/health-sitemap.xml",
                             "browser": True},
@@ -48,6 +55,24 @@ CATALOGS = {
     # robots.txt allows fetching, and the sitemap lists only patient health pages.
     "nccih.nih.gov": {"url": "https://www.nccih.nih.gov/sitemap/sitemap-0.xml",
                       "browser": False},
+    # MSD Manual consumer edition: a sitemap index whose home-topic sitemap is gzip'd;
+    # only /home/… pages are shown.
+    "msdmanuals.com": {"url": "https://www.msdmanuals.com/sitemap.xml", "browser": False,
+                       "pick": "home-topic", "max_sitemaps": 4},
+    # Patient.info: patient-information leaflets, clinician articles and drug leaflets.
+    "patient.info": {"url": "https://patient.info/sitemap.xml", "browser": False,
+                     "pick": ["patientinformationleaflet", "patientprofessionalarticle",
+                              "medicineleaflet"],
+                     "max_sitemaps": 4},
+    # familydoctor.org (AAFP): its conditions sitemap (plain HTTP).
+    "familydoctor.org": {"url": "https://familydoctor.org/sitemap_index.xml", "browser": False,
+                         "pick": "conditions", "max_sitemaps": 4},
+    # Harvard Health: an index of sub-sitemaps; only article pages are kept.
+    "health.harvard.edu": {"url": "https://www.health.harvard.edu/sitemap.xml",
+                           "browser": False, "max_sitemaps": 8},
+    # WHO: keep the /news-room/fact-sheets/detail/… pages only.
+    "who.int": {"url": "http://www.who.int/sitemaps/sitemapindex.xml", "browser": False,
+                "max_sitemaps": 20},
 }
 
 # Mayo sections that hold patient health content (everything else is search/navigation/
@@ -299,6 +324,85 @@ def _health_url(url: str) -> bool:
     return urllib.parse.urlparse(url or "").path.startswith("/health/")
 
 
+def _path_parts(url: str) -> list:
+    return [p for p in urllib.parse.urlparse(url or "").path.split("/") if p]
+
+
+def _msd_content(url: str) -> bool:
+    """MSD Manual consumer pages, under /home/ (not the professional edition)."""
+    return _site_of(url) == "msdmanuals.com" and urllib.parse.urlparse(url).path.startswith("/home/")
+
+
+# patient.info sections that are not clinical content (lifestyle magazine, video,
+# legal pages, job/site furniture). Leaflets live under health categories at the root,
+# clinician articles under /doctor/, drug leaflets under /medicine/.
+_PATIENT_BLOCKED = {"recipes", "features", "video", "videos", "tools", "tools-and-calculators",
+                    "author", "authors", "blogs", "homepage", "jobs", "research", "directory",
+                    "privacy-policy", "editorial-policy", "terms-and-conditions", "affiliate-links",
+                    "wordpress-plugin", "language", "newsletter", "about-us", "contact-us", "forums",
+                    "news", "medical-calculators", "brain-teasers", "travel-country", "competitions",
+                    "professional", "sitemap"}
+
+
+def _patient_content(url: str) -> bool:
+    """Patient.info clinical pages: leaflets, /doctor/ articles and /medicine/ leaflets."""
+    if _site_of(url) != "patient.info":
+        return False
+    parts = _path_parts(url)
+    return len(parts) >= 2 and parts[0].lower() not in _PATIENT_BLOCKED
+
+
+def _familydoctor_content(url: str) -> bool:
+    """familydoctor.org condition pages only (not the /condition/ category page)."""
+    if _site_of(url) != "familydoctor.org":
+        return False
+    parts = _path_parts(url)
+    return len(parts) >= 2 and parts[0] == "condition"
+
+
+# Harvard Health pages that are navigation/shop, never patient-health articles.
+_HARVARD_BLOCKED = {"shop", "product", "products", "store", "tag", "tags", "category",
+                    "categories", "author", "authors", "search", "newsletter", "subscription",
+                    "account", "cart"}
+
+
+def _harvard_content(url: str) -> bool:
+    if _site_of(url) != "health.harvard.edu":
+        return False
+    parts = _path_parts(url)
+    return bool(parts) and not any(p.lower() in _HARVARD_BLOCKED for p in parts)
+
+
+def _who_content(url: str) -> bool:
+    """WHO fact sheets only (the news room holds many other page kinds)."""
+    return _site_of(url) == "who.int" and \
+        urllib.parse.urlparse(url).path.startswith("/news-room/fact-sheets/detail/")
+
+
+# Per-site content filter; anything not listed falls back to the /health/ rule.
+CATALOG_CONTENT = {
+    "msdmanuals.com": _msd_content,
+    "patient.info": _patient_content,
+    "familydoctor.org": _familydoctor_content,
+    "health.harvard.edu": _harvard_content,
+    "who.int": _who_content,
+}
+
+
+def _content_ok(key: str, url: str) -> bool:
+    return CATALOG_CONTENT.get(key, _health_url)(url)
+
+
+def _dedupe(urls) -> list:
+    out, seen = [], set()
+    for url in urls or []:
+        url = (url or "").strip()
+        if url and url not in seen:
+            seen.add(url)
+            out.append(url)
+    return out
+
+
 def _catalog_key(site: str) -> Optional[str]:
     key = re.sub(r"^https?://", "", str(site or "").strip().lower()).split("/")[0]
     key = re.sub(r"^www\.", "", key).rstrip(".")
@@ -346,28 +450,64 @@ def _write_catalog(path: str, urls: list) -> None:
         pass
 
 
+def _is_index(text: str) -> bool:
+    """A sitemap index (``<sitemapindex>``) lists sub-sitemaps; a urlset lists pages."""
+    return bool(re.search(r"<sitemapindex[\s>]", text or "", re.I))
+
+
+def _catalog_text(url: str, gzip_hint: bool = False) -> Optional[str]:
+    """Fetch one sitemap as text, transparently unpacking a ``.gz`` payload; None on failure."""
+    if gzip_hint or urllib.parse.urlparse(url).path.endswith(".gz"):
+        raw = http.get_bytes(url, source="sitemap")
+        if raw is None:
+            return None
+        try:
+            return gzip.decompress(raw).decode("utf-8", errors="replace")
+        except OSError:                       # served as plain text despite the .gz name
+            return raw.decode("utf-8", errors="replace")
+    try:
+        return http.get(url, source="sitemap")
+    except Exception as exc:
+        http.log.append(("Sites", url, f"{type(exc).__name__}: {exc}"))
+        return None
+
+
 def _fetch_catalog(key: str) -> Optional[list]:
-    """Fetch and parse one sitemap -> /health/ URLs, or None on any failure."""
+    """Fetch a site's sitemap (following an index and unpacking gzip) → content URLs.
+
+    Returns None on any failure or when the content filter keeps nothing."""
     spec = CATALOGS[key]
     if spec["browser"]:
         page = _browser_open(spec["url"], wait=4.0)
         if not page:
             return None
         text = page.get("html") or page.get("text") or ""
-    else:
-        try:
-            text = http.get(spec["url"], source="sitemap")
-        except Exception as exc:
-            http.log.append(("Sites", spec["url"], f"{type(exc).__name__}: {exc}"))
+        if not text:
             return None
+    else:
+        text = _catalog_text(spec["url"], spec.get("gzip", False))
         if text is None:
             return None
-    urls = [u for u in parse_sitemap(text) if _health_url(u)]
-    return urls or None
+    urls = parse_sitemap(text)
+    if _is_index(text):
+        pick = spec.get("pick")
+        picks = [pick] if isinstance(pick, str) else list(pick or [])
+        children = [u for u in urls if ".xml" in u.lower()]
+        if picks:
+            chosen = [u for u in children if any(p in u for p in picks)]
+            children = chosen or children
+        collected = []
+        for child in children[:spec.get("max_sitemaps", 8)]:
+            child_text = _catalog_text(child)
+            if child_text:
+                collected.extend(parse_sitemap(child_text))
+        urls = collected
+    keep = _dedupe(u for u in urls if _content_ok(key, u))
+    return keep or None
 
 
 def catalog(site: str) -> list:
-    """Full /health/ URL list for a site, from a JSON cache refreshed weekly.
+    """Full content-URL list for a site, from a JSON cache refreshed weekly.
 
     A fresh cache is returned as-is; a stale one is refreshed, falling back to the stale
     list (or []) when the fetch fails. Never raises."""
@@ -465,7 +605,7 @@ def _wanted_sites(sites) -> set:
 
 
 def search(query: str, sites=None, max_results: int = 8) -> list:
-    """Merged site-native results: Mayo, Hopkins, NHS, Cleveland, NCCIH, round-robin.
+    """Merged site-native results, round-robin in SITE_ORDER.
 
     Each site contributes up to ``max_results``; duplicates (same href) are dropped and
     the survivors re-ranked 1..N. Never raises — a dead site is logged and skipped."""
@@ -473,10 +613,15 @@ def search(query: str, sites=None, max_results: int = 8) -> list:
         wanted = _wanted_sites(sites)
         engines = {
             "mayoclinic.org": lambda: mayo_search(query, max_results),
-            "hopkinsmedicine.org": lambda: catalog_search("hopkinsmedicine.org", query, max_results),
             "nhs.uk": lambda: nhs_search(query, max_results),
+            "msdmanuals.com": lambda: catalog_search("msdmanuals.com", query, max_results),
             "my.clevelandclinic.org": lambda: catalog_search("my.clevelandclinic.org", query, max_results),
+            "patient.info": lambda: catalog_search("patient.info", query, max_results),
+            "hopkinsmedicine.org": lambda: catalog_search("hopkinsmedicine.org", query, max_results),
+            "familydoctor.org": lambda: catalog_search("familydoctor.org", query, max_results),
+            "health.harvard.edu": lambda: catalog_search("health.harvard.edu", query, max_results),
             "nccih.nih.gov": lambda: catalog_search("nccih.nih.gov", query, max_results),
+            "who.int": lambda: catalog_search("who.int", query, max_results),
         }
         lists = []
         for domain in SITE_ORDER:

@@ -12,6 +12,7 @@ TRUSTED_DOMAINS = [
     "clevelandclinic.org", "hopkinsmedicine.org", "health.harvard.edu", "heart.org", "escardio.org",
     "acc.org", "diabetes.org", "cancer.gov", "cancer.org", "fda.gov", "ema.europa.eu",
     "cochranelibrary.com", "uspreventiveservicestaskforce.org", "kidney.org", "aafp.org",
+    "msdmanuals.com", "patient.info", "familydoctor.org",
 ]
 
 

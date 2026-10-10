@@ -21,6 +21,9 @@ class ResearchState(TypedDict, total=False):
     classic_checks: list         # [{"item": str, "section": str}]
     complementary: dict          # {"applies": bool, "why": str, "items": [str]}
     special_groups: list         # [str]
+    expert_brief: dict           # expert_brief node: {points, key_guidelines, misconceptions} (directions, not evidence)
+    expert_status: dict          # coverage_critic: K-id -> {"status": covered|contradicted|missing, "facts": [...]}
+    expert_queries_added: bool   # the brief's queries were seeded into the first collection round
     outline: list
     sources: dict
     facts: list
@@ -61,7 +64,7 @@ DEFAULT_SETTINGS = {
     "max_coverage_rounds": 2,         # coverage critic → more research
     "max_coverage_sections": 3,       # sections re-researched per coverage round
     "max_sources_per_section": 12,    # hard cap on kept sources in a section
-    "max_facts_per_section": 12,      # verified facts a section needs, then stop
+    "max_facts_per_section": 15,      # verified facts a section needs, then stop
     "coverage_pass_score": 7,         # each coverage score that counts as a pass
     "sources_per_query": 6,
     "sources_per_section": 8,
@@ -80,6 +83,7 @@ def new_state(topic: str, audience: str = "", notes: str = "", settings: dict = 
         topic=topic.strip(), audience=audience, user_notes=notes, angle="", topic_type="",
         must_cover=[], classic_checks=[], complementary={"applies": False, "why": "", "items": []},
         special_groups=[], outline=[],
+        expert_brief={}, expert_status={}, expert_queries_added=False,
         sources={}, facts=[], merged=[], rejected=[], focus=[], work=[], to_extract=[], extractor_notes={},
         need_sources=False, need_fix=False, need_research=False, queries_done=[], next_source=1, next_fact=1,
         screen_round=0, verify_round=0, coverage_round=0, coverage_pass=False, coverage_report="",

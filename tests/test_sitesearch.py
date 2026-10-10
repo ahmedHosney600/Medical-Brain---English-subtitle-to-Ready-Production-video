@@ -361,7 +361,8 @@ class MergedSearchTest(unittest.TestCase):
             nhs=[{"title": "N1", "href": "https://www.nhs.uk/conditions/x/", "site": "nhs.uk", "snippet": "", "rank": 1}],
             cleveland=[{"title": "C1", "href": "https://my.clevelandclinic.org/health/y", "site": "my.clevelandclinic.org", "snippet": "", "rank": 1}])
         results = sitesearch.search("leg cramps")
-        self.assertEqual([r["title"] for r in results], ["M1", "H1", "N1", "C1", "M2"])
+        # SITE_ORDER: Mayo, NHS, MSD, Cleveland, Patient.info, Hopkins, familydoctor, Harvard, NCCIH, WHO
+        self.assertEqual([r["title"] for r in results], ["M1", "N1", "C1", "H1", "M2"])
         self.assertEqual([r["rank"] for r in results], [1, 2, 3, 4, 5])
         self.assertEqual(len({r["href"] for r in results}), len(results))
 
@@ -423,6 +424,114 @@ class MergedSearchTest(unittest.TestCase):
         self.assertEqual([r["title"] for r in results], ["NC1"])
         self.assertNotIn("mayo", [c[0] for c in self.calls])
 
+    def test_search_round_robins_the_new_sites(self):
+        self._fake()
+        sitesearch.search("muscle cramps")
+        called = {c[1] for c in self.calls if c[0] == "catalog"}
+        self.assertEqual(called, {"msdmanuals.com", "my.clevelandclinic.org", "patient.info",
+                                  "hopkinsmedicine.org", "familydoctor.org", "health.harvard.edu",
+                                  "nccih.nih.gov", "who.int"})
+
+    def test_site_order_matches_the_required_banner(self):
+        self.assertEqual(sitesearch.SITE_ORDER,
+                         ["mayoclinic.org", "nhs.uk", "msdmanuals.com", "my.clevelandclinic.org",
+                          "patient.info", "hopkinsmedicine.org", "familydoctor.org",
+                          "health.harvard.edu", "nccih.nih.gov", "who.int"])
+
+
+class NewCatalogTest(unittest.TestCase):
+    """The added catalogs: index following, gzip unpacking, per-site content filtering."""
+
+    def setUp(self):
+        http.log.clear()
+        throttle = mock.patch("medical_brain.research.sources.http._throttle")
+        throttle.start()
+        self.addCleanup(throttle.stop)
+
+    def _fetch(self, key, text_map, bytes_map=None):
+        def get(url, source="", **kw):
+            return text_map.get(url)
+        def get_bytes(url, **kw):
+            return (bytes_map or {}).get(url)
+        with mock.patch("medical_brain.research.sources.http.get", side_effect=get), \
+                mock.patch("medical_brain.research.sources.http.get_bytes", side_effect=get_bytes):
+            return sitesearch._fetch_catalog(key)
+
+    def test_msd_gzip_index_and_home_filter(self):
+        raw = open(os.path.join(FIXTURES, "msd_home_sitemap_sample.xml.gz"), "rb").read()
+        urls = self._fetch("msdmanuals.com", {
+            "https://www.msdmanuals.com/sitemap.xml": fixture("msd_sitemapindex_sample.xml")},
+            {"https://www.msdmanuals.com/sitemaps/home-topic.xml.gz": raw})
+        print("\n--- MSD catalog (gzip index) ---")
+        for u in urls:
+            print("  " + u)
+        self.assertTrue(urls)
+        self.assertTrue(all(u.startswith("https://www.msdmanuals.com/home/") for u in urls))
+        self.assertIn("https://www.msdmanuals.com/home/musculoskeletal-and-connective-tissue-disorders/"
+                      "muscle-cramps", urls)
+        self.assertFalse(any("/professional/" in u or "/pages/" in u or "/resources/" in u for u in urls))
+
+    def test_patient_info_leaflets_and_professional(self):
+        urls = self._fetch("patient.info", {
+            "https://patient.info/sitemap.xml": fixture("patient_sitemapindex_sample.xml"),
+            "https://patient.info/sitemap/patientinformationleaflet.xml": fixture("patient_leaflets_sitemap_sample.xml"),
+            "https://patient.info/sitemap/patientprofessionalarticle.xml": fixture("patient_professional_sitemap_sample.xml"),
+            "https://patient.info/sitemap/medicineleaflet.xml": fixture("patient_medicine_sitemap_sample.xml")})
+        print("\n--- patient.info catalog (leaflets + professional + medicine) ---")
+        for u in urls:
+            print("  " + u)
+        self.assertIn("https://patient.info/health/leg-cramps", urls)
+        self.assertIn("https://patient.info/doctor/leg-cramps", urls)
+        self.assertIn("https://patient.info/medicine/quinine-for-leg-cramps", urls)
+        self.assertTrue(any(u.startswith("https://patient.info/health/") for u in urls))
+        self.assertTrue(any(u.startswith("https://patient.info/doctor/") for u in urls))
+        self.assertTrue(any(u.startswith("https://patient.info/medicine/") for u in urls))
+        self.assertNotIn("https://patient.info/medicine", urls)             # category page
+        self.assertFalse(any("/forums/" in u or "/news/" in u or "/blogs/" in u or u.endswith("/about-us")
+                             for u in urls))
+
+    def test_familydoctor_conditions_only(self):
+        urls = self._fetch("familydoctor.org", {
+            "https://familydoctor.org/sitemap_index.xml": fixture("familydoctor_sitemapindex_sample.xml"),
+            "https://familydoctor.org/conditions-sitemap.xml": fixture("familydoctor_conditions_sitemap_sample.xml")})
+        print("\n--- familydoctor.org conditions catalog ---")
+        for u in urls:
+            print("  " + u)
+        self.assertIn("https://familydoctor.org/condition/migraines/", urls)
+        self.assertIn("https://familydoctor.org/condition/leg-cramps/", urls)
+        self.assertNotIn("https://familydoctor.org/condition/", urls)          # category page
+        self.assertNotIn("https://familydoctor.org/about/", urls)
+        self.assertFalse(any(u.startswith("https://familydoctor.org/tag/") for u in urls))
+
+    def test_harvard_article_filter(self):
+        content = fixture("harvard_pages_sitemap_sample.xml")
+        urls = self._fetch("health.harvard.edu", {
+            "https://www.health.harvard.edu/sitemap.xml": fixture("harvard_sitemap_sample.xml"),
+            "https://www.health.harvard.edu/sitemap-pages.xml": content,
+            "https://www.health.harvard.edu/sitemap-blog.xml": content,
+            "https://www.health.harvard.edu/sitemap-shop.xml": content})
+        print("\n--- Harvard Health article catalog ---")
+        for u in urls:
+            print("  " + u)
+        self.assertIn("https://www.health.harvard.edu/muscle-cramps", urls)
+        self.assertIn("https://www.health.harvard.edu/blog/why-legs-cramp-at-night", urls)
+        self.assertFalse(any("/shop/" in u or "/tag/" in u or "/category/" in u for u in urls))
+
+    def test_who_fact_sheets_only(self):
+        content = fixture("who_news_sitemap_sample.xml")
+        urls = self._fetch("who.int", {
+            "http://www.who.int/sitemaps/sitemapindex.xml": fixture("who_sitemapindex_sample.xml"),
+            "https://www.who.int/sitemaps/news-sitemap.xml": content,
+            "https://www.who.int/sitemaps/pages-sitemap.xml": content})
+        print("\n--- WHO fact-sheet catalog ---")
+        for u in urls:
+            print("  " + u)
+        self.assertTrue(urls)
+        self.assertTrue(all("/news-room/fact-sheets/detail/" in u for u in urls))
+        self.assertIn("https://www.who.int/news-room/fact-sheets/detail/anaemia", urls)
+        self.assertFalse(any("/news-room/news/" in u or "/publications/" in u or "/health-topics/" in u
+                             for u in urls))
+
 
 @unittest.skipUnless(os.environ.get("RUN_BROWSER_TESTS") == "1",
                      "set RUN_BROWSER_TESTS=1 to search the real sites")
@@ -441,3 +550,17 @@ class RealSiteSearchSmokeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StatPearlsFallbackTest(unittest.TestCase):
+    def test_europepmc_used_when_bookshelf_gives_nothing(self):
+        from unittest import mock
+        from medical_brain.research.sources import statpearls
+        epmc = {"resultList": {"result": [{"id": "29763070", "source": "MED", "pmid": "29763070",
+                                           "title": "Muscle Cramps", "abstractText": "Muscle cramps are common.",
+                                           "pubYear": "2025", "pubTypeList": {"pubType": ["Review"]}}]}}
+        with mock.patch.object(statpearls, "_search_bookshelf", return_value=[]), \
+                mock.patch.object(statpearls.http, "get_json", return_value=epmc):
+            out = statpearls.search("muscle cramps", 3, 10)
+        self.assertEqual(len(out), 1)
+        self.assertEqual((out[0]["origin"], out[0]["journal"], out[0]["level"]), ("StatPearls", "StatPearls", 5))

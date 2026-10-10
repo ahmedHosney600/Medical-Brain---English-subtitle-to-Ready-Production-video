@@ -79,6 +79,39 @@ def get(url: str, params: Optional[dict] = None, headers: Optional[dict] = None,
     return None
 
 
+def get_bytes(url: str, timeout: float = 25, retries: int = 2, min_gap: float = 0.4,
+              source: str = "") -> Optional[bytes]:
+    """GET → the raw response bytes, or None on failure.
+
+    For binary payloads (the gzip-compressed sitemaps): ``get`` decodes as UTF-8 and
+    would corrupt them. Cached under its own key so it never collides with a text fetch."""
+    cached = _cache_path("bytes:" + url)
+    if cached and os.path.exists(cached):
+        with open(cached, "rb") as f:
+            return f.read()
+    host = urllib.parse.urlparse(url).netloc
+    problem = ""
+    for attempt in range(retries + 1):
+        _throttle(host, min_gap)
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read()
+            if cached:
+                with open(cached, "wb") as f:
+                    f.write(raw)
+            return raw
+        except urllib.error.HTTPError as e:
+            problem = f"HTTP {e.code}"
+            if e.code not in (429, 500, 502, 503, 504):
+                break
+        except Exception as e:          # time-out, DNS, proxy, …
+            problem = f"{type(e).__name__}: {e}"
+        time.sleep(1.5 * (attempt + 1))
+    log.append((source or host, url[:160], problem))
+    return None
+
+
 def get_json(url: str, **kw):
     text = get(url, **kw)
     if text is None:

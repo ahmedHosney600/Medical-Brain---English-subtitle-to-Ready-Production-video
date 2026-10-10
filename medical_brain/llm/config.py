@@ -104,6 +104,9 @@ RESEARCH_JUDGES = {
     "source_screener": "fidelity_auditor",
     "fact_verifier": "medical_truth_verifier",
     "coverage_critic": "self_critique",
+    # The expert brief is model knowledge used to direct research; route it like the
+    # fact verifier (fact_verifier is resolved earlier in this ordered mapping).
+    "expert_brief": "fact_verifier",
 }
 
 

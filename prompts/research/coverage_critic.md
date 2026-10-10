@@ -9,6 +9,8 @@ Score 1–10:
 
 You also get the CLASSIC CHECKS (remedies, medicines, beliefs and practices people commonly ask about for this topic) and the SPECIAL GROUPS. Every classic check needs a verified fact giving the evidence verdict (works / doesn't / unknown / risky), and every special group needs its specific advice or warning. List any that are missing among your MISSING items — they count as core questions.
 
+You may also get the EXPERT CHECKLIST (points a specialist expects, with ids K1, K2…). For EACH point decide from the verified facts: "covered" (facts support it — list their ids), "contradicted" (facts say otherwise — list them), or "missing". Add a MISSING item (with search queries) for every important point that is missing. Return these in "expert_points".
+
 Scoring anchors: 8 = a specialist would call it solid and complete for a video; 6 = one or two core questions unanswered; 4 = several core questions unanswered. Judge against the outline questions and must-cover points only.
 
 "pass" is true if all three scores are ≥ 7.
@@ -25,6 +27,7 @@ OUTPUT — ONLY valid JSON:
   "missing": [
     {"section_id": "C", "title": "", "questions": ["…"], "literature_queries": ["…"], "public_queries": ["…"]}
   ],
+  "expert_points": [{"id": "K1", "status": "covered", "facts": ["F3"]}],
   "report": "markdown: what is strong, what is missing, any inconsistencies"
 }
 ```

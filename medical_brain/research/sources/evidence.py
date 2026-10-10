@@ -29,6 +29,7 @@ AUTHORITY_DOMAINS = {
     "diabetes.org": 1, "uspreventiveservicestaskforce.org": 1, "cochranelibrary.com": 2,
     "nih.gov": 5, "medlineplus.gov": 5, "nhs.uk": 5, "mayoclinic.org": 5, "clevelandclinic.org": 5,
     "hopkinsmedicine.org": 5, "health.harvard.edu": 5, "fda.gov": 5, "ema.europa.eu": 5,
+    "msdmanuals.com": 5, "patient.info": 5, "familydoctor.org": 5, "ncbi.nlm.nih.gov": 5,
 }
 
 

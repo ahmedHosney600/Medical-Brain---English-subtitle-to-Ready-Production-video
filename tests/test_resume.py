@@ -134,11 +134,12 @@ class CheckpointMetadataTest(unittest.TestCase):
 # --------------------------------------------------------------------------
 class ResearchNextAfterTest(unittest.TestCase):
     def test_none_uses_route_start(self):
-        self.assertEqual(research_next_after(None, {}), "topic_planner")
+        self.assertEqual(research_next_after(None, {}), "expert_brief")
         self.assertEqual(research_next_after(None, {"review": {"approved": False}, "outline": [{"id": "A"}]}),
                          "review_planner")
 
     def test_every_edge(self):
+        self.assertEqual(research_next_after("expert_brief", {}), "topic_planner")
         self.assertEqual(research_next_after("topic_planner", {}), "source_collector")
         self.assertEqual(research_next_after("review_planner", {"focus": ["A"]}), "source_collector")
         self.assertEqual(research_next_after("review_planner", {"focus": []}), "dossier_editor")
@@ -409,9 +410,16 @@ class FakeResearchBackend:
         return self.answer(system, user)
 
     def answer(self, system, user):
-        name = next((k for k in ("topic_planner", "source_screener", "fact_extractor", "fact_verifier",
-                                 "fact_merger", "coverage_critic", "dossier_editor", "patient_guide")
-                     if system == load_prompt("research/" + k)), "")
+        name = next((k for k in ("expert_brief", "topic_planner", "source_screener", "fact_extractor",
+                                 "fact_verifier", "fact_merger", "coverage_critic", "dossier_editor",
+                                 "patient_guide") if system == load_prompt("research/" + k)), "")
+        if name == "expert_brief":
+            return json.dumps({"points": [
+                {"id": "K1", "point": "Smartwatches can detect AF.", "confidence": "high",
+                 "literature_queries": ["smartwatch AF"], "public_queries": ["AF symptoms"]},
+                {"id": "K2", "point": "Chest pain is an emergency.", "confidence": "high",
+                 "literature_queries": ["AF emergency"], "public_queries": ["AF warning signs"]}],
+                "key_guidelines": [], "misconceptions": []})
         if name == "topic_planner":
             return json.dumps({"angle": "a", "must_cover": ["x"], "sections": [
                 {"title": "Alpha", "questions": ["How?"], "literature_queries": ["a lit"], "public_queries": ["a pub"]},
@@ -445,7 +453,7 @@ class FakeResearchBackend:
         raise AssertionError("unexpected prompt")
 
 
-RESEARCH_PROMPTS = ("topic_planner", "review_planner", "source_screener", "fact_extractor",
+RESEARCH_PROMPTS = ("expert_brief", "topic_planner", "review_planner", "source_screener", "fact_extractor",
                     "fact_verifier", "fact_merger", "coverage_critic", "dossier_editor", "patient_guide")
 
 

@@ -81,12 +81,146 @@
     {
       "slug": "migraine",
       "type": "disease",
-      "topic": "migraine: how to recognise it, stop an attack and prevent future attacks"
+      "topic": "migraine: how to recognise it, stop an attack and prevent future attacks",
+      "questions": [
+        {
+          "id": "Q1",
+          "q": "How can I tell if my headache is an actual migraine or just a regular tension or sinus headache?",
+          "importance": "core"
+        },
+        {
+          "id": "Q2",
+          "q": "What is migraine aura, and what weird symptoms like vision flashes, numbness, or dizziness can happen before the pain starts?",
+          "importance": "useful"
+        },
+        {
+          "id": "Q3",
+          "q": "What should I do immediately in the first hour of an attack to stop the migraine before it becomes unbearable?",
+          "importance": "core"
+        },
+        {
+          "id": "Q4",
+          "q": "Which over-the-counter painkillers actually work, and why does taking them too often make my headaches worse?",
+          "importance": "core"
+        },
+        {
+          "id": "Q5",
+          "q": "What specific prescription medications stop a severe migraine when regular painkillers completely fail?",
+          "importance": "core"
+        },
+        {
+          "id": "Q6",
+          "q": "Do common regional remedies like drinking strong Turkish coffee with lemon, tying a tight cloth around the forehead, or cupping (hijama) really relieve migraine pain?",
+          "importance": "useful"
+        },
+        {
+          "id": "Q7",
+          "q": "What everyday triggers—like Ramadan fasting, sleep changes, weather, stress, or certain foods—are secretly bringing on my attacks?",
+          "importance": "core"
+        },
+        {
+          "id": "Q8",
+          "q": "At what point do I need daily preventive medication rather than just treating each attack as it comes?",
+          "importance": "core"
+        },
+        {
+          "id": "Q9",
+          "q": "What are the proven options for long-term migraine prevention, and how long do they take to show results?",
+          "importance": "core"
+        },
+        {
+          "id": "Q10",
+          "q": "How can pregnant or breastfeeding women safely manage a migraine attack without harming the baby?",
+          "importance": "useful"
+        },
+        {
+          "id": "Q11",
+          "q": "Can children get migraines, and how do their symptoms differ from adults?",
+          "importance": "useful"
+        },
+        {
+          "id": "Q12",
+          "q": "Do I need a brain MRI or CT scan to diagnose a migraine or rule out serious brain issues?",
+          "importance": "useful"
+        },
+        {
+          "id": "Q13",
+          "q": "What red-flag symptoms mean my headache is an emergency, like a stroke or brain hemorrhage, and I must go straight to the hospital?",
+          "importance": "core"
+        }
+      ]
     },
     {
       "slug": "statins",
       "type": "medicine",
-      "topic": "statins: who really needs them, their benefits and side effects, and the muscle pain fear"
+      "topic": "statins: who really needs them, their benefits and side effects, and the muscle pain fear",
+      "questions": [
+        {
+          "id": "Q1",
+          "q": "How do I know if I actually need a statin, or if diet and exercise alone are enough for my cholesterol level?",
+          "importance": "core"
+        },
+        {
+          "id": "Q2",
+          "q": "What real health benefits do statins give me beyond just lowering numbers on a lab report, like preventing heart attacks or stroke?",
+          "importance": "core"
+        },
+        {
+          "id": "Q3",
+          "q": "Is statin-related muscle pain common and dangerous, and how do I tell it apart from everyday fatigue or joint aches?",
+          "importance": "core"
+        },
+        {
+          "id": "Q4",
+          "q": "What should I do right away if my muscles start aching or feeling weak after starting a statin—should I stop taking the pill immediately?",
+          "importance": "core"
+        },
+        {
+          "id": "Q5",
+          "q": "What are the warning signs of rare, severe muscle damage (like dark, tea-colored urine) that mean I need to go to the hospital immediately?",
+          "importance": "core"
+        },
+        {
+          "id": "Q6",
+          "q": "Will statins harm my liver or kidneys, and what routine blood tests do I need while taking them?",
+          "importance": "core"
+        },
+        {
+          "id": "Q7",
+          "q": "Can statins cause type 2 diabetes or memory loss, and does that risk outweigh their heart benefits?",
+          "importance": "core"
+        },
+        {
+          "id": "Q8",
+          "q": "If I cannot tolerate a statin because of side effects, what medical alternatives or dosage changes actually work?",
+          "importance": "core"
+        },
+        {
+          "id": "Q9",
+          "q": "Do popular herbal remedies and foods used in the Arab world (like garlic, olive oil, artichoke extract, or apple cider vinegar) replace the need for statins?",
+          "importance": "useful"
+        },
+        {
+          "id": "Q10",
+          "q": "Can supplements like Coenzyme Q10 (CoQ10) prevent or relieve statin-induced muscle pain, and is there solid proof for them?",
+          "importance": "useful"
+        },
+        {
+          "id": "Q11",
+          "q": "Do I have to take statins for the rest of my life, or can I stop them once my cholesterol numbers go back to normal?",
+          "importance": "core"
+        },
+        {
+          "id": "Q12",
+          "q": "Are statins safe for elderly patients, people with multiple chronic conditions, or women who are pregnant or planning pregnancy?",
+          "importance": "useful"
+        },
+        {
+          "id": "Q13",
+          "q": "Do statins interact dangerously with common medicines, foods like grapefruit, or routine blood pressure and heart pills?",
+          "importance": "useful"
+        }
+      ]
     },
     {
       "slug": "colonoscopy-prep",

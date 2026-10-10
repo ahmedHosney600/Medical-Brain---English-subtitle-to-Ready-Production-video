@@ -13,7 +13,7 @@ from medical_brain.prompts import load_prompt
 from medical_brain.research import dossier as rd
 from medical_brain.research import nodes
 from medical_brain.research.graph import build_research_app, route_after_verifier
-from medical_brain.research.sources import europepmc, evidence, google, medlineplus, pubmed, web
+from medical_brain.research.sources import europepmc, evidence, google, medlineplus, pubmed, statpearls, web
 from medical_brain.research.state import new_state
 from medical_brain.utils.llm_json import UnreadableAnswer
 
@@ -33,6 +33,14 @@ MEDLINE = """<nlmSearchResult><list><document url="https://medlineplus.gov/atria
 <content name="title">Atrial Fibrillation</content>
 <content name="FullSummary">&lt;p&gt;Atrial fibrillation (AFib) is the most common type of arrhythmia.&lt;/p&gt;</content>
 </document></list></nlmSearchResult>"""
+
+FIXTURES = os.path.join(os.path.dirname(__file__), "fixtures")
+
+
+def fixture(name):
+    with open(os.path.join(FIXTURES, name), encoding="utf-8", errors="replace") as handle:
+        return handle.read()
+
 
 SOURCE_A = {"key": "doi:10.1/a", "origin": "PubMed", "title": "Smartwatch AF meta-analysis", "url": "https://pubmed.ncbi.nlm.nih.gov/1/",
             "journal": "Heart Rhythm", "year": 2023, "pub_types": ["Meta-Analysis"], "level": 2,
@@ -70,7 +78,8 @@ class SourceParsersTest(unittest.TestCase):
 
     def test_enabled_lists_sites_banner(self):
         from medical_brain.research.sources import enabled as sources_enabled
-        banner = "Sites: Mayo Clinic, Johns Hopkins, NHS, Cleveland Clinic, NCCIH"
+        banner = ("Sites: Mayo Clinic, NHS, MSD Manual, Cleveland Clinic, Patient.info, Johns Hopkins, "
+                  "familydoctor.org, Harvard Health, NCCIH, WHO")
         with mock.patch("medical_brain.research.sources.browser.available", lambda: True):
             names = sources_enabled()
             self.assertIn(banner + " (+ Google)", names)
@@ -88,6 +97,53 @@ class SourceParsersTest(unittest.TestCase):
     def test_network_failure_returns_nothing(self):
         with mock.patch("urllib.request.urlopen", side_effect=OSError("blocked")), mock.patch("time.sleep"):
             self.assertEqual(pubmed.search("af"), [])
+
+
+class StatPearlsTest(unittest.TestCase):
+    """The Bookshelf chapter source: chapter-only filtering and the source shape."""
+
+    def test_parse_summary_keeps_chapters_drops_tables(self):
+        data = json.loads(fixture("statpearls_esummary_sample.json"))
+        out = statpearls.parse_summary(data)
+        keys = [s["key"] for s in out]
+        self.assertEqual(keys, ["books:NBK279180", "books:NBK548891", "books:NBK441902"])
+        self.assertNotIn("books:NBK279180/table/T1", keys)
+        first = out[0]
+        self.assertEqual((first["origin"], first["journal"], first["level"]),
+                         ("StatPearls", "StatPearls", 5))
+        self.assertEqual(first["url"], "https://www.ncbi.nlm.nih.gov/books/NBK279180/")
+        self.assertEqual((first["title"], first["year"]), ("Muscle Cramps", 2023))
+        self.assertEqual(first["text"], "")
+
+    def test_search_fetches_esearch_esummary_and_page_text(self):
+        esearch = fixture("statpearls_esearch_sample.json")
+        esummary = fixture("statpearls_esummary_sample.json")
+        urls = []
+
+        def get_json(url, **kw):
+            return json.loads(esearch) if "esearch" in url else json.loads(esummary)
+
+        def get(url, source="", **kw):
+            urls.append(url)
+            body = ("Muscle cramps are sudden, involuntary and painful contractions of a muscle. "
+                    "They are common at night and in older adults, and usually harmless. ")
+            return f"<html><body><p>{body * 3}</p></body></html>"
+
+        with mock.patch("medical_brain.research.sources.http.get_json", side_effect=get_json), \
+                mock.patch("medical_brain.research.sources.http.get", side_effect=get):
+            out = statpearls.search("muscle cramps", max_results=2)
+        self.assertEqual(len(out), 2)
+        for s in out:
+            self.assertEqual(s["origin"], "StatPearls")
+            self.assertEqual(s["journal"], "StatPearls")
+            self.assertEqual(s["level"], 5)
+            self.assertTrue(s["text"])
+            self.assertTrue(s["url"].startswith("https://www.ncbi.nlm.nih.gov/books/NBK"))
+        self.assertTrue(all(u.endswith("/") for u in urls))          # chapter pages, not tables
+
+    def test_empty_esearch_is_empty(self):
+        with mock.patch("medical_brain.research.sources.http.get_json", return_value={"esearchresult": {"idlist": []}}):
+            self.assertEqual(statpearls.search("nothing"), [])
 
 
 class Scripted:
@@ -144,6 +200,14 @@ class ResearchGraphTest(unittest.TestCase):
             "key_numbers": [{"text": "94.2% sensitivity.", "facts": ["F1"]}],
             "uncertain": []})
         self.router = Scripted({
+            "expert_brief": json.dumps({"points": [
+                {"id": "K1", "point": "Smartwatches can detect atrial fibrillation early.", "confidence": "high",
+                 "why": "viewers ask how accurate", "literature_queries": ["smartwatch AF accuracy"],
+                 "public_queries": ["AF symptoms"]},
+                {"id": "K2", "point": "Chest pain or fainting is an emergency.", "confidence": "high",
+                 "why": "safety", "literature_queries": ["AF emergency warning signs"],
+                 "public_queries": ["AF warning signs"]}],
+                "key_guidelines": ["ESC 2024 AF guideline"], "misconceptions": ["A watch replaces a doctor"]}),
             "topic_planner": json.dumps({"angle": "What your watch can and can't tell you", "must_cover": ["accuracy"],
                                          "sections": [{"title": "How accurate are watches?", "questions": ["How accurate?"],
                                                        "literature_queries": ["smartwatch AF accuracy"], "public_queries": ["AF symptoms"]}]}),
@@ -157,7 +221,8 @@ class ResearchGraphTest(unittest.TestCase):
                                           "section_notes": {"A": "Accuracy is high [F1]."}}),
             "patient_guide": lambda user: self.guide,
             "review_planner": json.dumps({"new_sections": [{"title": "When to see a doctor", "questions": ["When?"],
-                                                            "literature_queries": [], "public_queries": ["AF warning signs"]}],
+                                                            "literature_queries": ["atrial fibrillation stroke prevention"],
+                                                            "public_queries": ["when to see a doctor for AF"]}],
                                           "edit_sections": [], "remove_sections": [], "remove_facts": []}),
         })
         llm.set_router(self.router)
@@ -229,6 +294,9 @@ class ResearchGraphTest(unittest.TestCase):
         edges = {(e.source, e.target) for e in app.get_graph().edges}
         self.assertIn(("dossier_editor", "guide_editor"), edges)
         self.assertIn(("guide_editor", "__end__"), edges)
+        self.assertIn(("expert_brief", "topic_planner"), edges)
+        self.assertIn(("__start__", "expert_brief"), edges)         # fresh run starts at the brief
+        self.assertIn("expert_brief", app.get_graph().nodes)
 
 
 class QuoteCheckTest(unittest.TestCase):
@@ -366,6 +434,28 @@ class CoverageCriticTest(unittest.TestCase):
                              coverage_scores={"coverage": 6, "accuracy": 6, "value": 6})
         self.assertTrue(out["need_research"])
 
+    def test_expert_points_validated_and_stored(self):
+        st = state_of([section("A")],
+                      expert_brief={"points": [{"id": "K1", "point": "P1", "confidence": "high"},
+                                               {"id": "K2", "point": "P2", "confidence": "low"}]},
+                      facts=[{"id": "F1", "section": "A", "kind": "fact", "status": "verified",
+                              "claim": "c", "source_ids": ["S1"], "level": 2},
+                             {"id": "F2", "section": "A", "kind": "fact", "status": "new",
+                              "claim": "n", "source_ids": ["S1"], "level": 2}])
+        fake = FakeLlmJson({"coverage_score": 9, "accuracy_score": 9, "value_score": 9, "pass": True,
+                            "missing": [],
+                            "expert_points": [
+                                {"id": "K1", "status": "covered", "facts": ["F1", "F2", "F99"]},
+                                {"id": "K9", "status": "covered", "facts": ["F1"]},
+                                {"id": "K2", "status": "banana", "facts": ["F1"]}]})
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            out = nodes.coverage_critic(st)
+        self.assertEqual(out["expert_status"]["K1"], {"status": "covered", "facts": ["F1"]})
+        self.assertNotIn("K9", out["expert_status"])                       # unknown K-id dropped
+        self.assertEqual(out["expert_status"]["K2"], {"status": "missing", "facts": ["F1"]})
+        self.assertIn("EXPERT CHECKLIST:", fake.prompts[0])
+        self.assertIn("K1 [high] P1", fake.prompts[0])
+
 
 class PlannerFieldsTest(unittest.TestCase):
     def test_planner_stores_type_checks_and_groups(self):
@@ -417,10 +507,95 @@ class PlannerFieldsTest(unittest.TestCase):
         self.assertEqual(st["complementary"], {"applies": False, "why": "", "items": []})
         self.assertEqual(st["special_groups"], [])
         self.assertEqual(st["merged"], [])
-        self.assertEqual(st["settings"]["max_facts_per_section"], 12)
+        self.assertEqual(st["settings"]["max_facts_per_section"], 15)
         old = {"topic": "old", "outline": [], "facts": [], "sources": {}, "rejected": []}
         self.assertIn("RESEARCH DOSSIER", rd.render_markdown(old))
         self.assertEqual(rd.used_sources(old), [])
+
+
+    def test_planner_prompt_carries_expert_brief(self):
+        reply = {"sections": [{"title": "S", "questions": ["q"], "literature_queries": [],
+                               "public_queries": []}]}
+        fake = FakeLlmJson(reply)
+        st = new_state("t")
+        st["expert_brief"] = {"points": [{"id": "K1", "point": "Quinine is not recommended.",
+                                          "confidence": "high"}],
+                              "key_guidelines": ["Cochrane 2015"], "misconceptions": ["Myth A"]}
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            nodes.topic_planner(st)
+        user = fake.prompts[0]
+        self.assertIn("EXPERT BRIEF:", user)
+        self.assertIn("K1 [high] Quinine is not recommended.", user)
+        self.assertIn("Key guidelines: Cochrane 2015", user)
+        self.assertIn("Misconceptions: Myth A", user)
+
+
+class ExpertBriefTest(unittest.TestCase):
+    def test_stores_and_validates_points(self):
+        reply = {"points": [
+            {"id": "K1", "point": "Quinine is not recommended.", "confidence": "high", "why": "safety",
+             "literature_queries": ["quinine cramps"], "public_queries": ["quinine cramps"]},
+            {"point": "Keep hydrated.", "confidence": "weird", "literature_queries": ["hydration"]},
+            {"id": "K1", "point": "Duplicate id.", "confidence": "medium"},
+            {"point": "   "},
+            "junk"],
+            "key_guidelines": ["Cochrane 2015", " "], "misconceptions": ["Myth A"]}
+        calls = []
+
+        def fake_call(system, user, temperature=None, max_tokens=None, required=()):
+            calls.append((temperature, max_tokens, list(required), user))
+            return reply, json.dumps(reply)
+
+        with mock.patch.object(nodes, "call_llm_json", fake_call), mock.patch("builtins.print"):
+            out = nodes.expert_brief({"topic": "Cramps", "audience": "Egypt", "user_notes": "keep short"})
+        brief = out["expert_brief"]
+        self.assertEqual([p["id"] for p in brief["points"]], ["K1", "K2", "K3"])
+        self.assertEqual([p["point"] for p in brief["points"]],
+                         ["Quinine is not recommended.", "Keep hydrated.", "Duplicate id."])
+        self.assertEqual(brief["points"][1]["confidence"], "low")          # invalid → low
+        self.assertEqual(brief["key_guidelines"], ["Cochrane 2015"])
+        self.assertEqual(brief["misconceptions"], ["Myth A"])
+        self.assertEqual(calls[0][:3], (0.3, 6000, ["points"]))
+        self.assertIn("TOPIC: Cramps", calls[0][3])
+        self.assertIn("AUDIENCE: Egypt", calls[0][3])
+        self.assertIn("CREATOR'S NOTES: keep short", calls[0][3])
+
+    def test_unreadable_answer_gives_empty_brief(self):
+        def boom(*a, **k):
+            raise UnreadableAnswer("bad", "raw")
+        with mock.patch.object(nodes, "call_llm_json", boom), mock.patch("builtins.print"):
+            out = nodes.expert_brief({"topic": "T"})
+        self.assertEqual(out["expert_brief"],
+                         {"points": [], "key_guidelines": [], "misconceptions": []})
+
+
+class ExpertSeedTest(unittest.TestCase):
+    def test_queries_distributed_once_and_deduped(self):
+        st = state_of([section("A", title="Hydration and diet"),
+                       section("B", title="Muscle cramps at night")],
+                      expert_brief={"points": [
+                          {"id": "K1", "point": "Night-time muscle cramps are common in older adults.",
+                           "literature_queries": ["night cramps elderly"], "public_queries": ["night leg cramps"]},
+                          {"id": "K2", "point": "Stretching the calf can prevent night cramps.",
+                           "literature_queries": ["stretching night cramps"], "public_queries": ["night leg cramps"]}]})
+        st["queries_done"] = ["public:night leg cramps"]
+        self.assertTrue(nodes._expert_seed_queries(st))
+        a, b = st["outline"][0], st["outline"][1]
+        self.assertEqual(a["pending"]["literature"], [])
+        self.assertIn("night cramps elderly", b["pending"]["literature"])
+        self.assertIn("stretching night cramps", b["pending"]["literature"])
+        self.assertNotIn("night leg cramps", b["pending"]["public"])       # already in queries_done
+        self.assertFalse(nodes._expert_seed_queries(st))                   # seeded exactly once
+
+
+class ExpertBriefRoutingTest(unittest.TestCase):
+    def test_expert_brief_borrows_the_fact_verifier_route(self):
+        from medical_brain.llm import config as llm_config
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(llm_config, "load_keys"):
+            cfg = llm_config.load_llm_config(os.path.join(tmp, "missing.json"))
+        routes = cfg["hybrid_routes"]
+        self.assertIn("expert_brief", routes)
+        self.assertEqual(routes["expert_brief"], routes["fact_verifier"])
 
 
 class VerifierStrengthTest(unittest.TestCase):
@@ -1617,7 +1792,64 @@ class GuideEditorTest(unittest.TestCase):
         self.assertIn("magnesium — Helps (proven)", user)
         self.assertIn("F1 [A · fact · proven] magnesium claim F1", user)
 
+    def test_prompt_carries_planned_questions_but_not_the_expert_brief(self):
+        st = self.state()
+        st["outline"] = [section("A", questions=["What helps?", "When to worry?"])]
+        st["expert_brief"] = {"points": [{"id": "K1", "point": "SECRET EXPERT POINT.", "confidence": "high"}]}
+        fake = FakeLlmJson({"action_card": empty_action(), "sections": []})
+        with mock.patch.object(nodes, "call_llm_json", fake), mock.patch("builtins.print"):
+            nodes.guide_editor(st)
+        user = fake.prompts[0]
+        self.assertIn("PLANNED VIEWER QUESTIONS", user)
+        self.assertIn("- What helps?", user)
+        self.assertIn("- When to worry?", user)
+        self.assertNotIn("SECRET EXPERT POINT", user)
 
+
+class DossierExpertTest(unittest.TestCase):
+    def _state(self):
+        return {"topic": "Cramps", "sources": {"S1": {"title": "t", "level": 2}}, "outline": [],
+                "expert_brief": {"points": [
+                    {"id": "K1", "point": "Quinine is not recommended.", "confidence": "high"},
+                    {"id": "K2", "point": "Magnesium may help.", "confidence": "medium"},
+                    {"id": "K3", "point": "Drink more water.", "confidence": "low"}]},
+                "expert_status": {
+                    "K1": {"status": "contradicted", "facts": ["F7"]},
+                    "K2": {"status": "covered", "facts": ["F1", "F2"]}},
+                "facts": [{"id": "F1", "section": "A", "kind": "fact", "claim": "A claim",
+                           "quote": "q", "source_ids": [], "level": 2, "status": "verified"}],
+                "rejected": []}
+
+    def test_render_has_checklist_table_and_explanation(self):
+        md = rd.render_markdown(self._state())
+        self.assertIn("## Expert checklist — what a specialist expects vs what the sources confirmed", md)
+        self.assertIn("| K1 | Quinine is not recommended. | high | ⚠️ contradicted by F7 |", md)
+        self.assertIn("| K2 | Magnesium may help. | medium | ✅ confirmed by F1, F2 |", md)
+        self.assertIn("| K3 | Drink more water. | low | ❓ not confirmed by the sources |", md)
+        self.assertIn("NOT in the verified facts or the patient guide", md)
+
+    def test_review_file_lists_only_unconfirmed_points(self):
+        state = self._state()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "review.md")
+            rd.write_review_file(path, "Cramps", "output/x", state=state)
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
+        self.assertIn("Points to check yourself", text)
+        self.assertIn("K1", text)
+        self.assertIn("K3", text)
+        self.assertNotIn("K2", text)                    # covered → not listed
+        self.assertFalse(rd.has_requests(rd.parse_review(text)))
+
+    def test_review_file_reads_the_state_beside_it(self):
+        # The CLI calls write_review_file without a state: it reads research_state.json.
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "research_state.json"), "w", encoding="utf-8") as handle:
+                json.dump(self._state(), handle)
+            path = os.path.join(tmp, "review.md")
+            rd.write_review_file(path, "Cramps", "output/x")
+            with open(path, encoding="utf-8") as handle:
+                self.assertIn("K3", handle.read())
 
 
 class GuideWorksRuleTest(unittest.TestCase):

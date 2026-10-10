@@ -136,6 +136,50 @@ def _classic_table_markdown(rows: list) -> list:
     return md + [""]
 
 
+def expert_checklist_rows(state: dict) -> list:
+    """One row per expert-brief point: the point, its confidence and the coverage verdict.
+
+    ``status`` is ``covered`` / ``contradicted`` / ``missing`` (unknown → missing); ``facts``
+    are the verified fact ids the critic tied to it (always verified)."""
+    brief = state.get("expert_brief") or {}
+    status = state.get("expert_status") or {}
+    rows = []
+    for point in brief.get("points") or []:
+        if not isinstance(point, dict):
+            continue
+        pid = str(point.get("id", "") or "").strip()
+        entry = status.get(pid) or {}
+        rows.append({"id": pid, "point": str(point.get("point", "") or "").strip(),
+                     "confidence": str(point.get("confidence", "") or "").strip(),
+                     "status": str(entry.get("status", "") or "missing"),
+                     "facts": [str(f) for f in (entry.get("facts") or []) if f]})
+    return rows
+
+
+def _expert_status_text(row: dict) -> str:
+    facts = [f for f in (row.get("facts") or []) if f]
+    cite = ", ".join(facts)
+    if row.get("status") == "covered":
+        return f"✅ confirmed by {cite}" if cite else "✅ confirmed by the sources"
+    if row.get("status") == "contradicted":
+        return f"⚠️ contradicted by {cite}" if cite else "⚠️ contradicted by the sources"
+    return "❓ not confirmed by the sources"
+
+
+def _expert_markdown(state: dict) -> list:
+    rows = expert_checklist_rows(state)
+    if not rows:
+        return []
+    md = ["## Expert checklist — what a specialist expects vs what the sources confirmed", "",
+          "| Point | What a specialist expects | Confidence | Status |", "|---|---|---|---|"]
+    for r in rows:
+        md.append(f"| {r['id']} | {r['point'].replace('|', '/')} | {r['confidence']} | "
+                  f"{_expert_status_text(r)} |")
+    md += ["", "Points marked ❓ or ⚠️ are NOT in the verified facts or the patient guide — "
+           "the doctor decides whether they matter.", ""]
+    return md
+
+
 def _complementary_markdown(rows: list) -> list:
     evidence, popular = complementary_lists(rows)
     md = ["## Complementary & traditional options", "",
@@ -388,6 +432,7 @@ def render_markdown(state: dict) -> str:
     elif "complementary" in state:              # the planner made an explicit decision
         md += ["Complementary medicine: not applicable" + (f" — {comp['why']}" if comp.get("why") else ""),
                ""]
+    md += _expert_markdown(state)
     if state.get("summary"):
         md += ["## Overview", "", _link_refs(state["summary"], by_id), ""]
     md += ["## Outline", ""] + [f"{s['id']}. {s['title']}" for s in state.get("outline", [])] + [""]
@@ -443,7 +488,7 @@ REVIEW_TEMPLATE = """# ✍️ REVIEW — {topic}
 {guide_line}Read dossier.md (the verified Evidence Library), then fill in this file and run:
     python3 main.py --continue {session}
 
-Set APPROVED to yes when the research is complete and correct (nothing else needed).
+{check_block}Set APPROVED to yes when the research is complete and correct (nothing else needed).
 Otherwise write what you want below — plain words in English or Arabic are fine.
 
 APPROVED: no
@@ -462,11 +507,42 @@ NOTES:
 """
 
 
-def write_review_file(path: str, topic: str, session: str, has_guide: bool = False) -> None:
+def _load_state_beside(path: str) -> dict:
+    """The research_state.json saved next to a review file, or {} (old sessions, tests)."""
+    state_path = os.path.join(os.path.dirname(path), "research_state.json")
+    try:
+        with open(state_path, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def points_to_check(state: dict) -> list:
+    """The ❓ / ⚠️ expert points the creator should verify (never covered ones)."""
+    out = []
+    for row in expert_checklist_rows(state):
+        if row["status"] == "covered":
+            continue
+        out.append(f"- {_expert_status_text(row)} — **{row['id']}** ({row['confidence']}): {row['point']}")
+    return out
+
+
+def write_review_file(path: str, topic: str, session: str, has_guide: bool = False,
+                      state: dict = None) -> None:
+    if state is None:
+        state = _load_state_beside(path)
+    checks = points_to_check(state)
+    check_block = ""
+    if checks:
+        check_block = ("Points to check yourself (a specialist would expect these; the sources did "
+                       "not confirm them — they are NOT in the facts or the patient guide, so check "
+                       "them yourself):\n" + "\n".join(checks) + "\n\n")
     guide_line = ("The **patient guide** (patient_guide.md) is what the video will be built from — "
                   "review it first.\n\n" if has_guide else "")
     with open(path, "w", encoding="utf-8") as f:
-        f.write(REVIEW_TEMPLATE.format(topic=topic, session=session, guide_line=guide_line))
+        f.write(REVIEW_TEMPLATE.format(topic=topic, session=session, guide_line=guide_line,
+                                       check_block=check_block))
 
 
 def parse_review(text: str) -> dict:
