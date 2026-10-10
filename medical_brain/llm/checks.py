@@ -3,6 +3,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -10,7 +11,7 @@ from typing import Optional
 
 from .backends import make_backend
 from .config import CLAUDE_SUBSCRIPTION_MODELS, OPENCODE_GO_DOC_MODELS, provider_headers, provider_key
-from .errors import _short
+from .errors import ProviderUnavailable, _short
 
 
 class HTTPProblem(Exception):
@@ -43,6 +44,37 @@ def _http_json(url: str, key: Optional[str], timeout: int = 15, extra_headers: O
         raise HTTPProblem(f"HTTP {e.code} {e.reason}" + (f": {body}" if body else ""))
 
 
+_agy_models_cache: dict = {}
+
+
+def _list_agy_models(cfg: dict) -> list:
+    """Antigravity's model ids: `agy models` prints '<id>\\t<label>' lines after a
+    'Fetching available models...' notice. The list changes rarely, so it's cached."""
+    from .backends.agy import agy_path
+    cli = agy_path(cfg)
+    if not cli:
+        raise ProviderUnavailable("the `agy` command was not found (install Google Antigravity and log in)")
+    if cli in _agy_models_cache:
+        return list(_agy_models_cache[cli])
+    try:
+        proc = subprocess.run([cli, "models"], capture_output=True, text=True,
+                              encoding="utf-8", timeout=60)
+    except Exception as e:
+        raise ProviderUnavailable(f"`agy models` failed: {_short(e)}")
+    models = []
+    for line in (proc.stdout or "").splitlines():
+        if "\t" not in line:            # skip "Fetching available models..." and blanks
+            continue
+        model = line.split("\t", 1)[0].strip()
+        if model:
+            models.append(model)
+    if not models:
+        detail = (proc.stderr or proc.stdout or "").strip()[:200]
+        raise RuntimeError(f"`agy models` returned no models: {detail}")
+    _agy_models_cache[cli] = models
+    return list(models)
+
+
 def list_models(provider: str, cfg: dict) -> list:
     """Model ids this provider offers (raises on failure)."""
     if cfg.get("type") == "claude":
@@ -52,6 +84,8 @@ def list_models(provider: str, cfg: dict) -> list:
             client = anthropic.Anthropic(api_key=key) if key else anthropic.Anthropic()
             return [m.id for m in client.models.list()]
         return list(CLAUDE_SUBSCRIPTION_MODELS)
+    if cfg.get("type") == "agy":
+        return _list_agy_models(cfg)
     try:
         data = _http_json(cfg["base_url"].rstrip("/") + "/models", provider_key(cfg), extra_headers=provider_headers(cfg))
     except Exception:
@@ -75,6 +109,18 @@ def provider_status(provider: str, cfg: dict) -> tuple:
             return "off", "`claude` command not installed"
         ok, detail = test_model(f"{provider}:{CLAUDE_SUBSCRIPTION_MODELS[1]}", {provider: cfg})
         return ("active", "subscription answers") if ok else ("error", detail)
+    if cfg.get("type") == "agy":
+        from .backends.agy import agy_path
+        if not agy_path(cfg):
+            return "off", "`agy` command not installed"
+        try:
+            models = _list_agy_models(cfg)
+        except Exception as e:
+            return "error", _short(e)
+        # A small, fast model for the ping; fall back to whatever is listed first.
+        pick = next((m for m in models if m.startswith("gemini") and m.endswith("-flash-low")), None) or models[0]
+        ok, detail = test_model(f"{provider}:{pick}", {provider: cfg})
+        return ("active", f"{len(models)} models · subscription answers") if ok else ("error", detail)
     if not provider_key(cfg) and not cfg.get("free"):
         return "off", f"no API key ({cfg.get('api_key_env')})"
     detail = ""
