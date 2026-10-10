@@ -1,17 +1,17 @@
 {
     "provider": "main",
-    "main_model": "geminiweb:gemini-3.7-flash",
-    "single_model": "geminiweb:gemini-3.7-flash",
-    "backup_model": "geminiweb:gemini-3.7-flash",
+    "main_model": "agy:gemini-3.8-flash-medium",
+    "single_model": "agy:gemini-3.8-flash-medium",
+    "backup_model": "agy:gemini-3.8-flash-medium",
     "hybrid_routes": {
-        "medical_truth_verifier": "geminiweb:gemini-3.7-flash",
-        "fidelity_auditor": "geminiweb:gemini-3.7-flash",
-        "self_critique": "geminiweb:gemini-3.7-flash",
-        "packaging_honesty_ctr_auditor": "geminiweb:gemini-3.7-flash",
-        "production_quality_critique": "geminiweb:gemini-3.7-flash",
-        "source_screener": "geminiweb:gemini-3.7-flash",
-        "fact_verifier": "geminiweb:gemini-3.7-flash",
-        "coverage_critic": "geminiweb:gemini-3.7-flash"
+        "medical_truth_verifier": "agy:gemini-3.8-flash-medium",
+        "fidelity_auditor": "agy:gemini-3.8-flash-medium",
+        "self_critique": "agy:gemini-3.8-flash-medium",
+        "packaging_honesty_ctr_auditor": "agy:gemini-3.8-flash-medium",
+        "production_quality_critique": "agy:gemini-3.8-flash-medium",
+        "source_screener": "agy:gemini-3.8-flash-medium",
+        "fact_verifier": "agy:gemini-3.8-flash-medium",
+        "coverage_critic": "agy:gemini-3.8-flash-medium"
     },
     "providers": {}
 }

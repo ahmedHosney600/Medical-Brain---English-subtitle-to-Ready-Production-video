@@ -42,6 +42,10 @@ DEFAULT_PROVIDERS = {
                   "free": True, "max_concurrency": 1, "timeout_seconds": 600},
     "claude": {"type": "claude", "label": "Claude", "transport": "claude_code", "effort": "high",
                "efforts": {}, "timeout_seconds": 900},
+    # Google Antigravity's `agy` CLI as a plain text model. Uses the Google account
+    # quota, not an API key; each call carries the agent's overhead (~12k tokens).
+    "agy": {"type": "agy", "label": "Antigravity (agy CLI)", "free": True,
+            "timeout_seconds": 900, "max_concurrency": 2},
     "deepseek": {"type": "openai", "label": "DeepSeek", "base_url": "https://api.deepseek.com",
                  "api_key_env": "DEEPSEEK_API_KEY", "balance_path": "/user/balance"},
     # OpenCode Go serves models through three different APIs (see opencode_endpoint).

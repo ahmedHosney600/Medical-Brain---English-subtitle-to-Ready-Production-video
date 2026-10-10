@@ -1,6 +1,7 @@
 """The model backends, and make_backend() which picks one for a 'provider:model' spec."""
 from ..config import CONFIG_PATH, opencode_endpoint, parse_spec
 from ..errors import ProviderUnavailable
+from .agy import AgyCLIBackend
 from .anthropic_compat import AnthropicCompatibleBackend
 from .canvas_proxy import CanvasProxyBackend
 from .claude import AnthropicAPIBackend, ClaudeCodeBackend
@@ -17,6 +18,8 @@ def make_backend(spec: str, providers: dict):
         if cfg.get("transport") == "anthropic_api":
             return AnthropicAPIBackend(cfg, model)
         return ClaudeCodeBackend(cfg, model)
+    if cfg.get("type") == "agy":
+        return AgyCLIBackend(cfg, model)
     if cfg.get("type") == "canvas_proxy":
         return CanvasProxyBackend(provider, cfg, model)
     if cfg.get("type") == "opencode_go":
