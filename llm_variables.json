@@ -1,16 +1,16 @@
 {
-    "provider": "main",
+    "provider": "hybrid",
     "main_model": "agy:gemini-3.8-flash-medium",
     "single_model": "agy:gemini-3.8-flash-medium",
-    "backup_model": "agy:gemini-3.8-flash-medium",
+    "backup_model": "agy:gemini-3.7-flash-medium",
     "hybrid_routes": {
-        "medical_truth_verifier": "agy:gemini-3.8-flash-medium",
-        "fidelity_auditor": "agy:gemini-3.8-flash-medium",
+        "medical_truth_verifier": "agy:gemini-3.1-pro-low",
+        "fidelity_auditor": "agy:gemini-3.1-pro-low",
         "self_critique": "agy:gemini-3.8-flash-medium",
         "packaging_honesty_ctr_auditor": "agy:gemini-3.8-flash-medium",
         "production_quality_critique": "agy:gemini-3.8-flash-medium",
         "source_screener": "agy:gemini-3.8-flash-medium",
-        "fact_verifier": "agy:gemini-3.8-flash-medium",
+        "fact_verifier": "agy:gemini-3.1-pro-low",
         "coverage_critic": "agy:gemini-3.8-flash-medium"
     },
     "providers": {}
