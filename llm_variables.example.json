@@ -34,6 +34,10 @@
         "opencode": {
             "base_url": "https://opencode.ai/zen/go/v1",
             "api_key_env": "OPENCODE_API_KEY"
+        },
+        "geminiweb": {
+            "base_url": "http://localhost:4981/v1",
+            "max_concurrency": 2
         }
     }
 }
