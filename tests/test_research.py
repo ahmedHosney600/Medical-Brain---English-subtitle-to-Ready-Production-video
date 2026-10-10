@@ -1870,3 +1870,38 @@ class GuideWorksRuleTest(unittest.TestCase):
         clean, report = nodes.validate_guide(guide, state)
         self.assertEqual([i["text"] for i in clean["action_card"]["works"]], ["Compression stockings"])
         self.assertEqual(report["by_reason"].get("weak_evidence_in_works"), 2)
+
+
+class GuideRulesRound2Test(unittest.TestCase):
+    def _state(self):
+        return {"sources": {"S1": {"title": "t", "level": 2}},
+                "facts": [
+                    {"id": "F1", "section": "A", "kind": "fact", "claim": "Triptans relieve migraine attacks.",
+                     "status": "verified", "source_ids": ["S1"], "strength": "proven"},
+                    {"id": "F2", "section": "A", "kind": "red_flag", "claim": "Triptans are unsafe with heart disease.",
+                     "status": "verified", "source_ids": ["S1"], "strength": "harmful"},
+                    {"id": "F3", "section": "A", "kind": "fact", "claim": "Feverfew is weakly supported.",
+                     "status": "verified", "source_ids": ["S1"], "strength": "weak_or_disputed"}]}
+
+    def test_works_keeps_proven_with_safety_caveat_but_not_weak(self):
+        from medical_brain.research import nodes
+        guide = {"action_card": {"works": [{"text": "Triptans (not with heart disease)", "facts": ["F1", "F2"]},
+                                           {"text": "Feverfew", "facts": ["F1", "F3"]}]}, "sections": []}
+        clean, _ = nodes.validate_guide(guide, self._state())
+        self.assertEqual([i["text"] for i in clean["action_card"]["works"]], ["Triptans (not with heart disease)"])
+
+    def test_open_questions_without_citations_are_kept_unless_they_state_numbers(self):
+        from medical_brain.research import nodes
+        guide = {"action_card": {}, "sections": [], "uncertain": [
+            {"text": "The sources we checked don't settle: does eye strain cause migraine?", "facts": []},
+            {"text": "The sources we checked don't settle: do 25-30% have aura?", "facts": []}]}
+        clean, report = nodes.validate_guide(guide, self._state())
+        self.assertEqual(len(clean["uncertain"]), 1)
+        self.assertTrue(clean["uncertain"][0]["open_question"])
+
+    def test_expert_hint_lists_points_only_when_present(self):
+        from medical_brain.research import nodes
+        self.assertEqual(nodes._expert_hint({}), "")
+        hint = nodes._expert_hint({"expert_brief": {"points": [{"id": "K1", "point": "Limit painkillers"}]}})
+        self.assertIn("Limit painkillers", hint)
+        self.assertIn("ONLY if these sources state it", hint)

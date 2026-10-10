@@ -755,6 +755,17 @@ Output ONLY the JSON object."""
             "to_extract": state.get("work", []), "screen_notes": str(pick(data, "notes", default=""))}
 
 
+def _expert_hint(state: dict) -> str:
+    """The expert checklist as things to LOOK FOR in this section's sources. The quote and
+    number checks still reject anything the sources don't actually say."""
+    points = (state.get("expert_brief") or {}).get("points") or []
+    if not points:
+        return ""
+    lines = "\n".join(f"- {p.get('point', '')}" for p in points if p.get("point"))
+    return ("A SPECIALIST EXPECTS THESE POINTS (extract one ONLY if these sources state it — with its "
+            "exact quote and numbers; never from your own knowledge):\n" + lines)
+
+
 FIX_MODE = ("FIX MODE: return ONLY corrected versions of the facts listed under FIX THESE FACTS "
             "(same meaning, corrected claim and/or exact quote). Do not add any other facts. "
             "Drop a fact if the sources do not support it.")
@@ -832,6 +843,7 @@ def fact_extractor(state: dict) -> dict:
 SECTION {sec['id']}: {sec['title']}
 QUESTIONS TO ANSWER: {" | ".join(sec["questions"])}
 CLASSIC CHECKS: {" | ".join(_classic_for_section(state, sec)) or "(none)"}
+{_expert_hint(state)}
 {("CREATOR'S REQUEST FOR THIS SECTION: " + user_notes[sec['id']]) if user_notes.get(sec['id']) else ""}
 {("VERIFIER NOTES: " + notes[sec['id']]) if notes.get(sec['id']) else ""}
 ALREADY VERIFIED (don't repeat): {" | ".join(f["claim"] for f in have) or "(none)"}{fix_part}
@@ -1359,7 +1371,10 @@ def validate_guide(guide: dict, state: dict) -> tuple:
     works = []
     for item in clean["action_card"].get("works", []):
         strengths = {str(by_id[fid].get("strength", "n/a") or "n/a") for fid in item["facts"]}
-        if strengths and strengths <= {"proven", "probably_helps"}:
+        # Needs real benefit evidence; a safety fact (harmful) or a descriptive one (n/a) may
+        # accompany it, but weak / untested / no-benefit evidence disqualifies the promise.
+        if strengths & {"proven", "probably_helps"} and \
+                not strengths & {"weak_or_disputed", "untested", "no_benefit"}:
             works.append(item)
         else:
             report["kept"] -= 1
@@ -1405,8 +1420,19 @@ def validate_guide(guide: dict, state: dict) -> tuple:
 
     clean["key_numbers"] = [n for n in (clean_item(it, "key_number", ("text",))
                                         for it in (guide.get("key_numbers") or [])) if n]
-    clean["uncertain"] = [u for u in (clean_item(it, "uncertain", ("text",))
-                                      for it in (guide.get("uncertain") or [])) if u]
+    uncertain = []
+    for it in guide.get("uncertain") or []:
+        text = _guide_item_text(it, ("text",)) if isinstance(it, dict) else str(it)
+        if isinstance(it, dict) and not _guide_ids(it.get("facts"), valid) and text and not _numbers(text):
+            # An open question ("the sources don't settle X") cites nothing by nature; it is
+            # kept as long as it asserts no number of its own.
+            report["kept"] += 1
+            uncertain.append({"text": text.strip(), "facts": [], "open_question": True})
+            continue
+        u = clean_item(it, "uncertain", ("text",))
+        if u:
+            uncertain.append(u)
+    clean["uncertain"] = uncertain
     return clean, report
 
 
