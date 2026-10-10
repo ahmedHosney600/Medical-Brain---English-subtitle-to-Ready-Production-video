@@ -501,7 +501,8 @@ def _run_research(topic: str) -> str:
     from .research.state import new_state
 
     _configure_env()
-    router = start_router(load_llm_config(), "main")
+    config = load_llm_config()
+    router = start_router(config, config.get("provider") or "main")   # the mode chosen in setup_models (hybrid routes judges)
     session_id, session_dir = _new_session_dir()
     state = new_state(topic, "", "", _research_settings())
     state["workflow"] = "research"
