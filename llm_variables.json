@@ -1,17 +1,17 @@
 {
-    "provider": "hybrid",
-    "main_model": "deepseek:deepseek-flash",
-    "single_model": "deepseek:deepseek-flash",
-    "backup_model": "deepseek:deepseek-flash",
+    "provider": "main",
+    "main_model": "geminiweb:gemini-3.7-flash",
+    "single_model": "geminiweb:gemini-3.7-flash",
+    "backup_model": "geminiweb:gemini-3.7-flash",
     "hybrid_routes": {
-        "medical_truth_verifier": "deepseek:deepseek-flash",
-        "fidelity_auditor": "deepseek:deepseek-flash",
-        "self_critique": "deepseek:deepseek-flash",
-        "packaging_honesty_ctr_auditor": "deepseek:deepseek-flash",
-        "production_quality_critique": "deepseek:deepseek-flash",
-        "source_screener": "deepseek:deepseek-flash",
-        "fact_verifier": "deepseek:deepseek-flash",
-        "coverage_critic": "deepseek:deepseek-flash"
+        "medical_truth_verifier": "geminiweb:gemini-3.7-flash",
+        "fidelity_auditor": "geminiweb:gemini-3.7-flash",
+        "self_critique": "geminiweb:gemini-3.7-flash",
+        "packaging_honesty_ctr_auditor": "geminiweb:gemini-3.7-flash",
+        "production_quality_critique": "geminiweb:gemini-3.7-flash",
+        "source_screener": "geminiweb:gemini-3.7-flash",
+        "fact_verifier": "geminiweb:gemini-3.7-flash",
+        "coverage_critic": "geminiweb:gemini-3.7-flash"
     },
     "providers": {}
 }

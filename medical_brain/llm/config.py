@@ -35,6 +35,11 @@ DEFAULT_PROVIDERS = {
                "timeout_retries": 5, "retry_wait_seconds": 20, "min_max_tokens": 32000, "json_mode": True,
                # The local proxy serves one request at a time; parallel calls → 504.
                "max_concurrency": 1},
+    # gemini-web2api (local, free, OpenAI-compatible): Gemini's web app as an API. No
+    # per-request time-out like the Canvas proxy; answers are capped at ~12k characters
+    # (~20k for the -thinking model), which the chapter-mode script writing respects.
+    "geminiweb": {"type": "openai", "label": "Gemini Web (gemini-web2api)", "base_url": "http://localhost:4981/v1",
+                  "free": True, "max_concurrency": 2, "timeout_seconds": 600},
     "claude": {"type": "claude", "label": "Claude", "transport": "claude_code", "effort": "high",
                "efforts": {}, "timeout_seconds": 900},
     "deepseek": {"type": "openai", "label": "DeepSeek", "base_url": "https://api.deepseek.com",
