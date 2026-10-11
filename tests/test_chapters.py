@@ -482,15 +482,16 @@ class ChapterLengthGuardTest(unittest.TestCase):
              "opens_loops": [], "closes_loops": [], "depends_on_previous": True},
         ]}
 
-    def _run(self, tight_text):
+    def _run(self, tight_text, writer=None):
         calls = []
+        long_text = writer or self.LONG
 
         def answer(system, user, temperature=None, max_tokens=None):
             calls.append(user)
             if "TIGHTEN this chapter" in user:
                 return f"=== طويل ===\n{tight_text}"
             if "id: C1" in user:
-                return f"=== طويل ===\n{self.LONG}"
+                return f"=== طويل ===\n{long_text}"
             return "=== ق ===\nنص قصير"
 
         use(self, script_writing, "call_llm", FakeLLM(answer))
@@ -502,9 +503,16 @@ class ChapterLengthGuardTest(unittest.TestCase):
         calls, out = self._run(" ".join(f"t{i}" for i in range(850)))
         tighten = [c for c in calls if "TIGHTEN this chapter" in c]
         self.assertEqual(len(tighten), 1)
-        self.assertIn("TIGHTEN this chapter to about 800 words", tighten[0])
+        self.assertIn("TIGHTEN this chapter to about 720 words (never more than 800)", tighten[0])
         self.assertIn("t849", out["revised_body"])
         self.assertNotIn("w1999", out["revised_body"])
+
+    def test_chapter_slightly_over_is_tightened(self):
+        # 15% over the target: below the old 1.25× trigger, above TIGHTEN_ABOVE.
+        writer = " ".join(f"w{i}" for i in range(920))
+        calls, out = self._run(" ".join(f"t{i}" for i in range(760)), writer=writer)
+        self.assertEqual(len([c for c in calls if "TIGHTEN this chapter" in c]), 1)
+        self.assertIn("t759", out["revised_body"])
 
     def test_out_of_range_tightening_keeps_the_original(self):
         calls, out = self._run(" ".join(f"t{i}" for i in range(100)))   # < 0.7 × 800

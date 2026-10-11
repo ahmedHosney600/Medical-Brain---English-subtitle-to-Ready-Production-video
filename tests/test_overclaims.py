@@ -1,6 +1,6 @@
 import unittest
 
-from medical_brain.utils.overclaims import OVERCLAIM, find_overclaims
+from medical_brain.utils.overclaims import OVERCLAIM, find_overclaims, overclaim_in
 
 
 class OverclaimTest(unittest.TestCase):
@@ -33,3 +33,13 @@ class OverclaimContextTest(unittest.TestCase):
         for s in ["الضغط ده بيبعت إشارة فورية بتوقف الانقباض في لحظتها!", "وسيب جسمك يفك الأزمة في ثواني.",
                   "This stretch stops the cramp instantly."]:
             self.assertIsNotNone(overclaim_in(s), s)
+
+
+class RedFlagOnsetTest(unittest.TestCase):
+    def test_sudden_symptom_with_emergency_is_not_an_overclaim(self):
+        s = "لو حسيت بضعف ظهر فجأة في ثواني في جنب واحد، دي حالة طارئة وروح الطوارئ فوراً."
+        self.assertIsNone(overclaim_in(s))
+
+    def test_treatment_in_seconds_still_flagged(self):
+        self.assertEqual(overclaim_in("الحباية دي بتفك الصداع في ثواني."), "في ثواني")
+

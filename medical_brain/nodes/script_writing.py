@@ -166,20 +166,27 @@ TRANSLATION RISK / CONTEXTUAL ALIGNMENT REPORT (fix only what it flags in this c
     return prompt
 
 
+# A fresh chapter longer than this × its blueprint words gets one tightening call. In a
+# 20-minute run every chapter came in 20–25% over and the script ran 27 minutes.
+TIGHTEN_ABOVE = 1.1
+
+
 def _tighten_chapter(state: PipelineState, system_prompt: str, chapter: dict,
                      text: str, memory: dict) -> tuple:
     """One tightening call when a fresh chapter overshoots its blueprint budget; the
-    tightened text replaces it only when it lands in [0.7, 1.25] × target. Returns
+    tightened text replaces it when it is shorter and keeps ≥ 0.7 × target. Returns
     (text, memory)."""
     target = _chapter_words(chapter)
     before = chapters.spoken_words(text)
-    if target <= 0 or before <= target * 1.25:
+    if target <= 0 or before <= target * TIGHTEN_ABOVE:
         return text, memory
 
     title = str(chapter.get("title", "") or "").strip()
     cid = _chapter_key(chapter)
     print(f"  ✂️ chapter {cid}: {before} words vs target {target} — tightening")
-    user_prompt = (f"TIGHTEN this chapter to about {target} words: keep every medical point, "
+    # Writers overshoot a requested length by ~20%, so the request aims a little under it.
+    user_prompt = (f"TIGHTEN this chapter to about {int(target * 0.9)} words (never more than "
+                   f"{target}): keep every medical point, "
                    "the opening continuity, the loops and the bridge; cut repetition and padding"
                    "\n\n" + text)
     try:
@@ -500,6 +507,8 @@ PRESENTER PROFILE:
 
 AVOID LIST:
 {state.get("avoid_list", "")}
+
+LENGTH: this segment has {chapters.spoken_words(text)} spoken words. Keep the rewrite within ±5% of that — change wording, do not add new sentences, examples or asides (the video's length is already budgeted).
 
 Rewrite ONLY this segment; keep its header exactly as it is. Do not rewrite anything outside it. Score both dialect and warmth dimensions for this segment. Flag anything ambiguous for the fidelity check.
 

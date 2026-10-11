@@ -24,22 +24,28 @@ _EFFECT = re.compile(r"(?:ب?[تي]?(?:فك|وقف|خف|هدي|عالج|ختفي
                      r"\b(?:stops?|relieves?|ends?|cures?|fixes|goes away)\b", re.IGNORECASE)
 _URGENT = re.compile(r"مستشفى|المستشفى|طوارئ|الطوارئ|إسعاف|الإسعاف|دكتور|الدكتور|طبيب|الطبيب|اتصل|\bemergency\b|\bhospital\b|\bdoctor\b|\b911\b",
                      re.IGNORECASE)
+# Symptom onset ("weakness that came on suddenly, within seconds — go to the ER") is a red
+# flag, not a promise about a treatment.
+_ONSET = re.compile(r"فجأة|فجأه|فجائي|مفاجئ|\bsudden(?:ly)?\b|\babrupt(?:ly)?\b", re.IGNORECASE)
 _NEGATED = re.compile(r"(?:^|\s)(?:مش|مفيش|لا|ولا|ليس|مافيش|\bnot\b|\bno\b|\bisn't\b)(?:\s|$)", re.IGNORECASE)
 
 
 def overclaim_in(sentence: str):
-    """The overclaim phrase in one sentence, or None. "In seconds" always counts; "immediately"
+    """The overclaim phrase in one sentence, or None. "In seconds" counts unless it describes a
+    sudden symptom that needs urgent care; "immediately"
     counts only for a treatment effect (not for "go to hospital immediately"); "magic",
     "guaranteed", "final cure" count unless the sentence denies them (myth-busting)."""
     m = _SECONDS.search(sentence)
-    if m:
+    if m and not (_ONSET.search(sentence) and _URGENT.search(sentence)):
         return m.group(0)
     m = _IMMEDIATE.search(sentence)
     if m and _EFFECT.search(sentence) and not _URGENT.search(sentence):
         return m.group(0)
-    m = OVERCLAIM.search(sentence)
-    if m and not _IMMEDIATE.fullmatch(m.group(0)) and not _NEGATED.search(sentence):
-        return m.group(0)
+    if _NEGATED.search(sentence):
+        return None
+    for m in OVERCLAIM.finditer(sentence):         # seconds / immediately were judged above
+        if not _IMMEDIATE.fullmatch(m.group(0)) and not _SECONDS.fullmatch(m.group(0)):
+            return m.group(0)
     return None
 
 
