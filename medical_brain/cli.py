@@ -6,7 +6,7 @@
   python3 main.py --continue [session]                      apply review.md / approve research
   python3 main.py --resume [session]                        continue a stopped run
   python3 main.py                                           menu
-Options: --provider main|single|hybrid (skips the model menu)."""
+Options: --provider main|single|hybrid (skips the model menu) · --minutes N (target video length for this run)."""
 import datetime
 import glob
 import json
@@ -307,8 +307,11 @@ def run_video(router, original_script: str, video_analysis: str = "", output_dir
         if video_analysis:
             initial_state["video_analysis"] = video_analysis
         initial_state.update(extra_state or {})
-        # Long-form hint: 0 (the default) lets the strategy planner choose the duration.
+        # Long-form hint: 0 (the default) lets the strategy planner choose the duration;
+        # `--minutes N` on the command line overrides input_fields.json for this run.
         initial_state.setdefault("target_minutes", 0)
+        if os.environ.get("MB_TARGET_MINUTES"):
+            initial_state["target_minutes"] = int(float(os.environ["MB_TARGET_MINUTES"]))
         apply_defaults(initial_state)
 
         if output_dir:
@@ -631,6 +634,9 @@ def main():
     if cli_provider == "":
         stop_run(ValueError("--provider needs a value: main, single or hybrid"))
     workflow = _take_flag("--workflow")
+    minutes = _take_flag("--minutes")
+    if minutes and minutes is not True:
+        os.environ["MB_TARGET_MINUTES"] = str(minutes)
     topic = _take_flag("--topic")
     audience = _take_flag("--audience") or ""
     cont = _take_flag("--continue")
