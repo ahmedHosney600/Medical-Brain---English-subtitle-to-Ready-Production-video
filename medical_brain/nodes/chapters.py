@@ -92,12 +92,18 @@ def valid_blueprint(blueprint) -> bool:
     return True
 
 
+CHAPTER_MODE_MIN_WORDS = 1600   # ~11-12 min of Egyptian Arabic; shorter bodies fit one call
+
+
 def chapter_mode_on(blueprint) -> bool:
-    """Chapter mode only when the blueprint has at least two chapters. One chapter
-    (or none) keeps the original single-call behaviour."""
+    """Chapter mode only when the blueprint has at least two chapters AND the body is long
+    enough to need them. The planner sometimes splits a 10-minute video into two chapters;
+    such a short body keeps the original single-call behaviour."""
     if not valid_blueprint(blueprint):
         return False
-    return len(blueprint.get("chapters") or []) >= 2
+    chapters = blueprint.get("chapters") or []
+    words = sum(int(float(c.get("words", 0) or 0)) for c in chapters)
+    return len(chapters) >= 2 and words >= CHAPTER_MODE_MIN_WORDS
 
 
 def blueprint_signature(blueprint) -> str:

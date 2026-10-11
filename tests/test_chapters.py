@@ -398,3 +398,14 @@ class SingleChapterUnchangedTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MinWordsTest(unittest.TestCase):
+    def test_short_two_chapter_blueprint_stays_single_call(self):
+        from unittest import mock
+        from medical_brain.nodes import chapters
+        bp = {"chapters": [{"id": "C1", "title": "a", "words": 560}, {"id": "C2", "title": "b", "words": 620}]}
+        with mock.patch.object(chapters, "CHAPTER_MODE_MIN_WORDS", 1600):
+            self.assertFalse(chapters.chapter_mode_on(bp))
+            bp["chapters"].append({"id": "C3", "title": "c", "words": 900})
+            self.assertTrue(chapters.chapter_mode_on(bp))
