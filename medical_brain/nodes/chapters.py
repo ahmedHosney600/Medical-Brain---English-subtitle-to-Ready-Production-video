@@ -18,6 +18,15 @@ _MEMORY_RE = re.compile(r"```memory\s*\n?(.*?)```", re.DOTALL | re.IGNORECASE)
 _NOTES_RE = re.compile(r"^\s*={0,3}\s*SEGMENT NOTES\s*={0,3}\s*:?\s*$", re.IGNORECASE | re.MULTILINE)
 _SEGMENT_NOTES_HEADING_RE = re.compile(r"^\s*#{1,6}\s*SEGMENT NOTES\b", re.IGNORECASE | re.MULTILINE)
 
+# The whole-script cleaner: markdown headings, production labels and model notes.
+_MD_HEADING_RE = re.compile(r"^\s*#{1,6}\s+\S")
+_NOTE_LINE_RE = re.compile(r"^\s*#{0,6}\s*(?:Register Applied|Score|Dialect|Warmth|Flags)\b\s*:",
+                           re.IGNORECASE)
+_NOTES_SECTION_RE = re.compile(r"^\s*[=#]*\s*SEGMENT NOTES\b", re.IGNORECASE | re.MULTILINE)
+_PRODUCTION_LABEL_RE = re.compile(
+    r"\b(DISCLAIMER|CTA|OUTRO|HOOK|OPENING|CLOSING|INTRO|RETENTION|SEGMENT|NOTES|"
+    r"TIMESTAMP|SCORE|DIALECT|WARMTH|FLAGS|REGISTER)\b", re.IGNORECASE)
+
 
 # --------------------------------------------------------------------------
 # token budget
@@ -434,6 +443,44 @@ def strip_segment_notes(text: str) -> str:
     return raw[:match.start()].rstrip() if match else raw
 
 
+def spoken_words(text: str) -> int:
+    """A chapter/segment's spoken word count: its chapter header and any markdown
+    label lines are not spoken, so they are not counted."""
+    lines = [line for line in (text or "").split("\n")
+             if not _HEADER_RE.match(line) and not _MD_HEADING_RE.match(line)]
+    return len(" ".join(lines).split())
+
+
+def clean_spoken_script(text: str) -> str:
+    """The spoken script only.
+
+    Keeps the writer's "=== chapter ===" headers but drops everything that is not
+    spoken and would bloat the script: markdown headings ("#…"), production labels
+    ("=== DISCLAIMER | Timestamp … ==="), the SEGMENT NOTES section and the model's
+    score/register note lines ("Register Applied:", "Score:", "Dialect:", …). Runs of
+    three or more blank lines collapse to one blank line."""
+    raw = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    notes = _NOTES_SECTION_RE.search(raw)
+    if notes:
+        raw = raw[:notes.start()]
+    kept = []
+    for line in raw.split("\n"):
+        header = _HEADER_RE.match(line)
+        if header:
+            inner = header.group(1)
+            if "|" in inner or _PRODUCTION_LABEL_RE.search(inner):
+                continue                      # a production label, not a chapter header
+            kept.append(line)
+            continue
+        if _MD_HEADING_RE.match(line):
+            continue
+        if _NOTE_LINE_RE.match(line):
+            continue
+        kept.append(line)
+    cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(kept))
+    return cleaned.strip()
+
+
 # --------------------------------------------------------------------------
 # integrity edits
 # --------------------------------------------------------------------------
@@ -441,11 +488,55 @@ def _chapter_key(chapter: dict) -> str:
     return str(chapter.get("id", "") or chapter.get("title", "") or "").strip()
 
 
+# An edit's "find" may differ from the script only in formatting: tatweel, Arabic
+# diacritics, punctuation or spacing. These helpers let apply_integrity_edits retry
+# with a normalised match instead of skipping the edit.
+_TATWEEL = "\u0640"
+_DIACRITICS_RE = re.compile(r"[\u064b-\u0652]")
+_IGNORED_PUNCT = set("،,.؟?!«»\"'")
+
+
+def _normalize_with_map(text: str):
+    """(normalised, mapping): the text lower-case-free of tatweel, diacritics and
+    ignored punctuation, with whitespace collapsed. mapping[i] is the index in the
+    original text of the character that produced normalised[i]."""
+    out, mapping = [], []
+    for i, ch in enumerate(text or ""):
+        if ch == _TATWEEL or _DIACRITICS_RE.match(ch):
+            continue
+        if ch in _IGNORED_PUNCT:
+            continue
+        if ch.isspace():
+            if out and out[-1] == " ":
+                continue
+            out.append(" ")
+            mapping.append(i)
+            continue
+        out.append(ch)
+        mapping.append(i)
+    return "".join(out), mapping
+
+
+def _normalized_span(text: str, find: str):
+    """(start, end) in `text` of the one normalised match of `find`, or None when the
+    normalised find is empty or occurs zero or more than once."""
+    nf, _ = _normalize_with_map(find)
+    if not nf.strip():
+        return None
+    nt, mapping = _normalize_with_map(text)
+    if nt.count(nf) != 1:
+        return None
+    start = nt.index(nf)
+    return mapping[start], mapping[start + len(nf) - 1] + 1
+
+
 def apply_integrity_edits(script: str, blueprint, edits) -> tuple:
     """Apply the integrity editor's targeted edits in code.
 
-    An edit is applied only when its "find" occurs exactly once inside the named
-    chapter's text. Returns (new_script, applied, skipped, log_lines)."""
+    An edit is applied when its "find" occurs exactly once inside the named chapter's
+    text. If it occurs zero times, one retry is made after normalising whitespace,
+    tatweel, Arabic diacritics and punctuation — and the edit is applied only when
+    that leaves exactly one match. Returns (new_script, applied, skipped, log_lines)."""
     chapters = [c for c in ((blueprint or {}).get("chapters") or []) if isinstance(c, dict)]
     segments = split_by_chapters(script)
     chapter_title_text = [(t, x) for (t, x) in segments if t]
@@ -482,9 +573,18 @@ def apply_integrity_edits(script: str, blueprint, edits) -> tuple:
         if count == 1:
             texts[idx] = texts[idx].replace(find, replace)
             applied += 1
-        else:
-            skipped += 1
-            log.append(f"skipped an edit in '{where}': find occurs {count} times (needs exactly one)")
+            continue
+        if count == 0:
+            span = _normalized_span(texts[idx], find)
+            if span is not None:
+                start, end = span
+                texts[idx] = texts[idx][:start] + replace + texts[idx][end:]
+                applied += 1
+                log.append(f"applied an edit in '{where}' after normalising spacing, "
+                           "diacritics or punctuation")
+                continue
+        skipped += 1
+        log.append(f"skipped an edit in '{where}': find occurs {count} times (needs exactly one)")
 
     out, k = [], 0
     for title, text in segments:

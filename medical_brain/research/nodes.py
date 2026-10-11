@@ -1436,6 +1436,33 @@ def _guide_weakest(strengths) -> str:
     return min(present, key=lambda s: GUIDE_STRENGTH_ORDER.index(s)) if present else ""
 
 
+_PROMISE_OVERCLAIM = re.compile(
+    r"\b(within (a few )?(seconds|minutes)|in (\d+ )?seconds|instantly|immediately|cures?|guarantee[sd]?|"
+    r"the only (way|solution)|forever)\b", re.IGNORECASE)
+
+
+def _checked_promise(promise: str, facts: list, report: dict) -> str:
+    """The promise cites no facts, so it gets its own check: no number the facts don't
+    contain and no time-to-effect / cure wording. A failing promise is dropped (the video
+    steps then write their own from the guide) — it once became "stops a cramp in 10 seconds"
+    in a video title."""
+    if not promise:
+        return ""
+    fact_numbers = set()
+    for f in facts:
+        fact_numbers |= _numbers(f.get("claim", ""))
+    bad = sorted(_numbers(promise) - fact_numbers)
+    hit = _PROMISE_OVERCLAIM.search(promise)
+    if bad or hit:
+        why = (f"number(s) {', '.join(bad)} not in the facts" if bad else "") + \
+              ("; " if bad and hit else "") + (f"overclaim wording '{hit.group(0)}'" if hit else "")
+        report["dropped"] += 1
+        report["by_reason"]["promise_overclaim"] = report["by_reason"].get("promise_overclaim", 0) + 1
+        report["dropped_items"].append({"kind": "promise", "text": promise, "reason": why})
+        return ""
+    return promise
+
+
 def validate_guide(guide: dict, state: dict) -> tuple:
     """Code-check the model's patient guide and return (clean_guide, report).
 
@@ -1483,7 +1510,7 @@ def validate_guide(guide: dict, state: dict) -> tuple:
         report["kept"] += 1
         return out
 
-    clean = {"promise": str(guide.get("promise", "") or "").strip()}
+    clean = {"promise": _checked_promise(str(guide.get("promise", "") or "").strip(), facts, report)}
     ac = guide.get("action_card") if isinstance(guide.get("action_card"), dict) else {}
     clean["action_card"] = {
         key: [c for c in (clean_item(it, "action_card." + key, ("text",)) for it in (ac.get(key) or [])) if c]

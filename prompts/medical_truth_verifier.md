@@ -14,6 +14,8 @@ AUDIT DIMENSIONS (CHECK EVERY LINE & SECTION):
 2. EMPIRICAL PRECISION & NUMERICAL INTEGRITY:
    - Verify every statistic, clinical case study (e.g., the 3cm intramuscular hematoma case in the UK), study cohort, and meta-analysis mentioned.
    - Confirm that numbers are exact and zero fabricated data or exaggerated figures exist.
+   - SPECIFICS RULE (strict): a claim is "✅ Verified True" only if every specific it adds — a number, a duration ("in 10 seconds", "instantly", "within minutes"), a percentage, a dose, a frequency, or a certainty word ("proven", "always", "cures", "guaranteed", "المثبتة علمياً") — appears in the Fact Ledger / patient guide with the same strength. The general idea being supported is NOT enough: "stretching may help" in the ledger does NOT verify "a stretch stops the cramp in 10 seconds". A more specific or stronger version of a ledger fact is an OVERCLAIM → mark ⚠️ Needs Nuance (or ❌ if it changes the advice) and correct it in verified_script to the ledger's wording and certainty.
+   - Check EVERY spoken line, including the hook, the promise, on-screen text cues and the CTA — not only the body. A catchy promise is a medical claim like any other.
 
 3. SCIENTIFIC TRUTH OF MYTH-BUSTING (NO NEW MYTHS):
    - When debunking popular myths (e.g., that nocturnal cramps are purely caused by dehydration or potassium deficiency from bananas), ensure the debunking is scientifically sound and nuanced.

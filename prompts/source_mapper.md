@@ -8,7 +8,7 @@ For every sentence that states a MEDICAL CLAIM — a fact, number, cause, risk, 
 
 Rules:
 - Link a sentence only to facts that really support what it says. If the sentence says more than the facts (a stronger effect, a number not in the facts, a different population, certainty the facts don't have), list it under "unsupported" with a short reason — even if a related fact exists.
-- Sentences that are not medical claims (greetings, hooks, questions to the viewer, transitions, calls to subscribe, personal stories framed as stories, general encouragement) are skipped — don't list them anywhere.
+- Sentences that are not medical claims (greetings, questions to the viewer, transitions, calls to subscribe, personal stories framed as stories, general encouragement) are skipped — don't list them anywhere. Hooks, promises and on-screen text are NOT skipped when they state a medical claim (e.g. "one move stops the cramp in 10 seconds") — check them like any other sentence, including every number, duration and certainty word.
 - Never invent fact ids. Never translate or rewrite the script.
 
 OUTPUT — ONLY valid JSON:

@@ -230,6 +230,15 @@ class BodyChapterModeTest(unittest.TestCase):
         self.assertIn("جديد", out["revised_body"])
 
 
+def frame_fake(opening="افتتاحية مختارة", disclaimer="تنبيه طبي",
+               closing="خاتمة مختارة", chosen="HOOK A"):
+    """A json call that answers like the script_frame step."""
+    def answer(system, user, temperature=None, max_tokens=None, **kwargs):
+        return ({"opening": opening, "disclaimer": disclaimer, "closing": closing,
+                 "chosen_hook": chosen}, "raw")
+    return FakeLLM(answer)
+
+
 class DialectChapterModeTest(unittest.TestCase):
     def _answers(self, system, user, temperature=None, max_tokens=None):
         label = re.search(r"SEGMENT LABEL: (.*)", user).group(1).strip()
@@ -237,15 +246,87 @@ class DialectChapterModeTest(unittest.TestCase):
 
     def _state(self, **over):
         body = ("=== الفصل الأول ===\nنص أول\n\n=== الفصل الثاني ===\nنص ثاني")
-        return base_state(blueprint=BP, hook="هوك الأصلي", revised_body=body,
-                          cta_output="كول تو أكشن", chapter_workers=1, **over)
+        fields = dict(blueprint=BP, hook="هوك الأصلي", revised_body=body,
+                      cta_output="كول تو أكشن", chapter_workers=1)
+        fields.update(over)
+        return base_state(**fields)
+
+    def test_frame_builds_segments_from_opening_and_closing(self):
+        frame = use(self, script_writing, "call_llm_json", frame_fake())
+        fake = use(self, script_writing, "call_llm", FakeLLM(self._answers))
+        state = self._state(
+            hook="### HOOK A raw\nنص هوك أول\n### HOOK B raw\nنص هوك تاني",
+            cta_output="### CTA v1\nنص CTA أول\n### CTA v2\nنص CTA تاني")
+        out = script_writing.dialect_warmth_layer(state)
+
+        # ONE frame call, with the right dials, and it sees the hook options, the CTA
+        # material and the body's first/last lines.
+        self.assertEqual(len(frame.calls), 1)
+        self.assertEqual(frame.calls[0]["temperature"], 0.4)
+        self.assertEqual(frame.calls[0]["max_tokens"], 3000)
+        self.assertEqual(frame.calls[0]["required"], ["opening", "closing"])
+        for marker in ("HOOK OPTIONS", "RETENTION, DISCLAIMER & CTA MATERIAL",
+                       "SCRIPT BLUEPRINT", "FIRST CHAPTER START", "LAST CHAPTER END"):
+            self.assertIn(marker, frame.calls[0]["user"])
+        self.assertIn("نص هوك أول", frame.calls[0]["user"])
+        self.assertIn("نص CTA تاني", frame.calls[0]["user"])
+        self.assertIn("نص أول", frame.calls[0]["user"])                 # first chapter start
+
+        # Segments: opening (+ disclaimer), the chapters, closing — not the raw hook/CTA.
+        labels = [re.search(r"SEGMENT LABEL: (.*)", c["user"]).group(1).strip() for c in fake.calls]
+        self.assertEqual(labels, ["OPENING", "الفصل الأول", "الفصل الثاني", "CLOSING"])
+        self.assertIn("افتتاحية مختارة", fake.calls[0]["user"])
+        self.assertIn("تنبيه طبي", fake.calls[0]["user"])               # disclaimer appended
+        self.assertIn("خاتمة مختارة", fake.calls[-1]["user"])
+        self.assertIn("[OPENING rewritten]", out["dialect_warmth_output"])
+        self.assertIn("[CLOSING rewritten]", out["dialect_warmth_output"])
+        self.assertNotIn("نص هوك أول", out["dialect_script"])
+        self.assertNotIn("نص CTA تاني", out["dialect_script"])
+        self.assertEqual(out["script_frame"]["opening"], "افتتاحية مختارة")
+        self.assertEqual(out["script_frame"]["chosen_hook"], "HOOK A")
+
+    def test_frame_failure_falls_back_to_the_raw_hook_and_cta(self):
+        def boom(*a, **k):
+            from medical_brain.utils.llm_json import UnreadableAnswer
+            raise UnreadableAnswer("no json", "raw")
+        use(self, script_writing, "call_llm_json", boom)
+        fake = use(self, script_writing, "call_llm", FakeLLM(self._answers))
+        state = self._state(hook="نص الهوك الخام", cta_output="نص الـ CTA الخام")
+        with mock.patch("builtins.print") as printed:
+            out = script_writing.dialect_warmth_layer(state)
+        labels = [re.search(r"SEGMENT LABEL: (.*)", c["user"]).group(1).strip() for c in fake.calls]
+        self.assertEqual(labels, ["HOOK", "الفصل الأول", "الفصل الثاني", "CTA / OUTRO"])
+        self.assertIn("نص الهوك الخام", fake.calls[0]["user"])
+        self.assertIn("نص الـ CTA الخام", fake.calls[-1]["user"])
+        self.assertNotIn("script_frame", out)
+        self.assertTrue(any("frame" in str(call.args[0]).lower()
+                            for call in printed.call_args_list))
+
+    def test_revision_reuses_the_frame_unless_the_critique_flags_it(self):
+        frame = use(self, script_writing, "call_llm_json", frame_fake())
+        fake = use(self, script_writing, "call_llm", FakeLLM(self._answers))
+        refined = "=== الفصل الأول ===\nمصقول\n\n=== الفصل الثاني ===\nمصقول ٢"
+        state = base_state(blueprint=BP, quality_revision_count=1, refined_script=refined,
+                           cta_output="cta", self_critique_output="dialect wording only")
+        script_writing.dialect_warmth_layer(state)
+        self.assertEqual(len(frame.calls), 0)                     # frame reused, not re-chosen
+        self.assertEqual(len(fake.calls), 2)
+
+        frame.calls.clear()
+        fake.calls.clear()
+        flagged = dict(state, self_critique_output="the opening hook is weak and the closing CTA is rushed")
+        out = script_writing.dialect_warmth_layer(flagged)
+        self.assertEqual(len(frame.calls), 1)                     # critique mentions hook/CTA → re-run
+        self.assertIn("افتتاحية مختارة", out["script_frame"]["opening"])
+        self.assertEqual(out["script_frame"]["closing"], "خاتمة مختارة")
 
     def test_segments_rewritten_joined_and_notes_collected(self):
+        use(self, script_writing, "call_llm_json", frame_fake())
         fake = use(self, script_writing, "call_llm", FakeLLM(self._answers))
         out = script_writing.dialect_warmth_layer(self._state())
-        self.assertEqual(len(fake.calls), 4)                       # hook + 2 chapters + CTA
-        for piece in ("[HOOK rewritten]", "[الفصل الأول rewritten]",
-                      "[الفصل الثاني rewritten]", "[CTA / OUTRO rewritten]"):
+        self.assertEqual(len(fake.calls), 4)                       # opening + 2 chapters + closing
+        for piece in ("[OPENING rewritten]", "[الفصل الأول rewritten]",
+                      "[الفصل الثاني rewritten]", "[CLOSING rewritten]"):
             self.assertIn(piece, out["dialect_warmth_output"])
         self.assertIn("## SEGMENT NOTES", out["dialect_warmth_output"])
         self.assertIn("### الفصل الأول", out["dialect_warmth_output"])
@@ -253,7 +334,8 @@ class DialectChapterModeTest(unittest.TestCase):
         self.assertIn("=== الفصل الأول ===", fake.calls[1]["user"])       # header kept in the segment
         c2 = next(c for c in fake.calls if "SEGMENT LABEL: الفصل الثاني" in c["user"])
         self.assertIn("نص أول", c2["user"])                              # neighbour last lines
-        self.assertEqual(fake.calls[0]["max_tokens"], chapters.budget_for_words(len("هوك الأصلي".split())))
+        opening_words = len("افتتاحية مختارة\n\nتنبيه طبي".split())
+        self.assertEqual(fake.calls[0]["max_tokens"], chapters.budget_for_words(opening_words))
 
     def test_revision_segments_come_from_the_refined_script(self):
         fake = use(self, script_writing, "call_llm", FakeLLM(self._answers))
@@ -337,6 +419,9 @@ class ChapterPipelineTest(unittest.TestCase):
             return f"[{label} rewritten]\n=== SEGMENT NOTES ===\nDialect 9"
 
         def json_llm(system, user, temperature=None, max_tokens=None, **kwargs):
+            if "FRAME" in system.upper():
+                return ({"opening": "افتتاحية", "disclaimer": "تنبيه", "closing": "خاتمة",
+                         "chosen_hook": "A"}, "raw")
             return ({"edits": [], "integrity_score": 9, "summary": "one talk", "issues": []}, "raw")
 
         use(self, script_writing, "call_llm", FakeLLM(llm))
@@ -352,6 +437,102 @@ class ChapterPipelineTest(unittest.TestCase):
         self.assertNotIn("SEGMENT NOTES", state["refined_script"])
         self.assertEqual(state["integrity_report"]["score"], 9)
         self.assertEqual(state["script_memory"]["summaries"][0]["summary"], "ملخص C1")
+
+
+class CleanSpokenScriptTest(unittest.TestCase):
+    def test_removes_labels_and_notes_and_keeps_chapter_headers(self):
+        raw = ("## DIALECT & WARMTH REWRITE\n### Rewritten Script\n"
+               "=== الفصل الأول ===\nنص أول.\n\n\n"
+               "=== DISCLAIMER | Timestamp: 1:30 | Energy: 2/5 ===\n"
+               "لا تهمل الأعراض.\n\n"
+               "=== CTA | Timestamp: 9:35 | Energy: 3/5 ===\n"
+               "اشترك في القناة.\n\n"
+               "=== OUTRO | Timestamp: 9:50 ===\nخاتمة.\n\n"
+               "=== الفصل الثاني ===\nنص ثاني.\n\n"
+               "### Register Applied: Educated | Code-Switching: Moderate\n"
+               "Score: 9\nDialect: 9\nWarmth: 9\nFlags: none\n\n"
+               "## SEGMENT NOTES\n\n### الفصل الأول\nDialect 9\n")
+        clean = chapters.clean_spoken_script(raw)
+        self.assertIn("=== الفصل الأول ===", clean)
+        self.assertIn("=== الفصل الثاني ===", clean)
+        self.assertIn("نص أول.", clean)
+        for gone in ("## DIALECT", "### Rewritten Script", "DISCLAIMER | Timestamp",
+                     "CTA | Timestamp", "OUTRO | Timestamp", "Register Applied",
+                     "Score:", "Dialect:", "Warmth:", "Flags:", "SEGMENT NOTES"):
+            self.assertNotIn(gone, clean)
+        # the spoken disclaimer/CTA/outro lines themselves are kept
+        self.assertIn("لا تهمل الأعراض", clean)
+        self.assertIn("اشترك في القناة", clean)
+        self.assertIn("خاتمة.", clean)
+        self.assertNotIn("\n\n\n", clean)
+
+    def test_plain_script_is_unchanged(self):
+        script = "=== C1 ===\nنص\n\n=== C2 ===\nنص تاني"
+        self.assertEqual(chapters.clean_spoken_script(script), script)
+
+
+class ChapterLengthGuardTest(unittest.TestCase):
+    LONG = " ".join(f"w{i}" for i in range(2000))
+
+    def _bp(self):
+        return {"target_minutes": 20, "words_per_minute": 135, "chapters": [
+            {"id": "C1", "title": "طويل", "job": "j", "words": 800, "covers": [],
+             "opens_loops": [], "closes_loops": [], "depends_on_previous": False},
+            {"id": "C2", "title": "ق", "job": "j", "words": 800, "covers": [],
+             "opens_loops": [], "closes_loops": [], "depends_on_previous": True},
+        ]}
+
+    def _run(self, tight_text):
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            if "TIGHTEN this chapter" in user:
+                return f"=== طويل ===\n{tight_text}"
+            if "id: C1" in user:
+                return f"=== طويل ===\n{self.LONG}"
+            return "=== ق ===\nنص قصير"
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            out = script_writing.body_restructurer(base_state(blueprint=self._bp()))
+        return calls, out
+
+    def test_overlong_chapter_is_tightened(self):
+        calls, out = self._run(" ".join(f"t{i}" for i in range(850)))
+        tighten = [c for c in calls if "TIGHTEN this chapter" in c]
+        self.assertEqual(len(tighten), 1)
+        self.assertIn("TIGHTEN this chapter to about 800 words", tighten[0])
+        self.assertIn("t849", out["revised_body"])
+        self.assertNotIn("w1999", out["revised_body"])
+
+    def test_out_of_range_tightening_keeps_the_original(self):
+        calls, out = self._run(" ".join(f"t{i}" for i in range(100)))   # < 0.7 × 800
+        self.assertEqual(len([c for c in calls if "TIGHTEN this chapter" in c]), 1)
+        self.assertIn("w1999", out["revised_body"])
+        self.assertNotIn("t99", out["revised_body"])
+
+
+class IntegrityNormalisationTest(unittest.TestCase):
+    def test_normalised_match_applied_once(self):
+        script = ("=== C1 ===\nالكلمـة الطبيّة، مهمة جدا.\n\n"
+                  "=== C2 ===\nالتشخيـص، السريع ثم التشخـيص السريع.\n")
+        bp = {"chapters": [{"id": "C1", "title": "C1", "words": 5},
+                           {"id": "C2", "title": "C2", "words": 5}]}
+        out, applied, skipped, log = chapters.apply_integrity_edits(
+            script, bp, [{"chapter": "C1", "find": "الكلمة الطبية مهمة", "replace": "REPLACED"}])
+        self.assertEqual((applied, skipped), (1, 0))
+        self.assertIn("REPLACED", out)
+        self.assertNotIn("الطبيّة", out)
+        self.assertTrue(any("normalis" in line for line in log))
+
+    def test_ambiguous_normalised_match_is_skipped(self):
+        script = "=== C1 ===\nالتشخيـص، السريع ثم التشخـيص السريع.\n"
+        bp = {"chapters": [{"id": "C1", "title": "C1", "words": 5}]}
+        out, applied, skipped, log = chapters.apply_integrity_edits(
+            script, bp, [{"chapter": "C1", "find": "التشخيص السريع", "replace": "X"}])
+        self.assertEqual((applied, skipped), (0, 1))
+        self.assertNotIn("X", out)
 
 
 class SingleChapterUnchangedTest(unittest.TestCase):

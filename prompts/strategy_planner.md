@@ -136,7 +136,7 @@ The script is written chapter by chapter from this blueprint, so long videos nev
 - If the input gives TARGET MINUTES, use exactly that duration; otherwise use the duration you chose above.
 - Hook and CTA/outro are written separately — the chapters cover the body only. Chapter words must add up to the body budget (target words minus hook and CTA).
 - Videos up to ~10 minutes: ONE chapter (the whole body). Longer videos: chapters of about 3–5 minutes (≈400–700 words each), each with one clear job in the story.
-- "promise": what the viewer will be able to do or understand by the end — the hook makes it, the last chapter and CTA pay it off.
+- "promise": what the viewer will be able to do or understand by the end — the hook makes it, the last chapter and CTA pay it off. The promise and the hook angle may use ONLY specifics that are in the source (no added durations like "in 10 seconds", no "instantly", "guaranteed", "the only solution", no numbers the source lacks); if the evidence is modest ("may help"), promise understanding and practical steps, not results.
 - "through_lines": what runs through the whole video so it feels like one story: a recurring example or patient scenario (built from the source, never invented medical facts), the key terms and how they are first said, and the one thing to remember.
 - Per chapter: "covers" names the parts of the source/patient guide it uses (section titles or fact ids), so no two chapters repeat the same facts unless one is a deliberate callback; "opens_loops"/"closes_loops" are the questions a chapter raises and the ones it answers (every opened loop must be closed by a later chapter); "depends_on_previous" is false only when the chapter can be written without reading the one before it (e.g. a myths list).
 

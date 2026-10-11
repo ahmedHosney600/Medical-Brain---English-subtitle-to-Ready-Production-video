@@ -14,7 +14,7 @@ ABSOLUTE RULES (checked by code — violations are deleted):
 5. Safety first: every red flag in the facts that a patient should know must appear in "see_doctor_if" or "emergency_if". Don't leave out a warning to make the guide shorter.
 
 WHAT TO PRODUCE
-- "promise": one sentence — what the viewer will be able to do or understand after the video.
+- "promise": one sentence — what the viewer will be able to do or understand after the video. No specifics the facts don't state (no "within seconds", "instantly", "cure", numbers); promise understanding and practical steps, not results the evidence doesn't guarantee.
 - "action_card": the fridge-door summary, short imperative items:
   - "do_now": what to do immediately (or the first practical step for this topic type, e.g. "before your test")
   - "daily": prevention / day-to-day habits that the evidence supports

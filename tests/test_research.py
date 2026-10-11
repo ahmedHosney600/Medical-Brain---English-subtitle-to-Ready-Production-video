@@ -2084,3 +2084,20 @@ class ReviewPlannerDedupeTest(unittest.TestCase):
         with mock.patch.object(nodes, "call_llm_json", fake), mock.patch("builtins.print"):
             out = nodes.review_planner(st)
         self.assertEqual(out["outline"][0]["questions"], ["What happens if I stop taking my statin?"])
+
+
+class GuidePromiseCheckTest(unittest.TestCase):
+    def test_overclaiming_promise_is_dropped_and_honest_one_kept(self):
+        from medical_brain.research import nodes
+        state = {"sources": {"S1": {"title": "t", "level": 2}},
+                 "facts": [{"id": "F1", "section": "A", "kind": "advice", "claim": "Stretching may help a cramp.",
+                            "status": "verified", "source_ids": ["S1"], "strength": "weak_or_disputed"}]}
+        bad, report = nodes.validate_guide({"promise": "Stop a cramp within seconds with one stretch.",
+                                            "action_card": {}, "sections": []}, state)
+        self.assertEqual(bad["promise"], "")
+        self.assertEqual(report["by_reason"].get("promise_overclaim"), 1)
+        bad2, _ = nodes.validate_guide({"promise": "Stop a cramp in 10 seconds.", "action_card": {}, "sections": []}, state)
+        self.assertEqual(bad2["promise"], "")
+        ok, _ = nodes.validate_guide({"promise": "You will know what to do when a cramp strikes and when to see a doctor.",
+                                      "action_card": {}, "sections": []}, state)
+        self.assertTrue(ok["promise"])

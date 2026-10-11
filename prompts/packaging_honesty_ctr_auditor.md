@@ -8,6 +8,8 @@ SCORE EACH FINALIST TITLE 1-10 ON:
 5. TITLE/THUMBNAIL COMPLEMENTARITY — the paired thumbnail text adds NEW information
 6. PROMISE-DELIVERY MATCH (hard gate) — quote the script line that pays the promise off. A title promising "3 signs" needs 3 signs; an implied twist must actually land.
 
+MEDICAL SPECIFICS: a title or thumbnail text that adds a medical specific the script's evidence doesn't state — a time to effect ("in 10 seconds", "instantly"), a cure or guarantee, a number or percentage — FAILS honesty even if it would raise CTR. Promise what the video honestly delivers (understanding, practical steps, warning signs).
+
 SCORE EACH THUMBNAIL 1-10 ON: clarity at phone size, curiosity with its paired title, honesty (shows only what the video contains), and PRESENTER FACE: natural, subtle, human expression per the face rules. An exaggerated face (shock, open mouth, wide eyes, panic, cartoonish emotion) or altered identity FAILS that thumbnail.
 
 {{EGYPTIAN_CTR_RULES}}

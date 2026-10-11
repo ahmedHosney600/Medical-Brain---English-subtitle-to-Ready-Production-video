@@ -166,6 +166,39 @@ TRANSLATION RISK / CONTEXTUAL ALIGNMENT REPORT (fix only what it flags in this c
     return prompt
 
 
+def _tighten_chapter(state: PipelineState, system_prompt: str, chapter: dict,
+                     text: str, memory: dict) -> tuple:
+    """One tightening call when a fresh chapter overshoots its blueprint budget; the
+    tightened text replaces it only when it lands in [0.7, 1.25] × target. Returns
+    (text, memory)."""
+    target = _chapter_words(chapter)
+    before = chapters.spoken_words(text)
+    if target <= 0 or before <= target * 1.25:
+        return text, memory
+
+    title = str(chapter.get("title", "") or "").strip()
+    cid = _chapter_key(chapter)
+    print(f"  ✂️ chapter {cid}: {before} words vs target {target} — tightening")
+    user_prompt = (f"TIGHTEN this chapter to about {target} words: keep every medical point, "
+                   "the opening continuity, the loops and the bridge; cut repetition and padding"
+                   "\n\n" + text)
+    try:
+        response = call_llm(system_prompt, user_prompt, temperature=0.75,
+                            max_tokens=chapters.budget_for_words(target))
+    except Exception as error:                     # a failed pass keeps the original
+        print(f"  ✂️ chapter {cid}: tightening failed ({error}); keeping the original")
+        return text, memory
+
+    tightened, tight_memory = chapters.split_memory(response)
+    tightened = _ensure_header(tightened, title)
+    after = chapters.spoken_words(tightened)
+    if 0.7 * target <= after <= 1.25 * target:
+        print(f"  ✂️ chapter {cid}: tightened to {after} words")
+        return tightened, (tight_memory or memory)
+    print(f"  ✂️ chapter {cid}: tightened to {after} words (out of range); keeping the original")
+    return text, memory
+
+
 def _body_chapter_mode(state: PipelineState, base_system: str, blueprint: dict) -> dict:
     system_prompt = base_system + "\n\n" + load_prompt("chapter_mode")
     chapter_list = [c for c in (blueprint.get("chapters") or []) if isinstance(c, dict)]
@@ -217,6 +250,7 @@ def _body_chapter_mode(state: PipelineState, base_system: str, blueprint: dict) 
                                 max_tokens=chapters.budget_for_words(_chapter_words(chapter)))
             text, mem = chapters.split_memory(response)
             text = _ensure_header(text, title)
+            text, mem = _tighten_chapter(state, system_prompt, chapter, text, mem)
             drafts[cid] = text
         mem_by[cid] = mem
         ordered.append(text)
@@ -330,11 +364,13 @@ AUDIT / CRITIQUE REPORT:
 # --------------------------------------------------------------------------
 # dialect & warmth
 # --------------------------------------------------------------------------
-def _dialect_segments(state: PipelineState, revising: bool) -> list:
-    """[(label, text)]: hook/preamble, each chapter, closing/CTA part."""
-    if revising:
-        return [(title or "HOOK", text) for title, text in
-                chapters.split_by_chapters(state.get("refined_script", "") or "")]
+# A critique that flags the frame means the frame step must run again in a revision.
+_FRAME_CRITIQUE_RE = re.compile(r"\b(hook|opening|cta|closing|outro)\b", re.IGNORECASE)
+
+
+def _fallback_segments(state: PipelineState) -> list:
+    """Today's segments (raw hook/preamble, chapters, raw CTA) — used only when the
+    frame call fails."""
     segments, preamble = [], ""
     for title, text in chapters.split_by_chapters(state.get("revised_body", "") or ""):
         if title:
@@ -349,6 +385,93 @@ def _dialect_segments(state: PipelineState, revising: bool) -> list:
     if cta.strip():
         segments.append(("CTA / OUTRO", cta))
     return segments
+
+
+def _frame_user_prompt(state: PipelineState, blueprint: dict, critique: str = "") -> str:
+    titled = [x for t, x in chapters.split_by_chapters(state.get("revised_body", "") or "") if t]
+    first_start = chapters.first_lines(titled[0], 120) if titled else ""
+    last_end = chapters.last_lines(titled[-1], 120) if titled else ""
+    prompt = f"""HOOK OPTIONS:
+{state.get("hook", "")}
+
+RETENTION, DISCLAIMER & CTA MATERIAL:
+{state.get("cta_output", "")}
+
+SCRIPT BLUEPRINT (JSON):
+{json.dumps(blueprint or {}, ensure_ascii=False, indent=2)}
+
+FIRST CHAPTER START:
+{first_start or "(none)"}
+
+LAST CHAPTER END:
+{last_end or "(none)"}"""
+    if critique:
+        prompt += f"""
+
+REVISION CRITIQUE (the opening/closing was flagged for revision — address it):
+{critique}"""
+    return prompt
+
+
+def _call_script_frame(state: PipelineState, blueprint: dict, critique: str = "") -> dict:
+    """ONE JSON call that picks one hook and one CTA/outro and writes the opening,
+    disclaimer and closing. None (with a warning) when the call cannot be read."""
+    try:
+        data, _ = call_llm_json(load_prompt("script_frame"),
+                                _frame_user_prompt(state, blueprint, critique),
+                                temperature=0.4, max_tokens=3000,
+                                required=["opening", "closing"])
+    except UnreadableAnswer:
+        data = None
+    if not isinstance(data, dict):
+        data = None
+    opening = str(pick(data, "opening", default="") or "").strip() if data else ""
+    closing = str(pick(data, "closing", default="") or "").strip() if data else ""
+    if not opening or not closing:
+        print("  ⚠️ script frame: choosing the opening/closing failed; "
+              "falling back to the raw hook and CTA material")
+        return None
+    return {"opening": opening,
+            "disclaimer": str(pick(data, "disclaimer", default="") or "").strip(),
+            "closing": closing,
+            "chosen_hook": str(pick(data, "chosen_hook", default="") or "").strip()}
+
+
+def _frame_segments(state: PipelineState, frame: dict, chapter_source: str) -> list:
+    """[opening (+ disclaimer), chapter 1 … chapter n, closing] from a frame."""
+    segments = []
+    head = "\n\n".join(x for x in (frame.get("opening", ""), frame.get("disclaimer", ""))
+                       if x and x.strip())
+    if head.strip():
+        segments.append(("OPENING", head))
+    segments.extend((title, text) for title, text in chapters.split_by_chapters(chapter_source or "")
+                    if title)
+    closing = frame.get("closing", "") or ""
+    if closing.strip():
+        segments.append(("CLOSING", closing))
+    return segments
+
+
+def _dialect_segments(state: PipelineState, revising: bool):
+    """([(label, text)], frame_to_store). In chapter mode the segments are built from
+    one chosen opening and one chosen closing (the frame step); in a revision pass the
+    stored frame's segments come from refined_script, and the frame is re-chosen only
+    when the critique flags the opening/closing."""
+    if revising:
+        critique = state.get("self_critique_output", "") or ""
+        if _FRAME_CRITIQUE_RE.search(critique):
+            frame = _call_script_frame(state, state.get("blueprint") or {}, critique)
+            if frame:
+                return _frame_segments(state, frame, state.get("refined_script", "")), frame
+        return [(title or "HOOK", text) for title, text in
+                chapters.split_by_chapters(state.get("refined_script", "") or "")], None
+
+    frame = state.get("script_frame") or {}
+    if not isinstance(frame, dict) or not str(frame.get("opening", "") or "").strip():
+        frame = _call_script_frame(state, state.get("blueprint") or {})
+    if frame:
+        return _frame_segments(state, frame, state.get("revised_body", "")), frame
+    return _fallback_segments(state), None
 
 
 def _segment_prompt(state: PipelineState, label: str, text: str, before: str,
@@ -402,7 +525,7 @@ MEDICAL FIDELITY AUDIT:
 
 
 def _dialect_chapter_mode(state: PipelineState, system_prompt: str, revising: bool) -> dict:
-    segments = _dialect_segments(state, revising)
+    segments, frame = _dialect_segments(state, revising)
     workers = int(state.get("chapter_workers", 4) or 4)
 
     def rewrite(job):
@@ -416,12 +539,15 @@ def _dialect_chapter_mode(state: PipelineState, system_prompt: str, revising: bo
         return label, script, notes
 
     results = chapters.parallel_map(rewrite, list(enumerate(segments)), workers)
-    joined = chapters.join_chapters([script for _, script, _ in results])
+    joined = chapters.clean_spoken_script(chapters.join_chapters([script for _, script, _ in results]))
     notes = [(label, note) for label, _, note in results if note]
     output = joined
     if notes:
         output += "\n\n## SEGMENT NOTES\n\n" + "\n\n".join(f"### {label}\n{note}" for label, note in notes)
-    return {"dialect_warmth_output": output, "dialect_script": joined}
+    result = {"dialect_warmth_output": output, "dialect_script": joined}
+    if frame:
+        result["script_frame"] = frame
+    return result
 
 
 def dialect_warmth_layer(state: PipelineState) -> dict:
@@ -548,8 +674,9 @@ def _integrity_prompt(state: PipelineState, script: str, target_words: int) -> s
 
 
 def _refinement_chapter_mode(state: PipelineState, blueprint: dict) -> dict:
-    # (a) Code assembly of the dialect output segments, in order.
+    # (a) Code assembly of the dialect output segments, in order; dropped labels/notes.
     assembled = state.get("dialect_script") or chapters.strip_segment_notes(state.get("dialect_warmth_output", ""))
+    assembled = chapters.clean_spoken_script(assembled)
     target_words = _target_words(blueprint)
     try:
         data, _ = call_llm_json(load_prompt("script_integrity"),
@@ -562,9 +689,10 @@ def _refinement_chapter_mode(state: PipelineState, blueprint: dict) -> dict:
         return {"refined_script": assembled,
                 "integrity_report": {"score": 0, "summary": "integrity pass failed; assembled script kept",
                                      "issues": [], "applied": 0, "skipped": 0}}
-    # (c) Apply edits in code; skipped edits are logged.
+    # (c) Apply edits in code; skipped edits are logged, then clean again.
     edited, applied, skipped, log = chapters.apply_integrity_edits(
         assembled, blueprint, pick(data, "edits", default=[]) or [])
+    edited = chapters.clean_spoken_script(edited)
     for line in log:
         print(f"  🧵 integrity: {line}")
     report = {"score": pick(data, "integrity_score", kind=int) or 0,

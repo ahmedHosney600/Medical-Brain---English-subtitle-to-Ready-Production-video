@@ -36,6 +36,7 @@ class PipelineState(TypedDict):
     chapter_memory: dict               # per-chapter memory (keyed by chapter id)
     chapter_drafts: dict               # chapter texts already written (checkpoint)
     dialect_script: str                # dialect output segments joined, without its notes
+    script_frame: dict                 # chapter mode: the chosen opening/disclaimer/closing
     integrity_report: dict             # the whole-script integrity pass result
 
     # Upstream node outputs
@@ -158,7 +159,7 @@ def apply_defaults(state: dict) -> dict:
 
     # Dict-valued fields a step may read before it is written.
     for field in ("blueprint", "script_memory", "chapter_memory", "chapter_drafts",
-                  "production_chapter_outputs", "broll_by_chapter"):
+                  "script_frame", "production_chapter_outputs", "broll_by_chapter"):
         if not isinstance(state.get(field), dict):
             state[field] = {}
     if "chapter_drafts_key" not in state:
