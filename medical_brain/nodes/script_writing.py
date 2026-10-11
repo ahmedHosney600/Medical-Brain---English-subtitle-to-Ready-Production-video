@@ -173,8 +173,11 @@ TIGHTEN_ABOVE = 1.1
 
 def _tighten_chapter(state: PipelineState, system_prompt: str, chapter: dict,
                      text: str, memory: dict) -> tuple:
-    """One tightening call when a fresh chapter overshoots its blueprint budget; the
-    tightened text replaces it when it is shorter and keeps ≥ 0.7 × target. Returns
+    """Up to two tightening calls when a fresh chapter overshoots its blueprint budget.
+
+    The first tightened text replaces the original when it is shorter and keeps
+    ≥ 0.7 × target. If that accepted text is still > target × TIGHTEN_ABOVE, ONE more
+    call is made on it (the same prompt form) and accepted under the same rule. Returns
     (text, memory)."""
     target = _chapter_words(chapter)
     before = chapters.spoken_words(text)
@@ -183,30 +186,46 @@ def _tighten_chapter(state: PipelineState, system_prompt: str, chapter: dict,
 
     title = str(chapter.get("title", "") or "").strip()
     cid = _chapter_key(chapter)
-    print(f"  ✂️ chapter {cid}: {before} words vs target {target} — tightening")
-    # Writers overshoot a requested length by ~20%, so the request aims a little under it.
-    user_prompt = (f"TIGHTEN this chapter to about {int(target * 0.9)} words (never more than "
-                   f"{target}): keep every medical point, "
-                   "the opening continuity, the loops and the bridge; cut repetition and padding"
-                   "\n\n" + text)
-    try:
-        response = call_llm(system_prompt, user_prompt, temperature=0.75,
-                            max_tokens=chapters.budget_for_words(target))
-    except Exception as error:                     # a failed pass keeps the original
-        print(f"  ✂️ chapter {cid}: tightening failed ({error}); keeping the original")
-        return text, memory
+    current, current_memory = text, memory
+    for attempt in (1, 2):
+        current_words = chapters.spoken_words(current)
+        if attempt == 1:
+            print(f"  ✂️ chapter {cid}: {current_words} words vs target {target} — tightening")
+        else:
+            print(f"  ✂️ chapter {cid}: still {current_words} words vs target {target} — tightening again")
+        # Writers overshoot a requested length by ~20%, so the request aims a little under it.
+        user_prompt = (f"TIGHTEN this chapter to about {int(target * 0.9)} words (never more than "
+                       f"{target}): keep every medical point, "
+                       "the opening continuity, the loops and the bridge; cut repetition and padding"
+                       "\n\n" + current)
+        try:
+            response = call_llm(system_prompt, user_prompt, temperature=0.75,
+                                max_tokens=chapters.budget_for_words(target))
+        except Exception as error:                 # a failed pass keeps the previous text
+            if attempt == 1:
+                print(f"  ✂️ chapter {cid}: tightening failed ({error}); keeping the original")
+                return text, memory
+            print(f"  ✂️ chapter {cid}: second tightening failed ({error}); keeping the first tightened text")
+            return current, current_memory
 
-    tightened, tight_memory = chapters.split_memory(response)
-    tightened = _ensure_header(tightened, title)
-    after = chapters.spoken_words(tightened)
-    before = chapters.spoken_words(text)
-    # A tightened chapter that is shorter but still a bit long beats the original; only a
-    # cut below 70% of the target (content likely lost) is rejected.
-    if 0.7 * target <= after < before:
-        print(f"  ✂️ chapter {cid}: tightened to {after} words")
-        return tightened, (tight_memory or memory)
-    print(f"  ✂️ chapter {cid}: tightened to {after} words (out of range); keeping the original")
-    return text, memory
+        tightened, tight_memory = chapters.split_memory(response)
+        tightened = _ensure_header(tightened, title)
+        after = chapters.spoken_words(tightened)
+        # A tightened chapter that is shorter but still a bit long beats the previous text;
+        # only a cut below 70% of the target (content likely lost) is rejected.
+        if 0.7 * target <= after < current_words:
+            current, current_memory = tightened, (tight_memory or current_memory)
+            print(f"  ✂️ chapter {cid}: tightened to {after} words")
+            if after <= target * TIGHTEN_ABOVE:
+                return current, current_memory
+            continue                                # accepted but still over: try once more
+        if attempt == 1:
+            print(f"  ✂️ chapter {cid}: tightened to {after} words (out of range); keeping the original")
+            return text, memory
+        print(f"  ✂️ chapter {cid}: second tightening to {after} words (out of range); "
+              "keeping the first tightened text")
+        return current, current_memory
+    return current, current_memory
 
 
 def _body_chapter_mode(state: PipelineState, base_system: str, blueprint: dict) -> dict:
@@ -408,9 +427,14 @@ def _fallback_segments(state: PipelineState) -> list:
 
 
 def _frame_user_prompt(state: PipelineState, blueprint: dict, critique: str = "") -> str:
-    titled = [x for t, x in chapters.split_by_chapters(state.get("revised_body", "") or "") if t]
-    first_start = chapters.first_lines(titled[0], 120) if titled else ""
-    last_end = chapters.last_lines(titled[-1], 120) if titled else ""
+    body = state.get("revised_body", "") or ""
+    titled = [x for t, x in chapters.split_by_chapters(body) if t]
+    # A single (unchaptered) body has no "=== title ===" headers: show the model the
+    # whole body's opening and ending so it can still judge continuity.
+    first_source = titled[0] if titled else body
+    last_source = titled[-1] if titled else body
+    first_start = chapters.first_lines(first_source, 120)
+    last_end = chapters.last_lines(last_source, 120)
     prompt = f"""HOOK OPTIONS:
 {state.get("hook", "")}
 
@@ -603,13 +627,29 @@ def dialect_warmth_layer(state: PipelineState) -> dict:
     if revising:
         # Later passes start from the fact-checked script, so the medical truth
         # verifier's corrections survive the rewrite.
+        frame = None
         script_block = f"""CURRENT SCRIPT (already fact-checked — keep every medical correction; use this as the base):
 {state.get("refined_script", "")}
 
 REVISED RETENTION, DISCLAIMER & CTA LINES (from this pass — apply them where the critique flagged open loops, the disclaimer or the CTA):
 {state.get("cta_output", "")}"""
     else:
-        script_block = f"""HOOK:
+        frame = None
+        blueprint = state.get("blueprint") or {}
+        # A single-chapter video still needs ONE chosen opening and ONE chosen closing:
+        # without the frame step the raw hook options (~935 words) and CTA material
+        # (~650 words) reach this model and the script runs ~60% long.
+        if _target_minutes(blueprint) > 0:
+            frame = _call_script_frame(state, blueprint)
+        if frame:
+            script_block = ("OPENING (already chosen — polish only, keep its length):\n"
+                            f"{frame.get('opening', '')}\n\n{frame.get('disclaimer', '')}"
+                            "\n\nSCRIPT BODY (post translation-fidelity gate):\n"
+                            f"{state.get('revised_body', '')}"
+                            "\n\nCLOSING (already chosen call to action and sign-off — polish only, "
+                            f"keep its length):\n{frame.get('closing', '')}")
+        else:
+            script_block = f"""HOOK:
 {state.get("hook", "")}
 
 SCRIPT BODY (post translation-fidelity gate):
@@ -653,12 +693,23 @@ MEDICAL FIDELITY AUDIT:
 {state.get("fidelity_audit_output", "")}"""
 
     response = call_llm(system_prompt, user_prompt, temperature=0.75, max_tokens=9000)
-    return {"dialect_warmth_output": response}
+    result = {"dialect_warmth_output": response}
+    if frame:
+        result["script_frame"] = frame
+    return result
 
 
 # --------------------------------------------------------------------------
 # refinement + whole-script integrity pass
 # --------------------------------------------------------------------------
+def _target_minutes(blueprint: dict) -> float:
+    """The blueprint's target_minutes (0.0 when unset or unreadable)."""
+    try:
+        return float((blueprint or {}).get("target_minutes", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _target_words(blueprint: dict) -> int:
     try:
         chapter_words = sum(int(float(c.get("words", 0) or 0))
@@ -769,10 +820,14 @@ def script_refinement(state: PipelineState) -> dict:
     if chapters.chapter_mode_on(blueprint):
         return _refinement_chapter_mode(state, blueprint)
 
+    frame = state.get("script_frame") or {}
+    opening = str(frame.get("opening", "") or "").strip() if isinstance(frame, dict) else ""
+    hook_block = (f"OPENING (chosen):\n{opening}" if opening
+                  else f"HOOK:\n{state.get('hook', '')}")
+
     user_prompt = f"""Assemble and polish the complete script.
 
-HOOK:
-{state.get("hook", "")}
+{hook_block}
 
 DIALECT & WARMTH REWRITE (full script — use this as the base):
 {state.get("dialect_warmth_output", "")}
@@ -799,4 +854,24 @@ AUDIT / CRITIQUE REPORT:
 {state.get("self_critique_output", "")}"""
 
     response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=9000)
+    _warn_if_refined_too_long(blueprint, response)
     return {"refined_script": response}
+
+
+def _warn_if_refined_too_long(blueprint: dict, script: str) -> None:
+    """One-line warning (no LLM call) when the assembled single-chapter script overruns
+    the whole-video word budget by more than 15%."""
+    minutes = _target_minutes(blueprint)
+    if minutes <= 0:
+        return
+    try:
+        wpm = float((blueprint or {}).get("words_per_minute", 135) or 135)
+    except (TypeError, ValueError):
+        wpm = 135
+    if wpm <= 0:
+        return
+    target = minutes * wpm
+    spoken = chapters.spoken_words(script)
+    if spoken > target * 1.15:
+        print(f"  ⏱️ refined script: {spoken} spoken words vs target {int(target)} "
+              f"({minutes:g} min × {wpm:g} wpm) — over the 1.15× limit ({int(target * 1.15)})")

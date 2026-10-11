@@ -2,6 +2,7 @@
 
 System prompts live in prompts/<step>.md; the user prompts below insert the video's data."""
 
+import json
 import re
 
 from ..llm import call_llm_json
@@ -221,6 +222,48 @@ Output ONLY the JSON object. Check every claim, every analogy, and the disclaime
         }
 
 
+def _overclaim_fix_pass(state: PipelineState, script: str, report: str) -> tuple:
+    """A code-enforced second pass on overclaims the truth verifier left in the script.
+
+    ONE overclaim_fix call; each edit whose find text occurs exactly once is applied in
+    code (plain replace), others are skipped. Any failure (unreadable answer, exception)
+    keeps the script unchanged. Returns (script, report)."""
+    from ..utils.overclaims import find_overclaims
+    found = find_overclaims(script)
+    if not found:
+        return script, report
+    dossier = state.get("research_dossier")
+    dossier_text = dossier if isinstance(dossier, str) else json.dumps(dossier, ensure_ascii=False)
+    user_prompt = ("FLAGGED SENTENCES:\n"
+                   + "\n".join(f"- «{sentence}» [{phrase}]" for sentence, phrase in found)
+                   + f"\n\nRESEARCH DOSSIER:\n{dossier_text}"
+                   + f"\n\nSCRIPT:\n{script}")
+    try:
+        data, _ = call_llm_json(load_prompt("overclaim_fix"), user_prompt,
+                                temperature=0.2, max_tokens=4000, required=["edits"])
+        edits = pick(data, "edits", default=[]) or []
+        fixed, applied, skipped, lines = script, 0, 0, []
+        for edit in edits:
+            if not isinstance(edit, dict):
+                skipped += 1
+                continue
+            find = str(edit.get("find", "") or "")
+            replace = str(edit.get("replace", "") or "")
+            if find and fixed.count(find) == 1:
+                fixed = fixed.replace(find, replace, 1)
+                applied += 1
+                lines.append(f"- «{find}» → «{replace}»")
+            else:
+                skipped += 1
+        print(f"🩺 overclaim fix: applied {applied}, skipped {skipped}")
+        if lines:
+            report = (report or "").rstrip() + "\n\n### Overclaim fix (code)\n" + "\n".join(lines)
+        return fixed, report
+    except Exception as error:                     # a failed pass keeps the verified script
+        print(f"🩺 overclaim fix: failed ({error}); keeping the verified script")
+        return script, report
+
+
 def medical_truth_verifier(state: PipelineState) -> dict:
     system_prompt = load_prompt("medical_truth_verifier")
 
@@ -274,12 +317,16 @@ The ORIGINAL SOURCE above is a verified RESEARCH DOSSIER with citations [S#]. Ev
         truth_score = pick(data, "truth_score", default=0, kind=int)
         truth_pass = pick(data, "truth_pass", default=False, kind=bool)
         verified_script = (data.get("verified_script", "") or "").strip()
-        
+        report = data.get("truth_verification_report", "") or text
+        final_script = verified_script if verified_script else state.get("refined_script", "")
+        if state.get("research_dossier"):
+            final_script, report = _overclaim_fix_pass(state, final_script, report)
+
         return {
-            "truth_verification_report": data.get("truth_verification_report", "") or text,
+            "truth_verification_report": report,
             "truth_score": truth_score,
             "truth_pass": truth_pass and (truth_score >= 9),
-            "refined_script": verified_script if verified_script else state.get("refined_script", "")
+            "refined_script": final_script,
         }
     except Exception:
         return {

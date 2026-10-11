@@ -20,8 +20,12 @@ _SENTENCE = re.compile(r"[^.!?؟\n]+[.!?؟]?")
 _SECONDS = re.compile(_AR[0] + r"|في\s+ثواني\s+معدودة|\bwithin (?:a few )?seconds\b|\bin (?:\d+ )?seconds\b", re.IGNORECASE)
 _IMMEDIATE = re.compile(r"فورا|فوراً|فوري(?:ة|اً)?|في\s+لحظتها|في\s+ساعتها|على\s+طول|\binstant(?:ly)?\b|\bimmediately\b",
                         re.IGNORECASE)
-_EFFECT = re.compile(r"(?:ب?[تي]?(?:فك|وقف|خف|هدي|عالج|ختفي|روح|زيل))|توقف|يوقف|بتوقف|تفك|يفك|بيفك|"
-                     r"\b(?:stops?|relieves?|ends?|cures?|fixes|goes away)\b", re.IGNORECASE)
+# An effect stem must be a whole word, not a substring ("فك" inside "فكرة"). An Arabic
+# word here is: an optional subject/tense prefix (ب/ت/ي/بي/بت), an effect stem, an
+# optional pronoun suffix, with no Arabic letter (U+0621–U+064A) touching either side.
+_EFFECT = re.compile(r"(?<![\u0621-\u064a])(?:بت|بي|ب|ت|ي)?(?:فك|وقف|خف|هدي|عالج|ختفي|روح|زيل)"
+                     r"(?:ها|هم|ه|وا|ك|و|ي)?(?![\u0621-\u064a])"
+                     r"|\b(?:stops?|relieves?|ends?|cures?|fixes|goes away)\b", re.IGNORECASE)
 _URGENT = re.compile(r"مستشفى|المستشفى|طوارئ|الطوارئ|إسعاف|الإسعاف|دكتور|الدكتور|طبيب|الطبيب|اتصل|\bemergency\b|\bhospital\b|\bdoctor\b|\b911\b",
                      re.IGNORECASE)
 # Symptom onset ("weakness that came on suddenly, within seconds — go to the ER") is a red

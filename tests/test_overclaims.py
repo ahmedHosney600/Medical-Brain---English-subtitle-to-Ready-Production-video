@@ -1,6 +1,6 @@
 import unittest
 
-from medical_brain.utils.overclaims import OVERCLAIM, find_overclaims, overclaim_in
+from medical_brain.utils.overclaims import OVERCLAIM, _EFFECT, find_overclaims, overclaim_in
 
 
 class OverclaimTest(unittest.TestCase):
@@ -47,4 +47,22 @@ class RedFlagOnsetTest(unittest.TestCase):
         s = "المسكنات بتفيد بعد النوبة، لكن مش هي أبداً اللي بتفك الشد في لحظتها."
         self.assertIsNone(overclaim_in(s))
         self.assertTrue(overclaim_in("حركة واحدة تفكها فوراً"))
+
+
+class EffectWordBoundaryTest(unittest.TestCase):
+    """The effect-verb regex must match whole words, not stems inside unrelated words
+    (the real false positive: "فكرة" contains "فك")."""
+
+    MATCH = ["تفكها", "بيفك", "يفك", "بتوقف", "يوقف", "بتخف", "بيخف", "تهدي", "بيهدي",
+             "بتعالج", "يختفي", "بيروح"]
+    NO_MATCH = ["فكرة", "تفكير", "خفيف", "وقفة", "الفكرة"]
+
+    def test_effect_stems_match_only_as_words(self):
+        for word in self.MATCH:
+            self.assertTrue(_EFFECT.search(word), word)
+        for word in self.NO_MATCH:
+            self.assertIsNone(_EFFECT.search(word), word)
+
+    def test_real_false_positive_is_not_an_overclaim(self):
+        self.assertIsNone(overclaim_in("أول فكرة بتيجي في بالك على طول"))
 

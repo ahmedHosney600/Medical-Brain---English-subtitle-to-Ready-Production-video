@@ -573,6 +573,27 @@ class ChapterLengthGuardTest(unittest.TestCase):
         self.assertIn("w1999", out["revised_body"])
         self.assertNotIn("t99", out["revised_body"])
 
+    def test_second_tightening_call_when_still_over(self):
+        calls = []
+        first = " ".join(f"a{i}" for i in range(1200))   # accepted, still > 1.1 × 800
+        second = " ".join(f"b{i}" for i in range(700))   # within budget
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            if "TIGHTEN this chapter" in user:
+                return f"=== طويل ===\n{second}" if "a1199" in user else f"=== طويل ===\n{first}"
+            if "id: C1" in user:
+                return "=== طويل ===\n" + self.LONG       # 2000 words
+            return "=== ق ===\nنص قصير"
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            out = script_writing.body_restructurer(base_state(blueprint=self._bp()))
+        tighten = [c for c in calls if "TIGHTEN this chapter" in c]
+        self.assertEqual(len(tighten), 2)
+        self.assertIn("b699", out["revised_body"])
+        self.assertNotIn("a1199", out["revised_body"])
+
 
 class IntegrityNormalisationTest(unittest.TestCase):
     def test_normalised_match_applied_once(self):
@@ -661,6 +682,94 @@ class SingleChapterUnchangedTest(unittest.TestCase):
         self.assertEqual(old["user"], new["user"])
         self.assertNotIn("COMPACT VIEW", new["user"])
         self.assertEqual(new["max_tokens"], 9000)
+
+
+class SingleChapterFrameTest(unittest.TestCase):
+    """A one-chapter video still runs the frame step when the blueprint has a target:
+    the raw hook options and CTA material must not reach the dialect/refinement models."""
+
+    FRAME_BP = {"target_minutes": 10, "words_per_minute": 135,
+                "chapters": [{"id": "C1", "title": "الفصل الوحيد", "job": "j", "words": 500,
+                              "covers": [], "opens_loops": [], "closes_loops": [],
+                              "depends_on_previous": False}]}
+
+    def test_frame_is_used_in_single_chapter_dialect(self):
+        frame = use(self, script_writing, "call_llm_json", frame_fake())
+        fake = use(self, script_writing, "call_llm", FakeLLM(lambda *a: "DIALECT"))
+        state = base_state(blueprint=self.FRAME_BP,
+                           hook="### HOOK A raw\nنص هوك أول\n### HOOK B raw\nنص هوك تاني",
+                           revised_body="نص الجسم كامل هنا",
+                           cta_output="### CTA v1\nنص سي تي ايه\n### CTA v2\nنص تاني")
+        out = script_writing.dialect_warmth_layer(state)
+
+        self.assertEqual(len(frame.calls), 1)
+        # A single (unchaptered) body: the frame still sees its opening and ending.
+        self.assertIn("نص الجسم كامل هنا", frame.calls[0]["user"])
+        prompt = fake.calls[0]["user"]
+        self.assertIn("OPENING (already chosen", prompt)
+        self.assertIn("افتتاحية مختارة", prompt)
+        self.assertIn("تنبيه طبي", prompt)                     # disclaimer appended
+        self.assertIn("نص الجسم كامل هنا", prompt)
+        self.assertIn("CLOSING (already chosen", prompt)
+        self.assertIn("خاتمة مختارة", prompt)
+        self.assertNotIn("نص هوك أول", prompt)                 # raw hook options absent
+        self.assertNotIn("نص سي تي ايه", prompt)               # raw CTA material absent
+        self.assertEqual(out["script_frame"]["opening"], "افتتاحية مختارة")
+
+    def test_frame_failure_keeps_the_old_block(self):
+        def boom(*a, **k):
+            from medical_brain.utils.llm_json import UnreadableAnswer
+            raise UnreadableAnswer("no json", "raw")
+        use(self, script_writing, "call_llm_json", boom)
+        fake = use(self, script_writing, "call_llm", FakeLLM(lambda *a: "DIALECT"))
+        state = base_state(blueprint=self.FRAME_BP, hook="نص الهوك الخام",
+                           revised_body="نص الجسم", cta_output="نص الـ CTA الخام")
+        with mock.patch("builtins.print"):
+            out = script_writing.dialect_warmth_layer(state)
+        prompt = fake.calls[0]["user"]
+        self.assertIn("HOOK:\nنص الهوك الخام", prompt)
+        self.assertIn("RETENTION, DISCLAIMER & CTA LAYER:\nنص الـ CTA الخام", prompt)
+        self.assertNotIn("script_frame", out)
+
+    def test_no_target_minutes_never_calls_the_frame(self):
+        frame = use(self, script_writing, "call_llm_json", frame_fake())
+        fake = use(self, script_writing, "call_llm", FakeLLM(lambda *a: "DIALECT"))
+        state = base_state(blueprint=ONE_CHAPTER, hook="H", revised_body="B", cta_output="C")
+        out = script_writing.dialect_warmth_layer(state)
+        self.assertEqual(len(frame.calls), 0)
+        self.assertIn("HOOK:\nH", fake.calls[0]["user"])
+        self.assertNotIn("script_frame", out)
+
+    def test_refinement_uses_the_frame_opening(self):
+        fake = use(self, script_writing, "call_llm", FakeLLM(lambda *a: "REFINED"))
+        bp = dict(ONE_CHAPTER, target_minutes=10, words_per_minute=135)
+        state = base_state(blueprint=bp, script_frame={"opening": "افتتاحية مختارة", "closing": "خاتمة"},
+                           hook="نص هوك أول ونص هوك تاني", dialect_warmth_output="D")
+        script_writing.script_refinement(state)
+        prompt = fake.calls[0]["user"]
+        self.assertIn("OPENING (chosen):\nافتتاحية مختارة", prompt)
+        self.assertNotIn("HOOK:\n", prompt)
+        self.assertNotIn("نص هوك أول", prompt)
+
+    def test_length_warning_printed_when_refined_script_overruns(self):
+        long_script = " ".join(f"w{i}" for i in range(1600))
+        use(self, script_writing, "call_llm", FakeLLM(lambda *a: long_script))
+        bp = dict(ONE_CHAPTER, target_minutes=10, words_per_minute=135)
+        with mock.patch("builtins.print") as printed:
+            out = script_writing.script_refinement(base_state(blueprint=bp, dialect_warmth_output="D"))
+        self.assertEqual(out["refined_script"], long_script)
+        text = " ".join(str(c.args[0]) for c in printed.call_args_list)
+        self.assertIn("1600", text)
+        self.assertIn("1350", text)
+
+    def test_no_length_warning_when_within_budget(self):
+        short_script = " ".join(f"w{i}" for i in range(1400))
+        use(self, script_writing, "call_llm", FakeLLM(lambda *a: short_script))
+        bp = dict(ONE_CHAPTER, target_minutes=10, words_per_minute=135)
+        with mock.patch("builtins.print") as printed:
+            script_writing.script_refinement(base_state(blueprint=bp, dialect_warmth_output="D"))
+        text = " ".join(str(c.args[0]) for c in printed.call_args_list)
+        self.assertNotIn("refined script:", text)
 
 
 if __name__ == "__main__":
