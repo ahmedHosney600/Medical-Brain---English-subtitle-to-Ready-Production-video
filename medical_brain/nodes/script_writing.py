@@ -548,6 +548,7 @@ MEDICAL FIDELITY AUDIT:
 
 # A dialect rewrite of one segment may grow at most this much before it is redone.
 DIALECT_GROWTH_MAX = 1.1
+DIALECT_GROWTH_REVISING = 1.03
 
 
 def _dialect_chapter_mode(state: PipelineState, system_prompt: str, revising: bool) -> dict:
@@ -564,7 +565,9 @@ def _dialect_chapter_mode(state: PipelineState, system_prompt: str, revising: bo
         script, notes = chapters.split_segment_answer(answer)
         original = chapters.spoken_words(text)
         grown = chapters.spoken_words(script)
-        if original >= 50 and grown > original * DIALECT_GROWTH_MAX:
+        # A revision pass rewrites an already-polished script: growth there compounds.
+        limit = DIALECT_GROWTH_REVISING if revising else DIALECT_GROWTH_MAX
+        if original >= 50 and grown > original * limit:
             # Models ignore the ±5% line: in a 20-minute run this pass added 865 words.
             print(f"  🗣️ {label}: dialect rewrite grew {original} → {grown} words — asking again")
             retry = call_llm(system_prompt, prompt + (
@@ -572,7 +575,7 @@ def _dialect_chapter_mode(state: PipelineState, system_prompt: str, revising: bo
                 f"Rewrite it again in at most {int(original * 1.05)} words: change wording only, "
                 "add nothing new."), temperature=0.5, max_tokens=budget)
             script2, notes2 = chapters.split_segment_answer(retry)
-            if chapters.spoken_words(script2) <= original * DIALECT_GROWTH_MAX:
+            if chapters.spoken_words(script2) <= original * limit:
                 return label, script2, notes2
             print(f"  🗣️ {label}: still too long; keeping the segment as written")
             return label, text, notes
