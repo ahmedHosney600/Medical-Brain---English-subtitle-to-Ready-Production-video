@@ -285,6 +285,42 @@ class DialectChapterModeTest(unittest.TestCase):
         self.assertEqual(out["script_frame"]["opening"], "افتتاحية مختارة")
         self.assertEqual(out["script_frame"]["chosen_hook"], "HOOK A")
 
+    def _grow_state(self):
+        long_ch = " ".join(f"ك{i}" for i in range(100))
+        body = f"=== الفصل الأول ===\n{long_ch}\n\n=== الفصل الثاني ===\nنص ثاني"
+        return self._state(revised_body=body)
+
+    def test_dialect_growth_is_redone_once(self):
+        use(self, script_writing, "call_llm_json", frame_fake())
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            if "SEGMENT LABEL: الفصل الأول" not in user:
+                return self._answers(system, user)
+            if "YOUR LAST REWRITE WAS" in user:
+                return "=== الفصل الأول ===\n" + " ".join(f"ر{i}" for i in range(104))
+            return "=== الفصل الأول ===\n" + " ".join(f"م{i}" for i in range(160))
+
+        fake = use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            out = script_writing.dialect_warmth_layer(self._grow_state())
+        self.assertIn("ر103", out["dialect_script"])
+        self.assertNotIn("م159", out["dialect_script"])
+        self.assertEqual(sum("YOUR LAST REWRITE WAS 160" in c["user"] for c in fake.calls), 1)
+
+    def test_dialect_growth_twice_keeps_the_segment_as_written(self):
+        use(self, script_writing, "call_llm_json", frame_fake())
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            if "SEGMENT LABEL: الفصل الأول" not in user:
+                return self._answers(system, user)
+            return "=== الفصل الأول ===\n" + " ".join(f"م{i}" for i in range(160))
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            out = script_writing.dialect_warmth_layer(self._grow_state())
+        self.assertIn("ك99", out["dialect_script"])
+        self.assertNotIn("م159", out["dialect_script"])
+
     def test_frame_failure_falls_back_to_the_raw_hook_and_cta(self):
         def boom(*a, **k):
             from medical_brain.utils.llm_json import UnreadableAnswer

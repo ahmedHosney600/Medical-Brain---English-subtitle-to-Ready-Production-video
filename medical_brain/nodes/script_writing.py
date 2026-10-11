@@ -546,6 +546,10 @@ MEDICAL FIDELITY AUDIT:
     return prompt
 
 
+# A dialect rewrite of one segment may grow at most this much before it is redone.
+DIALECT_GROWTH_MAX = 1.1
+
+
 def _dialect_chapter_mode(state: PipelineState, system_prompt: str, revising: bool) -> dict:
     segments, frame = _dialect_segments(state, revising)
     workers = int(state.get("chapter_workers", 4) or 4)
@@ -554,10 +558,24 @@ def _dialect_chapter_mode(state: PipelineState, system_prompt: str, revising: bo
         i, (label, text) = job
         before = segments[i - 1][1] if i > 0 else ""
         after = segments[i + 1][1] if i + 1 < len(segments) else ""
-        answer = call_llm(system_prompt,
-                          _segment_prompt(state, label, text, before, after, revising),
-                          temperature=0.75, max_tokens=chapters.budget_for_words(len(text.split())))
+        prompt = _segment_prompt(state, label, text, before, after, revising)
+        budget = chapters.budget_for_words(len(text.split()))
+        answer = call_llm(system_prompt, prompt, temperature=0.75, max_tokens=budget)
         script, notes = chapters.split_segment_answer(answer)
+        original = chapters.spoken_words(text)
+        grown = chapters.spoken_words(script)
+        if original >= 50 and grown > original * DIALECT_GROWTH_MAX:
+            # Models ignore the ±5% line: in a 20-minute run this pass added 865 words.
+            print(f"  🗣️ {label}: dialect rewrite grew {original} → {grown} words — asking again")
+            retry = call_llm(system_prompt, prompt + (
+                f"\n\nYOUR LAST REWRITE WAS {grown} SPOKEN WORDS; THE SEGMENT HAS {original}. "
+                f"Rewrite it again in at most {int(original * 1.05)} words: change wording only, "
+                "add nothing new."), temperature=0.5, max_tokens=budget)
+            script2, notes2 = chapters.split_segment_answer(retry)
+            if chapters.spoken_words(script2) <= original * DIALECT_GROWTH_MAX:
+                return label, script2, notes2
+            print(f"  🗣️ {label}: still too long; keeping the segment as written")
+            return label, text, notes
         return label, script, notes
 
     results = chapters.parallel_map(rewrite, list(enumerate(segments)), workers)
