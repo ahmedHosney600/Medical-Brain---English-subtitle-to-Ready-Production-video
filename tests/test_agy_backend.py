@@ -9,7 +9,7 @@ import unittest
 from unittest import mock
 
 from medical_brain.llm import checks
-from medical_brain.llm.backends.agy import (MAX_PROMPT_CHARS, NO_TOOLS_PREAMBLE, AgyCLIBackend, agy_path)
+from medical_brain.llm.backends.agy import (MAX_PROMPT_BYTES, NO_TOOLS_PREAMBLE, AgyCLIBackend, agy_path)
 from medical_brain.llm.errors import ProviderUnavailable, StepFailed, StepTimeout
 
 
@@ -110,8 +110,17 @@ class AgyBackendTest(unittest.TestCase):
     def test_oversized_prompt_is_refused_before_running(self):
         fake = FakeRun(ok_response("x"))
         with self.assertRaises(StepFailed):
-            self.call(fake, user="x" * (MAX_PROMPT_CHARS + 1))
+            self.call(fake, user="x" * (MAX_PROMPT_BYTES + 1))
         self.assertEqual(fake.calls, [])             # the CLI was never started
+
+    def test_limit_counts_utf8_bytes_not_characters(self):
+        fake = FakeRun(ok_response("x"))
+        with self.assertRaises(StepFailed):          # Arabic: 2 bytes per letter
+            self.call(fake, user="ص" * (MAX_PROMPT_BYTES // 2 + 1))
+        self.assertEqual(fake.calls, [])
+        fake = FakeRun(ok_response("x"))
+        self.call(fake, user="ص" * 225_000)          # the 20-minute script step that used to fail
+        self.assertEqual(len(fake.calls), 1)
 
     def test_not_installed_raises_provider_unavailable(self):
         with mock.patch("medical_brain.llm.backends.agy.shutil.which", return_value=None), \

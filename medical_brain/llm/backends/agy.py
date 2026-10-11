@@ -20,10 +20,11 @@ from ..errors import ProviderUnavailable, StepFailed, StepTimeout, _looks_unavai
 DEFAULT_AGY_PATH = os.path.expanduser("~/.local/bin/agy")
 
 
-# macOS caps a single command-line argument at ~1 MB, and the whole prompt is
-# passed as one argument to `-p`. Above this we refuse rather than risk an
-# "argument list too long" error (large prompts are rare for a plain-text call).
-MAX_PROMPT_CHARS = 200_000
+# macOS caps the command line (arguments + environment) at 1 MB, and the whole
+# prompt is passed as one argument to `-p`. The limit is in UTF-8 bytes because
+# Arabic text takes ~2 bytes per character; a 600 KB prompt was tested working.
+# Above this we refuse rather than risk an "argument list too long" error.
+MAX_PROMPT_BYTES = 800_000
 
 
 NO_TOOLS_PREAMBLE = (
@@ -58,9 +59,10 @@ class AgyCLIBackend:
         # by the prompts themselves (same as the Claude Code backend).
         prompt = (NO_TOOLS_PREAMBLE + "\n\n=== INSTRUCTIONS ===\n" + (system_prompt or "")
                   + "\n\n=== INPUT ===\n" + (user_prompt or ""))
-        if len(prompt) > MAX_PROMPT_CHARS:
+        size = len(prompt.encode("utf-8"))
+        if size > MAX_PROMPT_BYTES:
             raise StepFailed(
-                f"agy prompt is {len(prompt)} characters, over the {MAX_PROMPT_CHARS} limit for the "
+                f"agy prompt is {size} bytes, over the {MAX_PROMPT_BYTES} limit for the "
                 "command line; this step's input is too large for the agy backend.")
 
         cmd = [
