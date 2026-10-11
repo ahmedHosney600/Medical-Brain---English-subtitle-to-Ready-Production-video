@@ -71,10 +71,12 @@ def _sections(state: dict, ids) -> list:
     return [s for s in state.get("outline", []) if not wanted or s["id"] in wanted]
 
 
-def _source_block(state: dict, sid: str, limit: int = 3500) -> str:
+def _source_block(state: dict, sid: str, limit: int = 3500, borrowed: bool = False) -> str:
     s = state["sources"][sid]
     head = f"[{sid}] {s['title']} — {s.get('journal') or s.get('origin')}, {s.get('year') or 'n.d.'} — " \
            f"{evidence.LEVELS.get(s.get('level', 6), '')}"
+    if borrowed:
+        head += " (from another section)"
     return head + "\n" + (s.get("text") or "")[:limit]
 
 
@@ -84,6 +86,101 @@ _WORD = re.compile(r"[a-z]{4,}")
 def _word_set(text: str) -> set:
     """The 4+ letter words of a phrase, for matching a brief point to a section."""
     return set(_WORD.findall((text or "").lower()))
+
+
+# Function words and generic question verbs carry no matching signal, so they are removed
+# before comparing a section's questions with a source's title and text.
+_STOPWORDS = {
+    "what", "when", "where", "which", "while", "with", "without", "would", "could",
+    "should", "their", "there", "these", "those", "they", "them", "then", "than",
+    "this", "that", "have", "has", "had", "been", "being", "were", "was", "are",
+    "from", "into", "about", "after", "before", "because", "between", "during",
+    "over", "under", "your", "does", "will", "still", "also", "more", "most",
+    "some", "such", "only", "other", "others", "many", "much", "very", "make",
+    "makes", "made", "take", "taken", "takes", "using", "used", "uses", "often",
+    "the", "and", "for", "not", "can", "cannot", "may", "might", "must", "how",
+    "why", "who", "any", "all", "its", "per", "via",
+}
+
+
+def _matching_words(text: str) -> set:
+    """The 4+ letter words of a phrase, minus the stopwords above (cross-section match)."""
+    return _word_set(text) - _STOPWORDS
+
+
+def _cross_section_sources(state: dict, sec: dict, limit: int = None) -> list:
+    """Sources already collected for other sections that match this section's questions.
+
+    Pure: every source in ``state["sources"]`` that is not already in ``sec["candidates"]``
+    is scored by the number of distinct 4+ letter question/title words it shares with the
+    source's title plus the first ~1500 characters of its text (stopwords removed). Ties
+    go to the higher evidence score. Only sources scoring at least 3 are returned, best
+    first, at most ``limit`` (``settings["cross_section_sources"]`` by default)."""
+    settings = state.get("settings") or {}
+    if limit is None:
+        limit = settings.get("cross_section_sources", 4)
+    limit = int(limit or 0)
+    if limit <= 0:
+        return []
+    years = settings.get("research_years", 10)
+    existing = set(sec.get("candidates", []))
+    qwords = _matching_words(str(sec.get("title", "")) + " " + " ".join(sec.get("questions", [])))
+    if not qwords:
+        return []
+    ranked = []
+    for sid, source in (state.get("sources") or {}).items():
+        if sid in existing:
+            continue
+        sword = _matching_words(str(source.get("title", "")) + " " + (source.get("text") or "")[:1500])
+        score = len(qwords & sword)
+        if score >= 3:
+            ranked.append((-score, -evidence.score(source, years), sid))
+    ranked.sort()
+    return [sid for _, _, sid in ranked[:limit]]
+
+
+_QUESTION_WORD = re.compile(r"[a-z0-9]+")
+
+
+def _question_form(text: str) -> str:
+    """A question lowercased with everything but letters and digits removed (equality key)."""
+    return re.sub(r"[^a-z0-9]+", "", str(text or "").lower())
+
+
+def _question_words(text: str) -> set:
+    return set(_QUESTION_WORD.findall(str(text or "").lower()))
+
+
+def add_questions(existing, new) -> list:
+    """``existing`` + the questions in ``new`` that are not near-duplicates of a kept one.
+
+    Two questions are near-duplicates when their letters-and-digits-only forms are equal,
+    or when their word sets overlap with a Jaccard similarity of 0.6 or more. Each new
+    question is checked against the kept ones and against the earlier new ones, so a
+    coverage round that re-proposes the same question in slightly different words adds it
+    only once."""
+    out = [str(q) for q in (existing or [])]
+    forms = [_question_form(q) for q in out]
+    words = [_question_words(q) for q in out]
+    for question in (new or []):
+        text = str(question)
+        form = _question_form(text)
+        if not form:
+            continue
+        word_set = _question_words(text)
+        duplicate = any(form == f for f in forms)
+        if not duplicate:
+            for other in words:
+                union = word_set | other
+                if union and len(word_set & other) / len(union) >= 0.6:
+                    duplicate = True
+                    break
+        if duplicate:
+            continue
+        out.append(text)
+        forms.append(form)
+        words.append(word_set)
+    return out
 
 
 def _expert_brief_block(state: dict) -> str:
@@ -245,6 +342,8 @@ Plan the research. Output ONLY the JSON object."""
         raw_sections = [{"title": t, "questions": [f"What does current evidence say about {t}?"],
                          "literature_queries": [t], "public_queries": [t]}]
     outline = [_new_section(state, i, s) for i, s in enumerate(raw_sections)]
+    for sec in outline:                      # the planner may repeat a question in-answer
+        sec["questions"] = add_questions([], sec["questions"])
     _log(f"outline: {len(outline)} sections — " + "; ".join(s["title"] for s in outline))
     topic_type = str(pick(data, "topic_type", default="") or "").strip()
     classic = []
@@ -682,12 +781,26 @@ def source_collector(state: dict) -> dict:
         next_id, web_here = _merge_found(sources, by_key, sec, web.get(sec["id"], []), next_id)
         sec["pending"] = {"literature": [], "public": []}
         sec["candidates"].sort(key=lambda i: -evidence.score(sources[i], years))
+        # Sources collected for another section that clearly match this section's questions
+        # are added after this round's own finds and before the cap.
+        borrowed = _cross_section_sources({"sources": sources, "settings": settings}, sec)
+        sec["borrowed"] = list(dict.fromkeys(list(sec.get("borrowed", [])) + borrowed))
+        for sid in borrowed:
+            if sid not in sec["candidates"]:
+                sec["candidates"].append(sid)
         # Pages the LLM picked from Google rank as level 5, below every trial or review,
-        # so a plain cut would drop them all; they keep their own slots in the list.
+        # so a plain cut would drop them all; borrowed sources and web pages keep their
+        # own slots in the list.
         cap = settings.get("sources_per_section", 8) * 2
-        web_ids = [i for i in sec["candidates"] if sources[i].get("origin") == "Web"][:cap // 2]
-        rest = [i for i in sec["candidates"] if i not in web_ids][:cap - len(web_ids)]
-        sec["candidates"] = [i for i in sec["candidates"] if i in web_ids or i in rest]
+        # Borrowed sources accumulate across rounds; reserve at most a quarter of the slots
+        # for them so they can't crowd out the section's own finds.
+        borrowed_ids = [i for i in sec["candidates"] if i in set(sec["borrowed"])][:max(4, cap // 4)]
+        web_ids = [i for i in sec["candidates"]
+                   if sources[i].get("origin") == "Web" and i not in borrowed_ids][:cap // 2]
+        room = max(0, cap - len(borrowed_ids) - len(web_ids))
+        rest = [i for i in sec["candidates"] if i not in borrowed_ids and i not in web_ids][:room]
+        sec["candidates"] = [i for i in sec["candidates"]
+                             if i in borrowed_ids or i in web_ids or i in rest]
         _log(f"{sec['id']} {sec['title'][:50]}: {new_here + web_here} new sources, "
              f"{len(sec['candidates'])} candidates")
     return {"outline": outline, "sources": sources, "next_source": next_id, "queries_done": done,
@@ -698,17 +811,19 @@ def source_collector(state: dict) -> dict:
 def source_screener(state: dict) -> dict:
     settings = state.get("settings", {})
     outline = [dict(s) for s in state.get("outline", [])]
+    sources = {k: dict(v) for k, v in state.get("sources", {}).items()}
     focus = set(state.get("focus") or [s["id"] for s in outline])
     blocks = []
     for sec in outline:
         if sec["id"] not in focus:
             continue
         lines = [f"## SECTION {sec['id']}: {sec['title']}", "Questions: " + " | ".join(sec["questions"])]
+        borrowed_ids = set(sec.get("borrowed", []))
         for sid in sec["candidates"]:
-            lines.append(_source_block(state, sid, limit=700))
+            lines.append(_source_block(state, sid, limit=700, borrowed=sid in borrowed_ids))
         blocks.append("\n".join(lines))
     if not blocks:
-        return {"need_sources": False, "to_extract": state.get("work", [])}
+        return {"need_sources": False, "to_extract": state.get("work", []), "sources": sources}
     system_prompt = load_prompt("research/source_screener")
     user_prompt = f"""TOPIC: {state.get("topic", "")}
 KEEP UP TO {settings.get("sources_per_section", 8)} SOURCES PER SECTION.
@@ -735,6 +850,13 @@ Output ONLY the JSON object."""
         # list cannot grow without bound each screening round.
         sec["source_ids"] = list(dict.fromkeys(keep + sec.get("source_ids", [])))[
             :settings.get("max_sources_per_section", 12)]
+        # A kept borrowed source now serves this section too: record it for provenance.
+        borrowed_ids = set(sec.get("borrowed", []))
+        for sid in sec["source_ids"]:
+            if sid in borrowed_ids and sid in sources:
+                own = sources[sid].setdefault("sections", [])
+                if sec["id"] not in own:
+                    own.append(sec["id"])
         lit = [q for q in (pick(v, "literature_queries", default=[]) or []) if q]
         pub = [q for q in (pick(v, "public_queries", default=[]) or []) if q]
         has_queries = bool(lit or pub)
@@ -751,7 +873,7 @@ Output ONLY the JSON object."""
     _log(f"screening: kept {sum(len(s['source_ids']) for s in outline if s['id'] in focus)} sources"
          + (f"; searching again for gaps in {', '.join(gaps)}" if more else ""))
     return {"outline": outline, "screen_round": rounds + 1, "need_sources": more,
-            "focus": gaps if more else state.get("focus", []),
+            "focus": gaps if more else state.get("focus", []), "sources": sources,
             "to_extract": state.get("work", []), "screen_notes": str(pick(data, "notes", default=""))}
 
 
@@ -1219,22 +1341,22 @@ Output ONLY the JSON object."""
             e = merged[sid]
             e["literature"] = list(dict.fromkeys(e["literature"] + lit))
             e["public"] = list(dict.fromkeys(e["public"] + pub))
-            e["questions"] = list(dict.fromkeys(
-                e["questions"] + [str(q) for q in (pick(m, "questions", default=[]) or [])]))
+            e["questions"] = add_questions(
+                e["questions"], [str(q) for q in (pick(m, "questions", default=[]) or [])])
         cap = settings.get("max_coverage_sections", 3)
         for sid in order[:cap]:
             e = merged[sid]
             target = next((s for s in outline if s["id"] == sid), None)
             if target is None:
                 target = _new_section(state, len(outline), e["raw"])
-                target["questions"] = list(e["questions"])
+                target["questions"] = add_questions([], e["questions"])
                 target["pending"] = {"literature": list(e["literature"]), "public": list(e["public"])}
                 outline.append(target)
             else:
                 pending = target.setdefault("pending", {"literature": [], "public": []})
                 pending["literature"] = list(dict.fromkeys(list(pending.get("literature", [])) + e["literature"]))
                 pending["public"] = list(dict.fromkeys(list(pending.get("public", [])) + e["public"]))
-                target["questions"] = list(dict.fromkeys(target.get("questions", []) + e["questions"]))
+                target["questions"] = add_questions(target.get("questions", []), e["questions"])
             new_work.append(target["id"])
     more = bool(new_work)
     if more:
@@ -1535,7 +1657,8 @@ Output ONLY the JSON object."""
         sec = next((s for s in outline if s["id"] == str(pick(e, "id", default=""))), None)
         if not sec:
             continue
-        sec["questions"] = sec["questions"] + [str(q) for q in (pick(e, "add_questions", default=[]) or [])]
+        sec["questions"] = add_questions(
+            sec["questions"], [str(q) for q in (pick(e, "add_questions", default=[]) or [])])
         sec["pending"] = {"literature": [q for q in (pick(e, "literature_queries", default=[]) or []) if q],
                           "public": [q for q in (pick(e, "public_queries", default=[]) or []) if q]}
         if pick(e, "note", default=""):
@@ -1544,6 +1667,7 @@ Output ONLY the JSON object."""
     for raw in pick(data, "new_sections", default=[]) or []:
         if isinstance(raw, dict):
             sec = _new_section(state, len(outline), raw)
+            sec["questions"] = add_questions([], sec["questions"])
             # ids must stay unique even after removals
             while any(s["id"] == sec["id"] for s in outline):
                 sec["id"] = sec["id"] + "2"

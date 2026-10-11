@@ -383,6 +383,18 @@ class CoverageCriticTest(unittest.TestCase):
         self.assertEqual(sec["pending"]["public"], ["p1", "p2"])
         self.assertEqual(sec["questions"], ["q?", "Q1", "Q2", "Q3"])          # deduped
 
+    def test_near_duplicate_questions_collapse(self):
+        missing = [
+            {"section_id": "A", "questions": ["What happens if I stop taking my statin?"],
+             "literature_queries": ["q1"], "public_queries": []},
+            {"section_id": "A", "questions": ["What happens when I stop taking my statin?"],
+             "literature_queries": ["q2"], "public_queries": []},
+        ]
+        out, _ = self.critic({"coverage_score": 5, "accuracy_score": 5, "value_score": 5, "pass": False,
+                              "missing": missing})
+        self.assertEqual(out["outline"][0]["questions"],
+                         ["q?", "What happens if I stop taking my statin?"])
+
     def test_caps_sections_per_round(self):
         outline = [section(s) for s in ("A", "B", "C", "D")]
         missing = [{"section_id": s, "literature_queries": [f"q{s}"], "questions": []}
@@ -472,6 +484,17 @@ class PlannerFieldsTest(unittest.TestCase):
         self.assertEqual(out["topic_type"], "symptom")
         self.assertEqual(out["classic_checks"], [{"item": "magnesium", "section": "B"}])
         self.assertEqual(out["special_groups"], ["pregnancy", "children"])
+
+    def test_planner_dedupes_its_own_questions(self):
+        reply = {"sections": [{"title": "S",
+                               "questions": ["Can I stop my statin?", "Can I stop my statin",
+                                             "When do I take it?"],
+                               "literature_queries": [], "public_queries": []}]}
+        fake = FakeLlmJson(reply)
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            out = nodes.topic_planner(new_state("t"))
+        self.assertEqual(out["outline"][0]["questions"],
+                         ["Can I stop my statin?", "When do I take it?"])
 
     def test_planner_stores_complementary_and_adds_items_to_checks(self):
         reply = {"classic_checks": [{"item": "cupping", "section": "B"}],
@@ -1905,3 +1928,159 @@ class GuideRulesRound2Test(unittest.TestCase):
         hint = nodes._expert_hint({"expert_brief": {"points": [{"id": "K1", "point": "Limit painkillers"}]}})
         self.assertIn("Limit painkillers", hint)
         self.assertIn("ONLY if these sources state it", hint)
+
+
+class CrossSectionSourcesTest(unittest.TestCase):
+    """_cross_section_sources: ranking sources already collected for other sections."""
+
+    def state(self, sources):
+        return {"sources": sources, "settings": {"research_years": 10}}
+
+    def sec(self, **kw):
+        s = {"id": "B", "title": "Stopping statins", "questions": ["Can I stop taking my statin?"],
+             "candidates": []}
+        s.update(kw)
+        return s
+
+    def test_scores_matching_question_words_and_skips_weak_matches(self):
+        sources = {
+            "S1": {"title": "Statin deprescribing guideline",
+                   "text": "Patients can stop taking a statin safely after a discussion.",
+                   "level": 1, "year": 2024},
+            "S2": {"title": "Statin safety review",
+                   "text": "Taking a statin is usually safe; stop only with advice.",
+                   "level": 2, "year": 2024},
+            "S3": {"title": "Diet for cholesterol",
+                   "text": "Diet and exercise lower cholesterol.", "level": 5, "year": 2024},
+        }
+        picked = nodes._cross_section_sources(self.state(sources), self.sec())
+        self.assertIn("S1", picked)
+        self.assertIn("S2", picked)
+        self.assertNotIn("S3", picked)                  # no shared question words
+
+    def test_two_shared_words_is_below_the_threshold(self):
+        sources = {"S1": {"title": "Statins and stopping",
+                          "text": "Regular exercise helps the heart.", "level": 2, "year": 2024}}
+        self.assertEqual(nodes._cross_section_sources(self.state(sources), self.sec()), [])
+
+    def test_keeps_at_most_the_limit_best_first(self):
+        sources = {
+            "S1": {"title": "Statin stopping taking", "text": "statin stop taking",
+                   "level": 5, "year": 2020},
+            "S2": {"title": "Statin stopping", "text": "statin stop", "level": 5, "year": 2020},
+        }
+        self.assertEqual(nodes._cross_section_sources(self.state(sources), self.sec(), limit=1), ["S1"])
+
+    def test_ties_go_to_the_higher_evidence_score(self):
+        sources = {
+            "S1": {"title": "Statin stopping", "text": "statin stop taking", "level": 5, "year": 2000},
+            "S2": {"title": "Statin stopping", "text": "statin stop taking", "level": 1, "year": 2024},
+        }
+        self.assertEqual(nodes._cross_section_sources(self.state(sources), self.sec(), limit=1), ["S2"])
+
+    def test_skips_sources_already_in_candidates(self):
+        sources = {"S1": {"title": "Statin deprescribing guideline",
+                          "text": "Patients can stop taking a statin.", "level": 1, "year": 2024}}
+        self.assertEqual(nodes._cross_section_sources(self.state(sources), self.sec(candidates=["S1"])), [])
+
+    def test_limit_zero_returns_nothing(self):
+        sources = {"S1": {"title": "Statin deprescribing guideline",
+                          "text": "Patients can stop taking a statin.", "level": 1, "year": 2024}}
+        self.assertEqual(nodes._cross_section_sources(self.state(sources), self.sec(), limit=0), [])
+
+
+class CrossSectionCollectTest(unittest.TestCase):
+    """source_collector borrows matching sources from other sections without losing them to the cap."""
+
+    def source(self, title, text, sections, level=2, year=2024):
+        return {"key": "k:" + title, "origin": "PubMed", "title": title, "text": text,
+                "level": level, "year": year, "sections": list(sections)}
+
+    def collect(self, sources, outline, settings):
+        st = {"topic": "Statins", "settings": settings, "outline": outline, "sources": sources,
+              "focus": [s["id"] for s in outline], "queries_done": [], "next_source": 100}
+        return nodes.source_collector(st)
+
+    def test_borrowed_source_id_survives_the_cap(self):
+        sources = {
+            "S1": self.source("Statin deprescribing guideline",
+                              "Patients can stop taking a statin safely.", ["A"], level=1),
+            "S2": self.source("Statin stopping one", "statin stop taking", ["B"]),
+            "S3": self.source("Statin stopping two", "statin stop taking", ["B"]),
+            "S4": self.source("Statin stopping three", "statin stop taking", ["B"]),
+            "S5": self.source("Statin stopping four", "statin stop taking", ["B"]),
+            "S6": self.source("Statin stopping five", "statin stop taking", ["B"]),
+        }
+        empty = {"literature": [], "public": []}
+        a = {"id": "A", "title": "Benefits of statins", "questions": ["Do statins lower cholesterol?"],
+             "queries": {}, "pending": dict(empty), "candidates": ["S1"], "source_ids": []}
+        b = {"id": "B", "title": "Stopping statins", "questions": ["Can I stop taking my statin?"],
+             "queries": {}, "pending": dict(empty),
+             "candidates": ["S2", "S3", "S4", "S5", "S6"], "source_ids": []}
+        out = self.collect(sources, [a, b],
+                           {"web_search": "off", "sources_per_section": 2, "cross_section_sources": 4})
+        got = out["outline"][1]
+        self.assertEqual(got["borrowed"], ["S1"])
+        self.assertIn("S1", got["candidates"])          # reserved slot, not cut by the cap
+        self.assertEqual(len(got["candidates"]), 4)     # cap = sources_per_section * 2
+        self.assertEqual(out["outline"][0].get("borrowed"), [])
+
+
+class BorrowedScreenerTest(unittest.TestCase):
+    """source_screener labels borrowed candidates and records the section on a kept borrow."""
+
+    def test_borrowed_is_labelled_and_gets_the_section_id_when_kept(self):
+        sec = section("B", title="Stopping statins", questions=["Can I stop my statin?"],
+                      candidates=["S1", "S2"], borrowed=["S1"], source_ids=[])
+        sources = {"S1": dict(SOURCE, title="Deprescribing guideline", sections=["A"]),
+                   "S2": dict(SOURCE, title="Own source", sections=["B"])}
+        fake = FakeLlmJson({"sections": [{"id": "B", "keep": ["S1"], "gaps": []}]})
+        st = state_of([sec], sources=sources, focus=["B"], screen_round=0, work=["B"])
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            out = nodes.source_screener(st)
+        prompt = fake.prompts[0]
+        self.assertEqual(prompt.count("(from another section)"), 1)
+        self.assertIn("[S1] Deprescribing guideline", prompt)
+        self.assertIn("(from another section)", prompt.split("[S1]")[1].split("[S2]")[0])
+        self.assertNotIn("(from another section)", prompt.split("[S2]")[1])
+        self.assertEqual(out["outline"][0]["source_ids"], ["S1"])
+        self.assertEqual(out["sources"]["S1"]["sections"], ["A", "B"])   # kept borrow serves B too
+        self.assertEqual(out["sources"]["S2"]["sections"], ["B"])        # untouched
+
+
+class AddQuestionsTest(unittest.TestCase):
+    """add_questions: exact and near-duplicate questions collapse, different ones stay."""
+
+    def test_statin_stop_triple_collapses_and_a_different_question_stays(self):
+        existing = ["What happens if I stop taking my statin?"]
+        new = ["What happens when I stop taking my statin?",
+               "What happens if I stop taking the statin?",
+               "What happens to LDL levels when a patient stops taking a statin after normal lab results?"]
+        out = nodes.add_questions(existing, new)
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0], existing[0])
+        self.assertIn("LDL", out[1])
+
+    def test_exact_duplicate_after_normalisation_is_dropped(self):
+        self.assertEqual(nodes.add_questions(["Take it at night?"], ["take it at night"]),
+                         ["Take it at night?"])
+
+    def test_different_questions_all_stay(self):
+        questions = ["Can I stop statins?", "When should I take my tablet?", "Are there side effects?"]
+        self.assertEqual(nodes.add_questions([], questions), questions)
+
+    def test_blank_questions_are_ignored(self):
+        self.assertEqual(nodes.add_questions([], ["", "   ", "Real one?"]), ["Real one?"])
+
+
+class ReviewPlannerDedupeTest(unittest.TestCase):
+    def test_added_questions_are_deduped(self):
+        sec = section("A", questions=["What happens if I stop taking my statin?"])
+        fake = FakeLlmJson({"new_sections": [], "edit_sections": [
+            {"id": "A", "add_questions": ["What happens when I stop taking my statin?"],
+             "literature_queries": ["q"], "public_queries": []}],
+            "remove_sections": [], "remove_facts": []})
+        st = state_of([sec], facts=[], review={}, review_round=0)
+        with mock.patch.object(nodes, "call_llm_json", fake), mock.patch("builtins.print"):
+            out = nodes.review_planner(st)
+        self.assertEqual(out["outline"][0]["questions"], ["What happens if I stop taking my statin?"])

@@ -68,6 +68,7 @@ DEFAULT_SETTINGS = {
     "coverage_pass_score": 7,         # each coverage score that counts as a pass
     "sources_per_query": 6,
     "sources_per_section": 8,
+    "cross_section_sources": 4,       # sources borrowed from other sections, per section
     "research_years": 10,
     "parallel_calls": 4,              # sections to search/extract/verify at once (1 = sequential)
     "web_search": "sites",            # "sites" | "sites+google" | "google" (your Chrome) | "off" — Google search flags the network

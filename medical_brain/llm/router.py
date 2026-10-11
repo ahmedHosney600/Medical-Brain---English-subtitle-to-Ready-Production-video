@@ -243,10 +243,16 @@ class LLMRouter:
                     self._count(node, spec)
                     return result
                 except ProviderUnavailable as e:
+                    # When the routed model shares the main model's provider (e.g. two agy
+                    # models), only that model is benched: quotas there are per model, and
+                    # benching the provider would take the main model down with it.
                     with self._lock:
-                        self.down[provider] = _short(e)
+                        if provider == parse_spec(self.main)[0]:
+                            self.down_specs[spec] = _short(e)
+                        else:
+                            self.down[provider] = _short(e)
                     self._log(f"⚠️ {node}: {spec} unavailable ({_short(e)}). "
-                              f"This and later {provider} steps run on {self.main}.")
+                              f"This and later steps routed to it run on {self.main}.")
                 except Exception as e:
                     if isinstance(e, AnswerCutOff):
                         cut_text = e.text

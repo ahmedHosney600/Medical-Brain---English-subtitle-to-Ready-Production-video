@@ -169,3 +169,27 @@ class MainRetryTest(unittest.TestCase):
         with self.assertRaises(Exception):
             llm.track_node("step", lambda state: router.call("s", "u", 0.3, 100))({})
         self.assertEqual(flaky.calls, 3)
+
+
+class _Quota:
+    def call(self, *a):
+        from medical_brain.llm.errors import ProviderUnavailable
+        raise ProviderUnavailable("Individual quota reached")
+
+
+class _Answers:
+    def call(self, *a):
+        return "ok"
+
+
+class PerModelQuotaTest(unittest.TestCase):
+    def test_quota_on_routed_model_benches_only_that_model(self):
+        c = config("agy:flash", agy={"type": "openai"})
+        c["hybrid_routes"] = {"judge": "agy:pro"}
+        router = llm.LLMRouter(c, provider="hybrid")
+        router._backends = {"agy:pro": _Quota(), "agy:flash": _Answers()}
+        out = llm.track_node("judge", lambda state: router.call("s", "u", 0.3, 100))({})
+        self.assertEqual(out, "ok")                       # fell back to the main model
+        self.assertIn("agy:pro", router.down_specs)
+        self.assertNotIn("agy", router.down)              # the provider itself stays up
+        self.assertEqual(llm.track_node("writer", lambda state: router.call("s", "u2", 0.3, 100))({}), "ok")

@@ -26,9 +26,9 @@ Plan the research for the topic:
 
 5. SPECIAL GROUPS — who needs different advice for this topic (e.g. pregnancy, children, older adults, kidney/heart/liver disease, diabetes, common interacting medicines). Only groups that genuinely matter for this topic.
 
-6. SECTIONS — 6 to 8 sections that follow the viewer-question spine in a natural order for a video. Each section has:
+6. SECTIONS — 6 to 9 sections that follow the viewer-question spine in a natural order for a video. ONE THEME PER SECTION: don't pack unrelated questions together (e.g. "how to take it", "is it lifelong / can I stop" and "fasting" are three themes) — each section gets its own small set of sources, so a crowded section loses evidence. Each section has:
    - "title": short, specific, in viewer language
-   - "questions": 2–5 precise questions this section must answer; put the classic checks and special-group questions into the sections where they belong
+   - "questions": 2–4 precise, non-overlapping questions this section must answer; put the classic checks and special-group questions into the sections where they belong
    - "literature_queries": 2–3 PubMed-style search queries (English, medical terms; target guidelines, systematic reviews, Cochrane reviews, meta-analyses and large trials — include one query per classic check that names it explicitly)
    - "public_queries": 1–2 short plain-English queries a patient would type (3–6 words), for patient-education sites
 
