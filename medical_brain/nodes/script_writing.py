@@ -192,7 +192,10 @@ def _tighten_chapter(state: PipelineState, system_prompt: str, chapter: dict,
     tightened, tight_memory = chapters.split_memory(response)
     tightened = _ensure_header(tightened, title)
     after = chapters.spoken_words(tightened)
-    if 0.7 * target <= after <= 1.25 * target:
+    before = chapters.spoken_words(text)
+    # A tightened chapter that is shorter but still a bit long beats the original; only a
+    # cut below 70% of the target (content likely lost) is rejected.
+    if 0.7 * target <= after < before:
         print(f"  ✂️ chapter {cid}: tightened to {after} words")
         return tightened, (tight_memory or memory)
     print(f"  ✂️ chapter {cid}: tightened to {after} words (out of range); keeping the original")
