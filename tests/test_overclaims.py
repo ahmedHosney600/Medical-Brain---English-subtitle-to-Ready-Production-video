@@ -43,3 +43,8 @@ class RedFlagOnsetTest(unittest.TestCase):
     def test_treatment_in_seconds_still_flagged(self):
         self.assertEqual(overclaim_in("الحباية دي بتفك الصداع في ثواني."), "في ثواني")
 
+    def test_denied_immediate_effect_is_not_flagged(self):
+        s = "المسكنات بتفيد بعد النوبة، لكن مش هي أبداً اللي بتفك الشد في لحظتها."
+        self.assertIsNone(overclaim_in(s))
+        self.assertTrue(overclaim_in("حركة واحدة تفكها فوراً"))
+

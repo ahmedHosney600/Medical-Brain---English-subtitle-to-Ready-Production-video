@@ -151,6 +151,20 @@ class NodesTest(unittest.TestCase):
         self.assertEqual((out["recommended_title"], out["packaging_ab_test_set"]), ("", ""))
 
 
+    def test_overclaiming_title_is_flagged_and_not_recommended(self):
+        answer = json.dumps({"packaging_grade": "PASS", "lowest_ab_promise_delivery_score": 10,
+                             "recommended_title": "حركة واحدة تفكها فوراً",
+                             "ab_test_titles": ["حركة واحدة تفكها فوراً", "ليه السمانة بتشد بالليل؟"],
+                             "ab_test_thumbnails": ["T1"], "packaging_critique_report": "ok"})
+        use_router(self, Canned(answer))
+        titles = "| # | Title |\n|---|---|\n| 1 | حركة واحدة تفكها فوراً |\n| 2 | ليه السمانة بتشد بالليل؟ |"
+        with mock.patch("builtins.print"):
+            out = packaging.packaging_honesty_ctr_auditor({"title_options": titles})
+        self.assertEqual(out["recommended_title"], "ليه السمانة بتشد بالليل؟")
+        self.assertEqual(out["packaging_grade"], "NEEDS_REVISION")
+        self.assertIn("TITLE OVERCLAIM", out["packaging_critique_output"])
+
+
 BROLL = ("## AI B-ROLL GENERATION PROMPTS\n\n### B-Roll Prompt Table\n"
          "| # | Timestamp | ▶️ START CUE | ⏹️ END CUE | Type | AI Generation Prompt | Composition Notes |\n"
          "|---|---|---|---|---|---|---|\n"

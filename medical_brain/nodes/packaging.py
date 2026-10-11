@@ -4,6 +4,7 @@ System prompts live in prompts/<step>.md; the user prompts below insert the vide
 
 import re
 
+from ..utils.overclaims import overclaim_in
 from ..llm import call_llm, call_llm_json
 from ..prompts import load_prompt
 from ..state import PipelineState
@@ -145,6 +146,15 @@ Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B tes
     if n_thumbs and "reference photo" not in state.get("thumbnail_concepts", "").lower():
         code_issues.append("The AI Image Generation Prompts must tell the image tool to use the presenter's reference photo and keep his natural expression.")
 
+    title_rows = [l for l in state.get("title_options", "").splitlines() if re.match(r"^\|\s*\d+\s*\|", l.strip())]
+    for row in title_rows:
+        cells = [c.strip() for c in row.strip().strip("|").split("|")]
+        title = cells[1] if len(cells) > 1 else row
+        phrase = overclaim_in(title)
+        if phrase:
+            code_issues.append(f"TITLE OVERCLAIM: «{title}» promises «{phrase}» — titles must not promise a speed "
+                               "or certainty of effect; rewrite it to what the script delivers.")
+
     text = response.strip()
     try:
         if data is None:
@@ -166,10 +176,18 @@ Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B tes
             ab_set = "**Titles to A/B test (ranked):**\n" + "\n".join(f"{i}. {t}" for i, t in enumerate(ab_titles, 1))
             ab_set += "\n\n**Thumbnails to A/B test (ranked):**\n" + "\n".join(f"{i}. {t}" for i, t in enumerate(ab_thumbs, 1))
 
+        # Never recommend a title with time-to-effect or certainty wording ("تفكها فوراً").
+        recommended = str(pick(data, "recommended_title", default="")).strip()
+        if recommended and overclaim_in(recommended):
+            honest = [t for t in ab_titles if not overclaim_in(t)]
+            if honest:
+                print(f"  ⚠️ recommended title overclaims; using «{honest[0]}» instead")
+                recommended = honest[0]
+
         return {
             "packaging_grade": grade,
             "packaging_critique_output": report,
-            "recommended_title": str(pick(data, "recommended_title", default="")).strip(),
+            "recommended_title": recommended,
             "packaging_ab_test_set": ab_set,
             "packaging_revision_count": revision,
         }

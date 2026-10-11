@@ -579,6 +579,17 @@ class IntegrityNormalisationTest(unittest.TestCase):
         self.assertNotIn("X", out)
 
 
+class TotalLengthLineTest(unittest.TestCase):
+    def test_single_chapter_refinement_gets_the_whole_video_target(self):
+        fake = use(self, script_writing, "call_llm", FakeLLM(lambda *a: "REFINED"))
+        bp = dict(ONE_CHAPTER, target_minutes=10, words_per_minute=135)
+        script_writing.script_refinement(base_state(blueprint=bp))
+        self.assertIn("TARGET LENGTH: about 1350 spoken words for the WHOLE video", fake.calls[0]["user"])
+
+    def test_no_minutes_no_line(self):
+        self.assertEqual(script_writing._total_length_line({}), "")
+
+
 class SingleChapterUnchangedTest(unittest.TestCase):
     """A one-chapter (or absent) blueprint must make exactly the old calls."""
 

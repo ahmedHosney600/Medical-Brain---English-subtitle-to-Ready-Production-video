@@ -39,7 +39,7 @@ def overclaim_in(sentence: str):
     if m and not (_ONSET.search(sentence) and _URGENT.search(sentence)):
         return m.group(0)
     m = _IMMEDIATE.search(sentence)
-    if m and _EFFECT.search(sentence) and not _URGENT.search(sentence):
+    if m and _EFFECT.search(sentence) and not _URGENT.search(sentence) and not _NEGATED.search(sentence):
         return m.group(0)
     if _NEGATED.search(sentence):
         return None

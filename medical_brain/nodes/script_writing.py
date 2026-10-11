@@ -743,6 +743,22 @@ def _refinement_chapter_mode(state: PipelineState, blueprint: dict) -> dict:
     return {"refined_script": edited, "integrity_report": report}
 
 
+def _total_length_line(blueprint: dict) -> str:
+    """The whole video's spoken-word target for single-chapter assembly. A 10-minute run
+    assembled 2,519 words: one hook and one CTA are picked, but they were long."""
+    try:
+        minutes = float(blueprint.get("target_minutes", 0) or 0)
+        wpm = float(blueprint.get("words_per_minute", 135) or 135)
+    except (TypeError, ValueError):
+        return ""
+    if minutes <= 0 or wpm <= 0:
+        return ""
+    total = int(minutes * wpm)
+    return (f"\n\nTARGET LENGTH: about {total} spoken words for the WHOLE video (hook + body + CTA), "
+            f"never more than {int(total * 1.1)}. Use ONE hook and ONE CTA, each short (hook ≤ 120 words, "
+            "CTA and sign-off ≤ 150); the body is already at its budget — do not expand it.")
+
+
 def script_refinement(state: PipelineState) -> dict:
     system_prompt = load_prompt("script_refinement")
     blueprint = state.get("blueprint") or {}
@@ -764,7 +780,7 @@ RESTRUCTURE STRATEGY PLAN (word count target, retention schedule):
 VOICE STYLE: {state.get("voice_style", "")}
 MANDATORY MENTIONS: {state.get("mandatory_mentions", "")}
 
-Assemble into one continuous, polished script."""
+Assemble into one continuous, polished script.{_total_length_line(blueprint)}"""
 
     # Only include revision mode block when we're actually revising
     if state.get("quality_revision_count", 0) > 0:
