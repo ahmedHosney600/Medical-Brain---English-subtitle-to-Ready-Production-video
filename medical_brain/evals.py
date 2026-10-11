@@ -177,6 +177,20 @@ def build_judge_user(topic: str, questions: list, facts: list, sources: dict) ->
     return "\n".join(lines)
 
 
+def _as_judge(fn):
+    """Run a judge call as the 'eval_judge' step, so hybrid mode can give grading its own
+    (steadier) model via hybrid_routes["eval_judge"]; without that route it uses the main model."""
+    from .llm import current_node
+
+    def wrapped(*args, **kwargs):
+        token = current_node.set("eval_judge")
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            current_node.reset(token)
+    return wrapped
+
+
 def judge_session(topic: str, questions: list, facts: list, sources: dict):
     """One judge call; on an unreadable answer retry once, then return None."""
     system = load_prompt("evals/research_judge")
@@ -184,7 +198,7 @@ def judge_session(topic: str, questions: list, facts: list, sources: dict):
     problem = None
     for _ in range(2):
         try:
-            judge, _raw = call_llm_json(system, user, temperature=0, max_tokens=8000,
+            judge, _raw = _as_judge(call_llm_json)(system, user, temperature=0, max_tokens=8000,
                                         required=["questions", "scores"])
             return judge
         except UnreadableAnswer as e:
@@ -262,7 +276,7 @@ def judge_guide_session(topic: str, questions: list, guide: dict):
     problem = None
     for _ in range(2):
         try:
-            judge, _raw = call_llm_json(system, user, temperature=0, max_tokens=8000,
+            judge, _raw = _as_judge(call_llm_json)(system, user, temperature=0, max_tokens=8000,
                                         required=["questions", "scores"])
             return judge
         except UnreadableAnswer as e:

@@ -120,6 +120,13 @@ def _python_literals(text: str) -> str:
     return "".join(out)
 
 
+def _fix_commas(text: str) -> str:
+    """Long JSON answers sometimes drop a comma between items or leave one before a
+    closing bracket ("Expecting ',' delimiter"). Only tried after the other fixes fail."""
+    text = re.sub(r",(\s*[\]}])", r"\1", text)                                   # trailing comma
+    return re.sub(r'(["}\]]|\d|true|false|null)(\s*\n\s*)(["{\[])', r"\1,\2\3", text)  # missing comma at a line break
+
+
 def parse_llm_json(text: str) -> dict:
     """The JSON object in a model's answer, however it was wrapped. Raises ValueError
     if no object can be read."""
@@ -131,7 +138,8 @@ def parse_llm_json(text: str) -> dict:
     for cand in candidates:
         body = _outer_object(cand.strip())
         for fix in (lambda s: s, _escape_stray_quotes, _python_literals,
-                    lambda s: _python_literals(_escape_stray_quotes(s))):
+                    lambda s: _python_literals(_escape_stray_quotes(s)),
+                    _fix_commas, lambda s: _fix_commas(_python_literals(_escape_stray_quotes(s)))):
             try:
                 data = json.loads(fix(body), strict=False)
             except ValueError as e:

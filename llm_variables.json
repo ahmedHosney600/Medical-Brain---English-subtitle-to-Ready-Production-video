@@ -11,7 +11,8 @@
         "production_quality_critique": "agy:gemini-3.8-flash-medium",
         "source_screener": "agy:gemini-3.8-flash-medium",
         "fact_verifier": "agy:gemini-3.1-pro-low",
-        "coverage_critic": "agy:gemini-3.8-flash-medium"
+        "coverage_critic": "agy:gemini-3.8-flash-medium",
+        "eval_judge": "agy:gemini-3.1-pro-low"
     },
     "providers": {}
 }

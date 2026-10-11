@@ -63,6 +63,12 @@ def call_llm(system_prompt: str, user_prompt: str, temperature: Optional[float] 
     return get_router().call(system_prompt, user_prompt, temperature=temperature, max_tokens=max_tokens)
 
 
+def _forget_last() -> None:
+    router = _router
+    if router is not None and hasattr(router, "forget_last"):
+        router.forget_last()
+
+
 def call_llm_json(system_prompt: str, user_prompt: str, temperature: Optional[float] = None,
                   max_tokens: Optional[int] = None, required=()) -> tuple:
     """call_llm for steps that answer in JSON, the same for every model.
@@ -86,6 +92,7 @@ def call_llm_json(system_prompt: str, user_prompt: str, temperature: Optional[fl
     if not problem:
         return data, raw
 
+    _forget_last()       # an unusable answer must not be served again from the cache
     print(f"  🔧 {current_node.get() or 'step'}: answer unreadable — {problem}; asking the model to re-send it as JSON")
     fields = ", ".join(names if isinstance(names, str) else names[0] for names in required)
     repair = (f"The original request ended with these instructions:\n<<<REQUEST END\n{user_prompt[-2000:]}\nREQUEST END>>>\n\n"
@@ -99,6 +106,7 @@ def call_llm_json(system_prompt: str, user_prompt: str, temperature: Optional[fl
     try:
         data2 = parse_llm_json(raw2)
     except ValueError as e:
+        _forget_last()
         if data is not None:
             return data, raw         # the first answer was JSON, just incomplete
         raise UnreadableAnswer(str(e), raw2 or raw)

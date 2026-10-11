@@ -43,6 +43,7 @@ class LLMRouter:
         self._lock = threading.Lock()   # guards the book-keeping dicts and lazy backends
         self.cache_dir = None           # optional: a folder of one JSON file per answered request
         self.cache_hits = 0             # answers served from that folder instead of the model
+        self._last_key = threading.local()  # cache entry behind this thread's last answer
 
     def set_cache_dir(self, path: Optional[str]) -> None:
         """Remember every successful model answer under `path` (one JSON file per request),
@@ -66,6 +67,17 @@ class LLMRouter:
                 self.cache_hits += 1
             return answer
         return None
+
+    def forget_last(self) -> None:
+        """Drop the cached answer this thread just received — called when it turned out to
+        be unusable (e.g. broken JSON), so a retry asks the model again instead of being
+        served the same broken answer."""
+        key = getattr(self._last_key, "value", "")
+        if key and self.cache_dir:
+            try:
+                os.remove(self._cache_path(key))
+            except OSError:
+                pass
 
     def _cache_put(self, key: str, answer: str) -> None:
         """Write to a temp file then os.replace: parallel calls never see a half-written file."""
@@ -115,6 +127,7 @@ class LLMRouter:
 
     def _ask(self, spec: str, system_prompt, user_prompt, temperature, max_tokens) -> str:
         cache_key = _cache_key(spec, system_prompt, user_prompt, temperature, max_tokens) if self.cache_dir else ""
+        self._last_key.value = cache_key
         if cache_key:
             cached = self._cache_get(cache_key)
             if cached is not None:
