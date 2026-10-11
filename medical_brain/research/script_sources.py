@@ -182,6 +182,16 @@ def map_sources(sentences: list, research_state: dict, batch_size: int = 60, wor
                 continue
             seen_n.add(u["n"])
             unsupported.append(u)
+    # Time-to-effect / certainty wording is flagged by code too: the model mapping passed
+    # "تفك الانقباض في ثواني" as supported because stretching itself had evidence.
+    from ..utils.overclaims import overclaim_in
+    for sent in sentences:
+        hit = overclaim_in(sent.get("text", ""))
+        if hit and sent["n"] not in seen_n:
+            seen_n.add(sent["n"])
+            unsupported.append({"n": sent["n"], "text": sent["text"], "section": sent.get("section", ""),
+                                "why": f"time-to-effect / certainty wording «{hit}» — check that the "
+                                       "evidence states it, or soften it"})
     unsupported.sort(key=lambda u: u["n"])
     return {"links": links, "unsupported": unsupported}
 

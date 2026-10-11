@@ -252,6 +252,14 @@ Examine every single line, claim, mechanism, number, study, analogy, and advice.
         user_prompt += """
 
 The ORIGINAL SOURCE above is a verified RESEARCH DOSSIER with citations [S#]. Every factual claim in the script must trace to one of its facts with the same numbers and population; flag (and remove in verified_script) any claim, number or study that is not in the dossier, even if you believe it is true."""
+        from ..utils.overclaims import find_overclaims
+        found = find_overclaims(state.get("refined_script", ""))
+        if found:
+            user_prompt += ("\n\nCODE CHECK — sentences with time-to-effect or certainty wording (e.g. \"in seconds\", "
+                            "\"immediately\", \"guaranteed\", \"final cure\"). Each is an OVERCLAIM unless the dossier "
+                            "states the same timing or certainty for that exact point; list each in your report and "
+                            "rewrite it in verified_script to the evidence's wording:\n"
+                            + "\n".join(f"- «{s}» [{p}]" for s, p in found))
 
     try:
         data, response = call_llm_json(system_prompt, user_prompt, temperature=0.2, max_tokens=12000,
