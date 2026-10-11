@@ -554,10 +554,24 @@ class SingleChapterUnchangedTest(unittest.TestCase):
         script_writing.body_restructurer(base_state(blueprint=ONE_CHAPTER))
         new = fake.calls[0]
         self.assertEqual(old["system"], new["system"])
-        self.assertEqual(old["user"], new["user"])
+        # The only addition is the blueprint's word budget.
+        self.assertIn("LENGTH BUDGET: about 300 spoken words", new["user"])
+        self.assertEqual(old["user"], re.sub(r"\nLENGTH BUDGET:[^\n]*\n", "", new["user"]))
         self.assertEqual(new["max_tokens"], 9000)
         self.assertNotIn("SCRIPT BLUEPRINT", new["user"])
         self.assertNotIn("CHAPTER MODE", new["system"])
+
+    def test_overlong_single_body_is_tightened(self):
+        long_body = " ".join(f"w{i}" for i in range(600))      # 2 × the 300-word budget
+        short_body = " ".join(f"t{i}" for i in range(280))
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            return short_body if "TIGHTEN this chapter" in user else long_body
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            out = script_writing.body_restructurer(base_state(blueprint=ONE_CHAPTER))
+        self.assertEqual(out["revised_body"], short_body)
 
     def test_dialect_prompt_unchanged(self):
         fake = use(self, script_writing, "call_llm", FakeLLM(lambda *a: "DIALECT"))

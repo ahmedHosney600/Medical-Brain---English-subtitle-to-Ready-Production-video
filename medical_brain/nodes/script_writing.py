@@ -279,6 +279,13 @@ def body_restructurer(state: PipelineState) -> dict:
     if chapters.chapter_mode_on(blueprint):
         return _body_chapter_mode(state, system_prompt, blueprint)
 
+    # The blueprint's word budget, stated outright: without it a 10-minute body came out
+    # at 2,362 spoken words for a 1,175-word budget.
+    target = _target_words(blueprint)
+    length_line = (f"\nLENGTH BUDGET: about {target} spoken words for the body (cues and visual "
+                   f"notes not counted), never more than {int(target * TIGHTEN_ABOVE)}. Depth comes "
+                   "from choosing the most useful points, not from adding more.\n") if target > 0 else ""
+
     user_prompt = f"""Rebuild the script body in Egyptian Arabic.
 
 USE THE RECOMMENDED HOOK:
@@ -311,7 +318,7 @@ PRESENTER PROFILE:
 {state.get("presenter_profile", "")}
 
 Write the complete script body in Egyptian Arabic, from after the hook to before the CTA. Include visual notes and performance cues. Rebuild, don't translate.
-
+{length_line}
 ---
 
 ## MODE: REVISION PASS
@@ -326,6 +333,9 @@ TRANSLATION RISK / CONTEXTUAL ALIGNMENT REPORT:
 {state.get("translation_report", "")}"""
 
     llm_response = call_llm(system_prompt, user_prompt, temperature=0.75, max_tokens=9000)
+    if target > 0:
+        llm_response, _ = _tighten_chapter(state, system_prompt, {"id": "body", "words": target},
+                                           llm_response, {})
     return {"revised_body": llm_response}
 
 
