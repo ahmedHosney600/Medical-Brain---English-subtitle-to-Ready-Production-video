@@ -261,3 +261,13 @@ class CritiqueTimelineTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EllipsisCueTest(unittest.TestCase):
+    def test_cue_with_the_scripts_own_pause_is_exact(self):
+        from medical_brain.exports import workbook as ew
+        script = "لازم نهدى ونهدى... أول فكرة بتيجي في بالك هي القياس الصح في البيت."
+        norm = ew.normalize_ar(ew.spoken_text(script))
+        self.assertIsNone(ew.cue_problem("ونهدى... أول فكرة بتيجي في بالك", norm))
+        self.assertEqual(ew.cue_problem("بداية الكلام ... هنا", norm), "placeholder, not a spoken sentence")
+

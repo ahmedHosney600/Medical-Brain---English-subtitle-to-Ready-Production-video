@@ -119,13 +119,17 @@ def cue_problem(cue: str, norm_script: str, min_words: int = 3, after: Optional[
     disambiguate is it reported as "appears N times"."""
     raw = (cue or "").strip()
     if not raw or not normalize_ar(spoken_text(raw)) or raw in ("—", "-") \
-            or any(h in raw.lower() for h in _PLACEHOLDER_HINTS if h != "—"):
+            or any(h in raw.lower() for h in _PLACEHOLDER_HINTS if h not in ("—", "...")):
         return "placeholder, not a spoken sentence"
     words = normalize_ar(spoken_text(raw)).split()
     if len(words) < min_words:
         return f"too short ({len(words)} words) to find reliably"
     positions = cue_positions(raw, norm_script)
     if not positions:
+        # "..." is a placeholder only when the cue is not in the script: scripts use
+        # "…" pauses themselves ("ونهدى... أول فكرة"), and such a cue is exact.
+        if "..." in raw:
+            return "placeholder, not a spoken sentence"
         return "not found word-for-word in the production script"
     if len(positions) == 1:
         return None
