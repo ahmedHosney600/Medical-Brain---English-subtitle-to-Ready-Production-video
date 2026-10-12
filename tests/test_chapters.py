@@ -594,6 +594,24 @@ class ChapterLengthGuardTest(unittest.TestCase):
         self.assertIn("b699", out["revised_body"])
         self.assertNotIn("a1199", out["revised_body"])
 
+    def test_tightening_uses_the_cut_only_system_prompt(self):
+        seen = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            seen.append((system, user))
+            if "TIGHTEN this chapter" in user:
+                return "=== طويل ===\n" + " ".join(f"t{i}" for i in range(850))
+            if "id: C1" in user:
+                return "=== طويل ===\n" + self.LONG
+            return "=== ق ===\nنص قصير"
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            script_writing.body_restructurer(base_state(blueprint=self._bp()))
+        tighten = [system for system, user in seen if "TIGHTEN this chapter" in user]
+        self.assertEqual(len(tighten), 1)
+        self.assertIn("Your only job is to CUT", tighten[0])
+
 
 class IntegrityNormalisationTest(unittest.TestCase):
     def test_normalised_match_applied_once(self):
@@ -857,6 +875,22 @@ class SingleChapterWholeScriptTightenTest(unittest.TestCase):
         self.assertEqual(len(calls), 1)
         self.assertNotIn("TIGHTEN this complete script", calls[0])
         self.assertEqual(out["refined_script"], long_script)
+
+    def test_tightening_uses_the_cut_only_system_prompt(self):
+        long_script = self._words("w", 2000)
+        tight = self._words("t", 1200)
+        seen = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            seen.append((system, user))
+            return tight if "TIGHTEN this complete script" in user else long_script
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            script_writing.script_refinement(self._state())
+        tighten = [system for system, user in seen if "TIGHTEN this complete script" in user]
+        self.assertEqual(len(tighten), 1)
+        self.assertIn("Your only job is to CUT", tighten[0])
 
 
 class DialectLengthLineTest(unittest.TestCase):

@@ -178,7 +178,11 @@ def _tighten_chapter(state: PipelineState, system_prompt: str, chapter: dict,
     The first tightened text replaces the original when it is shorter and keeps
     ≥ 0.7 × target. If that accepted text is still > target × TIGHTEN_ABOVE, ONE more
     call is made on it (the same prompt form) and accepted under the same rule. Returns
-    (text, memory)."""
+    (text, memory).
+
+    Tightening is a cut-only edit, so it uses the script_tighten system prompt (the
+    chapter-writing system_prompt is kept in the signature but no longer sent — it
+    forbids cutting)."""
     target = _chapter_words(chapter)
     before = chapters.spoken_words(text)
     if target <= 0 or before <= target * TIGHTEN_ABOVE:
@@ -199,7 +203,7 @@ def _tighten_chapter(state: PipelineState, system_prompt: str, chapter: dict,
                        "the opening continuity, the loops and the bridge; cut repetition and padding"
                        "\n\n" + current)
         try:
-            response = call_llm(system_prompt, user_prompt, temperature=0.75,
+            response = call_llm(load_prompt("script_tighten"), user_prompt, temperature=0.75,
                                 max_tokens=chapters.budget_for_words(target))
         except Exception as error:                 # a failed pass keeps the previous text
             if attempt == 1:
@@ -856,7 +860,9 @@ def _tighten_whole_script(blueprint: dict, script: str) -> str:
     if before <= target * WHOLE_TIGHTEN_ABOVE:
         return script
 
-    system_prompt = load_prompt("script_refinement")
+    # Tightening is a cut-only edit: use the script_tighten system prompt, not the
+    # refinement prompt (which asks the model to assemble/polish and forbids compressing).
+    system_prompt = load_prompt("script_tighten")
     current = script
     for attempt in (1, 2):
         current_words = chapters.spoken_words(current)
