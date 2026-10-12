@@ -172,6 +172,9 @@ TIGHTEN_ABOVE = 1.1
 # Without a user-given duration the length is only a guide: a script is trimmed only when
 # it runs far over its own plan (real padding), never squeezed toward the number.
 SOFT_TIGHTEN_ABOVE = 1.35
+# A soft trim may remove padding only: a result below this × the floor target means real
+# content was cut, so the untrimmed text is kept instead.
+SOFT_ACCEPT_FLOOR = 0.9
 # Polishing steps (dialect/refinement) may grow the writers' script by at most this much
 # before the extra words count as padding and are trimmed back to the written length.
 WRITTEN_GROWTH_MAX = 1.12
@@ -211,10 +214,11 @@ def _soft_tighten_chapter(cid: str, title: str, target: int, text: str, memory: 
     user_prompt = (f"TRIM this chapter: remove repetition, padding and side tangents only — keep every "
                    "medical point, example that explains something, advice, red flag, the opening "
                    "continuity, the loops and the bridge. Aim for about "
-                   f"{target} words, but never cut a real point to get there.\n\n"
+                   f"{target} words, but never cut a real point to get there. "
+                   f"Do not go below {int(target * 0.95)} words.\n\n"
                    + text)
     try:
-        response = call_llm(load_prompt("script_tighten"), user_prompt, temperature=0.75,
+        response = call_llm(load_prompt("script_trim_padding"), user_prompt, temperature=0.75,
                             max_tokens=chapters.budget_for_words(target))
     except Exception as error:                     # a failed pass keeps the original text
         print(f"  ✂️ chapter {cid}: trimming failed ({error}); keeping the original")
@@ -223,10 +227,10 @@ def _soft_tighten_chapter(cid: str, title: str, target: int, text: str, memory: 
     tightened, tight_memory = chapters.split_memory(response)
     tightened = _ensure_header(tightened, title)
     after = chapters.spoken_words(tightened)
-    if 0.7 * target <= after < before:
+    if SOFT_ACCEPT_FLOOR * target <= after < before:
         print(f"  ✂️ chapter {cid}: trimmed to {after} words")
         return tightened, (tight_memory or memory)
-    print(f"  ✂️ chapter {cid}: trimmed to {after} words (out of range); keeping the original")
+    print(f"  ✂️ chapter {cid}: trimmed to {after} words (cut too deep; keeping the untrimmed text)")
     return text, memory
 
 
@@ -927,19 +931,20 @@ def _soft_tighten_whole_script(script: str, target: int) -> str:
     user_prompt = (f"TRIM this complete script: remove repetition, padding and side tangents only — keep "
                    "the opening hook, the disclaimer, every medical point and red flag, the call to "
                    "action and the sign-off, and all [cues]/stage directions. Aim for about "
-                   f"{target} spoken words, but never cut a real point to get there.\n\n"
+                   f"{target} spoken words, but never cut a real point to get there. "
+                   f"Do not go below {int(target * 0.95)} words.\n\n"
                    + script)
     try:
-        response = call_llm(load_prompt("script_tighten"), user_prompt, temperature=0.5,
+        response = call_llm(load_prompt("script_trim_padding"), user_prompt, temperature=0.5,
                             max_tokens=max(9000, chapters.budget_for_words(target)))
     except Exception as error:                     # a failed pass keeps the original text
         print(f"  ✂️ whole script: trimming failed ({error}); keeping the original")
         return script
     after = chapters.spoken_words(response)
-    if 0.7 * target <= after < current_words:
+    if SOFT_ACCEPT_FLOOR * target <= after < current_words:
         print(f"  ✂️ whole script: {current_words} → {after} words")
         return response
-    print(f"  ✂️ whole script: trimmed to {after} words (out of range); keeping the original")
+    print(f"  ✂️ whole script: trimmed to {after} words (cut too deep; keeping the untrimmed text)")
     return script
 
 

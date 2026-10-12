@@ -188,13 +188,14 @@ class TruthVerifierWholeTightenTest(unittest.TestCase):
 
     def test_soft_mode_trims_a_far_overrun(self):
         long_script = "كلمة " * 2000        # 1.48 × 1350: over the 1.35× soft trigger
+        trimmed = "قصير " * 1300            # ≥ 0.9 × 1350 (1215): content kept
         fake = FakeJSON(lambda system, user: (verifier_answer(long_script), "raw"))
         use(self, fake)
         calls = []
 
         def fake_llm(system, user, temperature=None, max_tokens=None, **kwargs):
             calls.append(user)
-            return self.SHORT
+            return trimmed
 
         with mock.patch.object(script_writing, "call_llm", fake_llm):
             out = quality.medical_truth_verifier(state(
@@ -204,7 +205,20 @@ class TruthVerifierWholeTightenTest(unittest.TestCase):
 
         self.assertEqual(len(calls), 1)
         self.assertIn("TRIM this complete script", calls[0])
-        self.assertEqual(out["refined_script"], self.SHORT)
+        self.assertEqual(out["refined_script"], trimmed)
+
+    def test_soft_mode_cut_below_the_floor_keeps_the_script(self):
+        long_script = "كلمة " * 2000
+        fake = FakeJSON(lambda system, user: (verifier_answer(long_script), "raw"))
+        use(self, fake)
+        with mock.patch.object(script_writing, "call_llm",
+                               lambda *a, **k: self.SHORT):        # 1000 < 0.9 × 1350
+            out = quality.medical_truth_verifier(state(
+                refined_script=long_script, research_dossier="",
+                blueprint={"target_minutes": 10, "chapters": [
+                    {"id": "1", "title": "الفصل", "words": 1350}]}))
+
+        self.assertEqual(out["refined_script"], long_script.strip())
 
 
 class TruthVerifierWrittenLengthGuardTest(unittest.TestCase):

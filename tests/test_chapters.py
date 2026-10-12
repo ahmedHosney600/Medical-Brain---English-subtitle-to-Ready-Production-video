@@ -7,6 +7,7 @@ import unittest
 from unittest import mock
 
 from medical_brain.nodes import analysis, chapters, script_writing
+from medical_brain.prompts import load_prompt
 
 
 class FakeLLM:
@@ -935,6 +936,53 @@ class SingleChapterWholeScriptTightenTest(unittest.TestCase):
         self.assertIn("never cut a real point to get there.", trim[0])
         self.assertEqual(out["refined_script"], tight)
 
+    def test_soft_trim_uses_the_padding_prompt_and_floor_sentence(self):
+        script = self._words("w", 2025)               # 1.5 × the 1350 plan
+        tight = self._words("t", 1300)
+        seen = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            seen.append((system, user))
+            return tight if "TRIM this complete script" in user else script
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            script_writing.script_refinement(self._state(target_minutes=0))
+        trim = [(s, u) for s, u in seen if "TRIM this complete script" in u]
+        self.assertEqual(len(trim), 1)
+        self.assertEqual(trim[0][0], load_prompt("script_trim_padding"))
+        self.assertIn("Do not go below 1282 words.", trim[0][1])   # int(1350 × 0.95)
+
+    def test_soft_cut_below_the_floor_keeps_the_untrimmed_script(self):
+        script = self._words("w", 2025)
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            # 1200 < 0.9 × 1350 (1215): real content was cut, so the trim is rejected.
+            return self._words("t", 1200) if "TRIM this complete script" in user else script
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print") as printed:
+            out = script_writing.script_refinement(self._state(target_minutes=0))
+        self.assertEqual(out["refined_script"], script)
+        text = " ".join(str(c.args[0]) for c in printed.call_args_list)
+        self.assertIn("cut too deep; keeping the untrimmed text", text)
+
+    def test_soft_trim_at_or_above_the_floor_is_accepted(self):
+        script = self._words("w", 2025)
+        tight = self._words("t", 1250)                # ≥ 0.9 × 1350 (1215), < before
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            return tight if "TRIM this complete script" in user else script
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            out = script_writing.script_refinement(self._state(target_minutes=0))
+        self.assertEqual(out["refined_script"], tight)
+
 
 class SoftChapterLengthGuardTest(unittest.TestCase):
     """Without a user duration (state target_minutes == 0) a chapter's length is only a
@@ -980,6 +1028,44 @@ class SoftChapterLengthGuardTest(unittest.TestCase):
                       trim[0])
         self.assertIn("Aim for about 800 words, but never cut a real point to get there.", trim[0])
         self.assertIn("t899", out["revised_body"])
+        self.assertNotIn("w1199", out["revised_body"])
+
+    def _run_trim(self, writer, trim_word):
+        seen = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            seen.append((system, user))
+            if "TRIM this chapter" in user:
+                return "=== طويل ===\n" + trim_word
+            if "id: C1" in user:
+                return "=== طويل ===\n" + writer
+            return "=== ق ===\nنص قصير"
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print") as printed:
+            out = script_writing.body_restructurer(base_state(blueprint=self._bp()))
+        return seen, out, printed
+
+    def test_soft_trim_uses_the_padding_prompt_and_floor_sentence(self):
+        writer = " ".join(f"w{i}" for i in range(1200))
+        seen, _, _ = self._run_trim(writer, " ".join(f"t{i}" for i in range(900)))
+        trim = [(s, u) for s, u in seen if "TRIM this chapter" in u]
+        self.assertEqual(len(trim), 1)
+        self.assertEqual(trim[0][0], load_prompt("script_trim_padding"))
+        self.assertIn("Do not go below 760 words.", trim[0][1])   # int(800 × 0.95)
+
+    def test_soft_cut_below_the_floor_keeps_the_untrimmed_chapter(self):
+        writer = " ".join(f"w{i}" for i in range(1200))
+        _, out, printed = self._run_trim(writer, " ".join(f"t{i}" for i in range(700)))  # < 720
+        self.assertIn("w1199", out["revised_body"])
+        self.assertNotIn("t699", out["revised_body"])
+        text = " ".join(str(c.args[0]) for c in printed.call_args_list)
+        self.assertIn("cut too deep; keeping the untrimmed text", text)
+
+    def test_soft_trim_at_or_above_the_floor_is_accepted(self):
+        writer = " ".join(f"w{i}" for i in range(1200))
+        _, out, _ = self._run_trim(writer, " ".join(f"t{i}" for i in range(740)))  # ≥ 720
+        self.assertIn("t739", out["revised_body"])
         self.assertNotIn("w1199", out["revised_body"])
 
 
