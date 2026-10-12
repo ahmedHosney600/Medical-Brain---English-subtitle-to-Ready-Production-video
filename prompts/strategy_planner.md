@@ -25,13 +25,14 @@ This decision is governed by `codeSwitchingLevel` as a general policy (None/Ligh
 WORD COUNT FORMULA (Egyptian Arabic talking head):
 - Talking head, Egyptian Arabic: 130–150 words/minute (slightly slower than English due to word structure)
 - Formula: target minutes × rate = target word count, +10% buffer
-- TARGET DURATION POLICY: Determine the right duration for the ARABIC version yourself, based on:
-  1. The depth and density of the Medical Fact Ledger (more mechanisms = longer).
-  2. What performs well on Egyptian medical YouTube (7–10 min for mechanism explainers, 4–6 min for myth-busting, 10–15 min for complex condition breakdowns).
-  3. Avoiding both under-serving the topic (too short to build trust) and viewer fatigue (too long without payoff).
+- TARGET DURATION POLICY (when no TARGET MINUTES is given): there is NO fixed or preferred duration. Size the video to the MATERIAL, so every valuable point gets the room it needs to be explained warmly and clearly — never compress the content to hit a round number, and never pad it to reach one.
+  1. Count what the viewer must leave with: the key points, practical advice, red flags and myths in the Fact Ledger / patient guide that pass the "does it change what a viewer does or understands?" test.
+  2. Give each one realistic spoken room: a simple point or myth ≈ 60–100 words; a mechanism, a treatment comparison or a step-by-step action ≈ 120–250 words. Add the hook (~80–120), disclaimer (~30), transitions and the closing (~100–150).
+  3. The sum is your word target; divide by the speaking rate for the duration. Anything from a few minutes to 30+ minutes is fine — a dense condition breakdown is long, a single myth is short.
+  4. Drop low-value material (trivia, narrow subgroups, repetition) rather than squeezing everything; but do not drop a point a viewer needs just to make the video shorter.
 - State your chosen duration explicitly in the Word Count Target section and explain your reasoning in 1 sentence.
 - ACT-BY-ACT WORD COUNT BUDGET (MANDATORY):
-  You must calculate and mandate an explicit word count target for EACH ACT so downstream nodes do not compress a 9-minute video into a 5-minute summary.
+  You must calculate and mandate an explicit word count target for EACH ACT so downstream nodes neither compress nor pad the content — each act's budget comes from the points it carries.
   Example for 9 minutes (~1,250–1,350 words total at 140 wpm):
   * Hook: 80–100 words (0:00–0:45)
   * Act 1 (The Relatable Hook & Human Stakes): 200–250 words (0:45–2:00)
