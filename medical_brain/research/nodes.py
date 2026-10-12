@@ -1608,6 +1608,50 @@ def _guide_weakest(strengths) -> str:
     return min(present, key=lambda s: GUIDE_STRENGTH_ORDER.index(s)) if present else ""
 
 
+# The model sometimes writes its own evidence label in the item text ("... (proven)")
+# even though the code computes the real label from the cited facts. Those parentheses
+# are removed so the text the patient sees never contradicts the stored strength.
+_EVIDENCE_LABEL_RE = re.compile(
+    r"\(\s*(?:"
+    r"(?:not\s+)?proven"
+    r"|(?:probably|likely)\s+helps?"
+    r"|may\s+help"
+    r"|untested"
+    r"|(?:low[- ]quality|high[- ]quality|moderate|strong|weak|limited|mixed)\s+(?:evidence|certainty)"
+    r")\s*\)",
+    re.IGNORECASE)
+
+
+def _strip_evidence_labels(text: str) -> tuple:
+    """Remove parenthetical evidence labels and tidy the gaps they leave.
+
+    Returns (cleaned_text, number_removed). Only parentheses whose whole content is an
+    evidence phrase go; descriptive parentheses such as "(ACE inhibitors)" stay."""
+    cleaned, removed = _EVIDENCE_LABEL_RE.subn("", text or "")
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    cleaned = re.sub(r"\s+([.,;:!?])", r"\1", cleaned)
+    return cleaned.strip(), removed
+
+
+# A safety claim is "safe ... in/during/for pregnancy|pregnant|breastfeeding|nursing"
+# (within ~60 characters) or the compound "pregnancy-safe". It is only allowed when a
+# cited fact actually says safe + pregnancy/breastfeeding.
+_PREGNANCY_SAFE_RE = re.compile(
+    r"(?:safe(?:ly)?\b[^.\n]{0,60}?\b(?:in|during|for)\s+"
+    r"(?:pregnan(?:cy|t)|breastfeed\w*|nursing)\b"
+    r"|pregnan(?:cy|t)[- ]safe\b)",
+    re.IGNORECASE)
+
+
+def _facts_say_pregnancy_safe(claims) -> bool:
+    """True when a cited fact's claim contains "safe" together with pregnancy/breastfeeding."""
+    for claim in claims:
+        c = str(claim or "").lower()
+        if "safe" in c and ("pregnan" in c or "breastfeed" in c or "nursing" in c):
+            return True
+    return False
+
+
 _PROMISE_OVERCLAIM = re.compile(
     r"\b(within (a few )?(seconds|minutes)|in (\d+ )?seconds|instantly|immediately|cures?|guarantee[sd]?|"
     r"the only (way|solution)|forever)\b", re.IGNORECASE)
@@ -1650,7 +1694,8 @@ def validate_guide(guide: dict, state: dict) -> tuple:
     facts = verified_facts(state)
     valid = {f["id"] for f in facts}
     by_id = {f["id"]: f for f in facts}
-    report = {"kept": 0, "dropped": 0, "by_reason": {}, "dropped_items": [], "moved_to_not_proven": []}
+    report = {"kept": 0, "dropped": 0, "by_reason": {}, "dropped_items": [],
+              "moved_to_not_proven": [], "labels_removed": 0}
 
     def drop(kind, text, reason, category):
         report["dropped"] += 1
@@ -1661,10 +1706,28 @@ def validate_guide(guide: dict, state: dict) -> tuple:
         if not isinstance(item, dict):
             drop(kind, str(item), "not an object", "not_object")
             return None
-        text = _guide_item_text(item, fields)
+        out = dict(item)
+        # The model's own parenthetical evidence labels are dropped from the text: the code
+        # computes the real label below, and a text label would contradict it.
+        for key in fields:
+            if out.get(key):
+                cleaned, removed = _strip_evidence_labels(str(out[key]))
+                out[key] = cleaned
+                report["labels_removed"] += removed
+        text = _guide_item_text(out, fields)
         ids = _guide_ids(item.get("facts"), valid)
         if not ids:
             drop(kind, text or "(empty)", "no valid verified fact id", "no_valid_fact_id")
+            return None
+        # A warning ("not safe in pregnancy", "unsafe while breastfeeding") is never dropped.
+        safe_claim = _PREGNANCY_SAFE_RE.search(text)
+        if safe_claim and re.search(r"\b(?:not|never|isn't|aren't|unsafe|no longer)\b[^.\n]{0,20}$",
+                                    text[:safe_claim.start()] + " ", re.IGNORECASE):
+            safe_claim = None
+        if safe_claim and \
+                not _facts_say_pregnancy_safe(by_id[fid].get("claim", "") for fid in ids):
+            drop(kind, text, "safety claim for pregnancy/breastfeeding not in the cited facts",
+                 "unsupported_pregnancy_safety")
             return None
         claimed = set()
         for fid in ids:
@@ -1674,7 +1737,6 @@ def validate_guide(guide: dict, state: dict) -> tuple:
             drop(kind, text, "number(s) " + ", ".join(sorted(missing)) + " not in the cited facts",
                  "invented_number")
             return None
-        out = dict(item)
         out["facts"] = ids
         strength = _guide_weakest(by_id[fid].get("strength", "n/a") for fid in ids)
         if strength:
@@ -1768,7 +1830,8 @@ def guide_editor(state: dict) -> dict:
     if not facts:
         _log("guide: no verified facts — no patient guide for this run")
         return {"patient_guide": {}, "guide_report": {"kept": 0, "dropped": 0, "by_reason": {},
-                                                      "dropped_items": [], "moved_to_not_proven": []}}
+                                                      "dropped_items": [], "moved_to_not_proven": [],
+                                                      "labels_removed": 0}}
     rows = classic_check_table(state)
     classic_lines = [f"- {r['item']} — {r['verdict']} — facts {', '.join(r['fact_ids']) or '—'} — "
                      f"complementary {'yes' if r.get('complementary') else 'no'} — "
@@ -1811,7 +1874,8 @@ Output ONLY the JSON object."""
                 _log(f"guide: still unreadable after retry ({e}); no patient guide this run")
     if not readable:                      # no guide: the video falls back to the full dossier
         return {"patient_guide": {}, "guide_report": {"kept": 0, "dropped": 0, "by_reason": {},
-                                                      "dropped_items": [], "moved_to_not_proven": []}}
+                                                      "dropped_items": [], "moved_to_not_proven": [],
+                                                      "labels_removed": 0}}
     clean, report = validate_guide(data, state)
     _log(f"guide: {report['kept']} items kept, {report['dropped']} dropped, "
          f"{len(report['moved_to_not_proven'])} moved to not proven")

@@ -2058,6 +2058,64 @@ class GuideValidationTest(unittest.TestCase):
         self.assertEqual(clean["action_card"]["do_now"], [])
         self.assertEqual(report["by_reason"], {"not_object": 1, "no_valid_fact_id": 1})
 
+    def test_parenthetical_evidence_labels_are_stripped(self):
+        facts = [_mk_fact("F1", "magnesium", "probably_helps"),
+                 _mk_fact("F2", "magnesium", "proven")]
+        guide = empty_guide(action_card=empty_action(do_now=[
+            {"text": "Cognitive behavioral therapy and biofeedback to reduce attack frequency (proven)",
+             "facts": ["F1"]},
+            {"text": "Physical therapy (moderate evidence) and rest (Probably helps).",
+             "facts": ["F2"]}]))
+        clean, report = nodes.validate_guide(guide, self.state(facts))
+        items = clean["action_card"]["do_now"]
+        self.assertEqual([i["text"] for i in items], [
+            "Cognitive behavioral therapy and biofeedback to reduce attack frequency",
+            "Physical therapy and rest."])
+        self.assertEqual(report["labels_removed"], 3)
+        # The written label is gone; the code-computed (weakest cited) strength survives.
+        self.assertEqual(items[0]["strength"], "probably_helps")
+        self.assertEqual(items[1]["strength"], "proven")
+
+    def test_non_label_parentheses_are_kept(self):
+        facts = [_mk_fact("F1", "triptans", "proven")]
+        guide = empty_guide(action_card=empty_action(do_now=[
+            {"text": "Triptans (ACE inhibitors) relieve attacks.", "facts": ["F1"]}]))
+        clean, report = nodes.validate_guide(guide, self.state(facts))
+        self.assertEqual([i["text"] for i in clean["action_card"]["do_now"]],
+                         ["Triptans (ACE inhibitors) relieve attacks."])
+        self.assertEqual(report["labels_removed"], 0)
+
+    def test_pregnancy_safety_claim_without_cited_fact_is_dropped(self):
+        facts = [_mk_fact("F1", "magnesium", "proven")]
+        guide = empty_guide(action_card=empty_action(do_now=[
+            {"text": "Magnesium is safe in pregnancy.", "facts": ["F1"]},
+            {"text": "Rest the muscle.", "facts": ["F1"]}]))
+        clean, report = nodes.validate_guide(guide, self.state(facts))
+        self.assertEqual([i["text"] for i in clean["action_card"]["do_now"]], ["Rest the muscle."])
+        self.assertEqual(report["by_reason"].get("unsupported_pregnancy_safety"), 1)
+        self.assertIn("not in the cited facts", report["dropped_items"][0]["reason"])
+
+    def test_breastfeeding_and_pregnancy_safe_wording_checked(self):
+        facts = [_mk_fact("F1", "magnesium", "proven")]
+        guide = empty_guide(action_card=empty_action(do_now=[
+            {"text": "This option is pregnancy-safe.", "facts": ["F1"]},
+            {"text": "It is safe during breastfeeding.", "facts": ["F1"]}]))
+        clean, report = nodes.validate_guide(guide, self.state(facts))
+        self.assertEqual(clean["action_card"]["do_now"], [])
+        self.assertEqual(report["by_reason"].get("unsupported_pregnancy_safety"), 2)
+
+    def test_pregnancy_safety_claim_kept_when_cited_fact_says_so(self):
+        facts = [{"id": "F1", "section": "A", "kind": "fact",
+                  "claim": "Magnesium is safe during pregnancy.",
+                  "quote": "safe during pregnancy", "source_ids": ["S1"], "level": 2,
+                  "status": "verified", "strength": "probably_helps"}]
+        guide = empty_guide(action_card=empty_action(do_now=[
+            {"text": "Magnesium is safe during pregnancy.", "facts": ["F1"]}]))
+        clean, report = nodes.validate_guide(guide, self.state(facts))
+        self.assertEqual([i["text"] for i in clean["action_card"]["do_now"]],
+                         ["Magnesium is safe during pregnancy."])
+        self.assertNotIn("unsupported_pregnancy_safety", report["by_reason"])
+
 
 class GuideRenderTest(unittest.TestCase):
     def state(self, **kw):
@@ -2433,3 +2491,16 @@ class GuidePromiseCheckTest(unittest.TestCase):
         ok, _ = nodes.validate_guide({"promise": "You will know what to do when a cramp strikes and when to see a doctor.",
                                       "action_card": {}, "sections": []}, state)
         self.assertTrue(ok["promise"])
+
+
+class PregnancyWarningKeptTest(unittest.TestCase):
+    def test_not_safe_warning_is_not_dropped(self):
+        from medical_brain.research import nodes
+        state = {"facts": [{"id": "F1", "status": "verified", "strength": "harmful", "section": "A", "kind": "fact",
+                            "claim": "ACE inhibitors are contraindicated in pregnancy.", "source_ids": ["S1"]}],
+                 "sources": {"S1": {"title": "t"}}, "outline": [{"id": "A", "title": "A"}]}
+        guide = {"action_card": {"doesnt_work_or_risky": [
+            {"text": "ACE inhibitors are not safe in pregnancy.", "facts": ["F1"]}]}}
+        clean, report = nodes.validate_guide(guide, state)
+        self.assertEqual(len(clean["action_card"]["doesnt_work_or_risky"]), 1)
+
