@@ -209,7 +209,7 @@ class ProductionChapterModeTest(unittest.TestCase):
         from medical_brain.exports import workbook as ew
         rows = ew.broll_rows(text)
         self.assertEqual([r["num"] for r in rows], ["1", "2", "3"])   # contiguous across chapters
-        self.assertEqual(rows[2]["prompt"], "PROMPT_THREE")
+        self.assertEqual(rows[2]["prompt"], "PROMPT_THREE, slow push-in camera move")
 
     def test_revision_reruns_only_flagged_chapters(self):
         stored = {

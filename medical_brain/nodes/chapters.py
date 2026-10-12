@@ -9,7 +9,7 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 
-from ..exports.workbook import spoken_text
+from ..exports.workbook import normalize_ar, spoken_text
 from ..llm.progress import quiet
 from ..utils.llm_json import parse_llm_json
 
@@ -425,6 +425,56 @@ def join_chapters(parts) -> str:
         if part and str(part).strip():
             texts.append(str(part).strip())
     return "\n\n".join(texts)
+
+
+# A repeated passage is the same sentence said twice: identical normalized words, or
+# word sets that overlap this much (order ignored, so a lightly reworded repeat counts).
+REPEAT_JACCARD = 0.8
+_SENTENCE_SPLIT_RE = re.compile(r"[.!?؟…]+")
+
+
+def _segment_sentences(text: str) -> list:
+    """(normalized_words, original_sentence) for each sentence of a segment, with [cues]
+    and stage directions dropped (spoken_text) and normalized like the cue checks."""
+    out = []
+    for chunk in _SENTENCE_SPLIT_RE.split(spoken_text(text)):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        words = normalize_ar(chunk).split()
+        if words:
+            out.append((words, chunk))
+    return out
+
+
+def repeated_sentences(script: str, min_words: int = 7) -> list:
+    """[(sentence, first_location, second_location)] for sentences the script says more
+    than once (identical normalized word sequences, or word sets with Jaccard >= 0.8):
+    the first occurrence is kept, the later one is the one to remove or rephrase. Only
+    sentences of at least `min_words` words are compared. A location is the
+    "=== chapter ===" title, or "OPENING"/"CLOSING" for the parts before the first and
+    after the last header."""
+    located = []
+    for title, text in split_by_chapters(script or ""):
+        label = title.strip() if title and title.strip() else ("OPENING" if not located else "CLOSING")
+        for words, raw in _segment_sentences(text):
+            if len(words) >= min_words:
+                located.append((words, raw, label))
+    out = []
+    for i in range(len(located)):
+        wi, rawi, loci = located[i]
+        seti = set(wi)
+        for j in range(i + 1, len(located)):
+            wj, _, locj = located[j]
+            if wi == wj:
+                match = True
+            else:
+                union = seti | set(wj)
+                match = bool(union) and len(seti & set(wj)) / len(union) >= REPEAT_JACCARD
+            if match:
+                out.append((rawi, loci, locj))
+                break
+    return out
 
 
 def split_segment_answer(text: str):

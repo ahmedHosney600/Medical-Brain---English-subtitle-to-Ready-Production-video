@@ -156,7 +156,8 @@ class BrollRealTimelineTest(unittest.TestCase):
             self._row(1, "0:05", "word10 word11", "a man checks his wrist, slow push-in")
             + self._row(2, "0:10", "word180 word181", "a man walks a street, slow dolly"))
         problems = " ".join(production.broll_engagement_problems(table, "", 10, script=script, wpm=60))
-        self.assertIn("No B-roll between 0:10 and 3:00", problems)
+        self.assertIn("No B-roll between", problems)
+        self.assertIn("0:10–3:00", problems)
         # The model's own timestamps are 5s apart: without the script, no gap is flagged.
         plain = " ".join(production.broll_engagement_problems(table, "", 10))
         self.assertNotIn("No B-roll between", plain)
@@ -167,7 +168,8 @@ class BrollRealTimelineTest(unittest.TestCase):
             self._row(1, "0:05", "word10 word11", "clip A of a wrist, slow push-in")
             + self._row(2, "0:05", "word14 word15", "clip B of a hand, slow dolly"))
         problems = " ".join(production.broll_engagement_problems(table, "", 5, script=script, wpm=60))
-        self.assertIn("B-rolls #1 and #2 start 4s apart", problems)
+        self.assertIn("B-rolls #1 and #2", problems)
+        self.assertIn("start 4s apart", problems)
 
     def test_near_identical_prompts_are_flagged(self):
         script = words_script(300)

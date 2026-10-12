@@ -862,6 +862,13 @@ def _integrity_prompt(state: PipelineState, script: str, target_words: int) -> s
         parts.append(f"FULL SCRIPT (word count {words}):\n{script}")
     else:
         parts.append(f"COMPACT VIEW PER CHAPTER (the full script is {words} words):\n{_compact_view(state, script)}")
+    repeats = chapters.repeated_sentences(script)
+    if repeats:
+        lines = ["REPEATED SENTENCES (code check) — keep the first occurrence; remove or "
+                 "rephrase the later one with an integrity edit:"]
+        for sentence, first, second in repeats:
+            lines.append(f'- "{sentence}" — first in {first}; repeated in {second}')
+        parts.append("\n".join(lines))
     return "\n\n".join(parts)
 
 
@@ -887,6 +894,7 @@ def _refinement_chapter_mode(state: PipelineState, blueprint: dict) -> dict:
     edited = chapters.clean_spoken_script(edited)
     for line in log:
         print(f"  🧵 integrity: {line}")
+    print(f"  🧵 integrity: {len(chapters.repeated_sentences(edited))} repeated sentence(s) remain after edits")
     report = {"score": pick(data, "integrity_score", kind=int) or 0,
               "summary": str(pick(data, "summary", default="") or ""),
               "issues": pick(data, "issues", default=[]) or [],

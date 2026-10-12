@@ -60,6 +60,25 @@ def find_cue(cue: str, norm_script: str) -> int:
     return len(re.findall(r"(?:^|\s)" + re.escape(c) + r"(?=\s|$)", norm_script))
 
 
+def cue_positions(cue: str, norm_script: str) -> list:
+    """Word positions (index of the cue's first spoken word) of EVERY occurrence of the
+    cue in the normalized script, in order. [] when the cue is empty or absent. Uses the
+    same normalisation as find_cue, so the caller can pick the occurrence at/after a
+    running position (rows are in script order)."""
+    c = normalize_ar(spoken_text(cue))
+    if not c:
+        return []
+    return [len(norm_script[:m.start(1)].split())
+            for m in re.finditer(r"(?:^|\s)(" + re.escape(c) + r")(?=\s|$)", norm_script)]
+
+
+def _pick_at_or_after(positions: list, after: int):
+    """The first position at/after `after`, else the first overall (None when empty)."""
+    if not positions:
+        return None
+    return next((p for p in positions if p >= after), positions[0])
+
+
 def blueprint_wpm(blueprint) -> float:
     """The blueprint's words_per_minute (135 by default; junk or non-positive → 135)."""
     bp = blueprint if isinstance(blueprint, dict) else {}
@@ -70,29 +89,34 @@ def blueprint_wpm(blueprint) -> float:
     return wpm if wpm > 0 else 135
 
 
-def cue_seconds(cue: str, script: str, wpm: float = 135) -> Optional[float]:
+def cue_seconds(cue: str, script: str, wpm: float = 135, after: int = 0) -> Optional[float]:
     """Seconds from the start of the spoken script to where `cue` begins:
     (spoken words before the cue / wpm) × 60. None when the cue is empty or not found.
-    Uses the same normalisation as find_cue, so it matches how cues are checked."""
+
+    `after` is a running word position: when the cue repeats, the occurrence at/after it
+    is the one meant (rows are processed in script order). With the default 0 the first
+    occurrence is used, which is the old behaviour. Uses the same normalisation as
+    find_cue, so it matches how cues are checked."""
     try:
         wpm = float(wpm or 135)
     except (TypeError, ValueError):
         wpm = 135
     if wpm <= 0:
         wpm = 135
-    c = normalize_ar(spoken_text(cue))
-    if not c:
-        return None
     norm_script = normalize_ar(spoken_text(script))
-    m = re.search(r"(?:^|\s)(" + re.escape(c) + r")(?=\s|$)", norm_script)
-    if not m:
+    position = _pick_at_or_after(cue_positions(cue, norm_script), after)
+    if position is None:
         return None
-    words_before = len(norm_script[:m.start(1)].split())
-    return words_before / wpm * 60.0
+    return position / wpm * 60.0
 
 
-def cue_problem(cue: str, norm_script: str, min_words: int = 3) -> Optional[str]:
-    """None when the cue is usable; otherwise a short reason."""
+def cue_problem(cue: str, norm_script: str, min_words: int = 3, after: Optional[int] = None) -> Optional[str]:
+    """None when the cue is usable; otherwise a short reason.
+
+    `after` is an optional running word position. A cue that occurs more than once is
+    still usable when exactly one of its occurrences sits at/after `after` (rows are in
+    script order, so that occurrence is the one this row means); only when order cannot
+    disambiguate is it reported as "appears N times"."""
     raw = (cue or "").strip()
     if not raw or not normalize_ar(spoken_text(raw)) or raw in ("—", "-") \
             or any(h in raw.lower() for h in _PLACEHOLDER_HINTS if h != "—"):
@@ -100,12 +124,14 @@ def cue_problem(cue: str, norm_script: str, min_words: int = 3) -> Optional[str]
     words = normalize_ar(spoken_text(raw)).split()
     if len(words) < min_words:
         return f"too short ({len(words)} words) to find reliably"
-    n = find_cue(raw, norm_script)
-    if n == 0:
+    positions = cue_positions(raw, norm_script)
+    if not positions:
         return "not found word-for-word in the production script"
-    if n > 1:
-        return f"appears {n} times in the script (add words until it is unique)"
-    return None
+    if len(positions) == 1:
+        return None
+    if after is not None and len([p for p in positions if p >= after]) == 1:
+        return None
+    return f"appears {len(positions)} times in the script (add words until it is unique)"
 
 
 def _bare(word: str) -> str:
@@ -265,19 +291,21 @@ def repair_cue_table(text: str, section_key: str, start_col: int, end_col, scrip
         for col in cols:
             cue = cells[col]
             end = col == end_col
-            if cue_problem(cue, norm_script, min_words=3) is None:
+            # Order-aware: a cue repeated in the script is fine when only this row's
+            # occurrence is at/after the previous row's position (rows are in order).
+            if cue_problem(cue, norm_script, min_words=3, after=pos) is None:
                 found = _locate(normalize_ar(spoken_text(cue)).split(), idx, pos, length, max_length)
             else:
                 cue_words = normalize_ar(spoken_text(cue)).split()
                 found = _locate(cue_words, idx, pos, length, max_length, end_anchor=end) if cue_words else None
                 if found:
                     new = idx.text(*found)
-                    if new and cue_problem(new, norm_script, min_words=3) is None:
+                    if new and cue_problem(new, norm_script, min_words=3, after=pos) is None:
                         parts[col + 1] = f" {new} "
                         fixed += 1
                         if len(examples) < 5:
                             examples.append(f"{cue} → {new}")
-            if found and col == start_col:
+            if found and col == start_col and found[0] >= pos:
                 pos = found[0]
         lines[i] = "|".join(parts)
     return "".join(lines), fixed, examples
@@ -296,14 +324,24 @@ def repair_cues(package_text: str, script: str) -> tuple:
 
 
 def check_cue_rows(rows: list, script: str, min_words: int = 3) -> list:
-    """rows: [(label, start_cue, end_cue), ...] → list of problem strings."""
+    """rows: [(label, start_cue, end_cue), ...] → list of problem strings.
+
+    Rows are in script order, so a cue that repeats is accepted when exactly one of its
+    occurrences sits at/after the previous row's matched position: that occurrence is the
+    one this row means. Only when order cannot disambiguate is it reported as repeated."""
     norm = normalize_ar(spoken_text(script))
     problems = []
+    pos = 0
     for label, start, end in rows:
         for kind, cue in (("START", start), ("END", end)):
-            why = cue_problem(cue, norm, min_words)
+            why = cue_problem(cue, norm, min_words, after=pos)
             if why:
                 problems.append(f"{label} {kind} CUE '{cue}': {why}")
+                continue
+            # Advance only forwards: a row's END cue never pulls the position back.
+            later = [p for p in cue_positions(cue, norm) if p >= pos]
+            if later:
+                pos = later[0]
     return problems
 
 
@@ -640,14 +678,19 @@ _TIME_COLUMN_NAMES = ("TIMECODE", "TIMESTAMP", "⏱")
 _CUE_COLUMN_NAMES = ("START CUE", "START", "▶")
 
 
-def _rewrite_time_column(text: str, section_key: str, script: str, wpm: float) -> str:
+def _rewrite_time_column(text: str, section_key, script: str, wpm: float, after: int = 0) -> str:
     """Rewrites the time column of every table in `section_key` whose header also names a
     START CUE column: the time becomes M:SS from where that cue begins in `script`.
-    A row whose cue is not found keeps its original value."""
+    A row whose cue is not found keeps its original value. `section_key` None means the
+    whole text (a bare table with no part heading around it). Rows are processed in order,
+    so a repeated cue resolves to the occurrence at/after the previous row's position."""
     lines = text.splitlines(keepends=True)
-    in_section, header_seen, time_col, cue_col = False, False, None, None
+    norm_script = normalize_ar(spoken_text(script))
+    in_section = section_key is None
+    header_seen, time_col, cue_col = False, None, None
+    pos = after
     for i, line in enumerate(lines):
-        if _is_part_heading(line.rstrip("\n")):
+        if section_key is not None and _is_part_heading(line.rstrip("\n")):
             in_section = section_key.upper() in line.upper()
             header_seen = False
             continue
@@ -663,13 +706,29 @@ def _rewrite_time_column(text: str, section_key: str, script: str, wpm: float) -
             continue
         if not header_seen or len(cells) <= max(time_col, cue_col):
             continue
-        seconds = cue_seconds(cells[cue_col], script, wpm)
+        cue = cells[cue_col]
+        seconds = cue_seconds(cue, script, wpm, after=pos)
         if seconds is None:
             continue
+        # Advance only forwards: a repeated cue resolves to the occurrence at/after the
+        # previous row's position, never an earlier one.
+        later = [p for p in cue_positions(cue, norm_script) if p >= pos]
+        if later:
+            pos = later[0]
         total = int(round(seconds))
         parts[time_col + 1] = f" {total // 60}:{total % 60:02d} "
         lines[i] = "|".join(parts)
     return "".join(lines)
+
+
+def rewrite_broll_timestamps(text: str, script: str, wpm: float = 135, after: int = 0) -> str:
+    """Rewrites the Timestamp column of the B-roll prompt table (wherever it sits, with
+    no part heading needed) to real M:SS from where each row's START CUE begins in the
+    spoken script. Called right after the B-roll step produces its table so its revision
+    passes and the critique see the real timeline (same rewrite the final package runs)."""
+    if not text or not script:
+        return text
+    return _rewrite_time_column(text, None, script, wpm, after=after)
 
 
 def rewrite_timecodes(text: str, script: str, wpm: float = 135) -> str:

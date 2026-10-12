@@ -316,7 +316,7 @@ class BrollEngagementTest(unittest.TestCase):
             '| 2 | 3:00 | a | b | c | 🖼️ Image | paper | A lab paper on a desk. | center | 4s |\n')
         problems = " ".join(broll_engagement_problems(table, "", 10))
         for expected in ("no camera move", "on-screen text", "no Ken Burns", "Only 2 B-rolls",
-                         "first 20 seconds", "between 0:40 and 3:00"):
+                         "first 20 seconds", "0:40–3:00"):
             self.assertIn(expected, problems)
 
     def test_engaging_prompts_pass(self):

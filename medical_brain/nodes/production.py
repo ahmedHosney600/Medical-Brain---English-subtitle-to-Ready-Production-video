@@ -460,7 +460,15 @@ def _broll_chapter_mode(state: PipelineState, system_prompt: str, blueprint: dic
                         max_tokens=chapters.budget_for_words(len(span["text"].split())))
 
     outputs, titles, texts, keys = _run_per_chapter(state, "broll_prompts", spans, workers, generate)
+    # Repair the model's own tables before storing: camera moves for video rows, then
+    # real M:SS timestamps from the cues (revision passes and the critique then see them).
+    wpm = ew.blueprint_wpm(state.get("blueprint"))
+    for i, key in enumerate(keys):
+        after = int(round(spans[i]["start_s"] * wpm / 60.0)) if wpm else 0
+        outputs[key] = finalize_broll_table(state, outputs.get(key, ""), after=after)
+    texts = [outputs.get(keys[i], "") for i in range(len(spans))]
     joined, mapping = _join_broll(titles, texts, keys)
+    joined = finalize_broll_table(state, joined)
     return {"broll_prompts": joined,
             "broll_by_chapter": mapping,
             "production_chapter_outputs": _store_step(state, "broll_prompts", outputs)}
@@ -507,7 +515,7 @@ PRODUCTION CRITIQUE REPORT:
 {state.get("production_critique_output", "")}"""
 
     response = call_llm(system_prompt, user_prompt, temperature=0.6, max_tokens=9000)
-    return {"broll_prompts": response}
+    return {"broll_prompts": finalize_broll_table(state, response)}
 
 
 def broll_prompt_generator(state: PipelineState) -> dict:
@@ -525,6 +533,61 @@ _CAMERA_MOVE = re.compile(
     r"camera (moves|drifts|glides|rises|descends|follows|circles))", re.IGNORECASE)
 # On-screen words or numbers requested inside the generated image (AI garbles them).
 _TEXT_IN_IMAGE = re.compile(r"[\"“«][^\"”»]{1,60}[\"”»]|\bnumbers? like\b|\breadout\b|\bthe words?\b", re.IGNORECASE)
+
+
+def auto_repair_camera_moves(table: str) -> tuple:
+    """Code-repairs a trivial omission: every 🎬/video B-roll row whose prompt has no
+    camera move gets ", slow push-in camera move" inserted before its first Avoid/
+    Negative note (or appended at the end). Returns (table, fixed_count)."""
+    lines = (table or "").splitlines(keepends=True)
+    c_type = c_prompt = None
+    fixed = 0
+    for i, line in enumerate(lines):
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = [c.strip() for c in re.split(r"(?<!\\)\|", line)[1:-1]]
+        if not cells:
+            continue
+        if all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
+            head = [c.strip().upper() for c in re.split(r"(?<!\\)\|", lines[i - 1])[1:-1]] if i else []
+            c_type = next((k for k, h in enumerate(head) if "TYPE" in h or "LAYER" in h), None)
+            c_prompt = next((k for k, h in enumerate(head) if "PROMPT" in h), None)
+            continue
+        if c_type is None or c_prompt is None or max(c_type, c_prompt) >= len(cells):
+            continue
+        kind = cells[c_type]
+        if "VIDEO" not in kind.upper() and "🎬" not in kind:
+            continue
+        prompt = cells[c_prompt]
+        if _CAMERA_MOVE.search(prompt):
+            continue
+        move = ", slow push-in camera move"
+        avoid = re.search(r"\b(avoid|negative)\b", prompt, re.IGNORECASE)
+        if avoid:
+            new_prompt = prompt[:avoid.start()].rstrip(" ,") + move + " " + prompt[avoid.start():]
+        else:
+            new_prompt = prompt.rstrip(" ,") + move
+        parts = re.split(r"(?<!\\)\|", line)
+        parts[c_prompt + 1] = f" {new_prompt.strip()} "
+        lines[i] = "|".join(parts)
+        fixed += 1
+    return "".join(lines), fixed
+
+
+def finalize_broll_table(state: PipelineState, table: str, after: int = 0) -> str:
+    """Code repairs the B-roll step's own table before it is stored: a camera move for
+    every video row that lacks one, then real M:SS timestamps from the START CUES (see
+    workbook.rewrite_broll_timestamps) so revision passes and the critique see the real
+    timeline instead of the model's invented timestamps. `after` is the word position the
+    table's first row starts at (0 for a whole-script table, the chapter's start word
+    position for a single chapter's table)."""
+    table, fixed = auto_repair_camera_moves(table)
+    if fixed:
+        print(f"  🔧 added a camera move to {fixed} video B-rolls")
+    script = state.get("refined_script", "")
+    if table and script:
+        table = ew.rewrite_broll_timestamps(table, script, ew.blueprint_wpm(state.get("blueprint")), after=after)
+    return table
 
 
 def _seconds(stamp: str):
@@ -591,11 +654,14 @@ def broll_engagement_problems(broll_prompts: str, overlay_guide: str = "", minut
     c_num, c_time, c_type = col("#"), col("TIMESTAMP", "TIME"), col("TYPE")
     c_prompt, c_notes = col("GENERATION PROMPT", "PROMPT"), col("COMPOSITION", "NOTES")
     c_cue = col("START CUE", "START", "▶")
+    c_end = col("END CUE", "END", "⏹")
     wpm = ew.blueprint_wpm({"words_per_minute": wpm})
     if script:
         spoken = len(ew.spoken_text(script).split())
         minutes = spoken / wpm if spoken else 0
+    norm_script = ew.normalize_ar(ew.spoken_text(script)) if script else ""
     problems, timed, prompts, rows = [], [], [], 0
+    pos = 0
     for line in lines[head + 1:]:
         if not line.strip().startswith("|"):
             if rows:
@@ -609,15 +675,22 @@ def broll_engagement_problems(broll_prompts: str, overlay_guide: str = "", minut
         prompt = cells[c_prompt] if c_prompt is not None else ""
         kind = cells[c_type] if c_type is not None else ""
         notes = cells[c_notes] if c_notes is not None and c_notes < len(cells) else ""
+        start_cue = cells[c_cue] if c_cue is not None and c_cue < len(cells) else ""
+        end_cue = cells[c_end] if c_end is not None and c_end < len(cells) else ""
         t = None
         if script and c_cue is not None and c_cue < len(cells):
-            seconds = ew.cue_seconds(cells[c_cue], script, wpm)
+            # Rows are in script order: a repeated cue resolves to the occurrence at/after
+            # the previous row's position, so the times are on the real timeline.
+            seconds = ew.cue_seconds(start_cue, script, wpm, after=pos)
             if seconds is not None:
                 t = int(round(seconds))
+                positions = [p for p in ew.cue_positions(start_cue, norm_script) if p >= pos]
+                if positions:
+                    pos = positions[0]
         if t is None and c_time is not None:
             t = _seconds(cells[c_time])
         if t is not None:
-            timed.append((t, num))
+            timed.append((t, num, start_cue, end_cue))
         prompts.append((num, _broll_content_words(prompt)))
         visible = _broll_visible(prompt)
         if "VIDEO" in kind.upper() or "🎬" in kind:
@@ -635,19 +708,21 @@ def broll_engagement_problems(broll_prompts: str, overlay_guide: str = "", minut
     if minutes and rows + drawings < round(1.2 * minutes):
         problems.append(f"Only {rows} B-rolls + {drawings} whiteboard drawings for a ~{minutes:.0f}-minute video: "
                         f"plan at least {round(1.5 * minutes)} visual moments (about 1.5–2 per minute).")
-    timed.sort()
-    times = [t for t, _ in timed]
+    timed.sort(key=lambda row: row[0])
+    times = [t for t, _, _, _ in timed]
     if times and times[0] > 20:
         problems.append(f"The first B-roll starts at {times[0] // 60}:{times[0] % 60:02d}: add one in the first 20 seconds.")
     gap = 60 if script else 90
-    for (a, _), (b, _) in zip(timed, timed[1:]):
+    for (a, _, _, a_end), (b, _, b_start, _) in zip(timed, timed[1:]):
         if b - a > gap:
-            problems.append(f"No B-roll between {a // 60}:{a % 60:02d} and {b // 60}:{b % 60:02d}: "
+            problems.append(f"No B-roll between «{a_end}» and «{b_start}» "
+                            f"({a // 60}:{a % 60:02d}–{b // 60}:{b % 60:02d}, ~{b - a}s): "
                             "add one in that stretch (or a whiteboard drawing).")
     if script:
-        for (a, na), (b, nb) in zip(timed, timed[1:]):
+        for (a, na, na_start, _), (b, nb, nb_start, _) in zip(timed, timed[1:]):
             if b - a < 8:
-                problems.append(f"B-rolls #{na} and #{nb} start {b - a}s apart: too heavy — spread them or drop one.")
+                problems.append(f"B-rolls #{na} and #{nb} («{na_start}» and «{nb_start}») start {b - a}s apart: "
+                                "too heavy — spread them or drop one.")
         for i in range(len(prompts)):
             for j in range(i + 1, len(prompts)):
                 if _jaccard(prompts[i][1], prompts[j][1]) >= 0.5:
