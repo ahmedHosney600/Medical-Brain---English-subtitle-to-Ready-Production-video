@@ -47,12 +47,15 @@ AUDIT CRITERIA — score each (1-10):
    - Do they reference each other's timestamps correctly?
    - When a transition brings in a B-roll, does the B-roll's composition account for any planned icon overlay?
    - Is the overall visual "personality" consistent from start to finish?
+   - EXACT FIT: does each B-roll show what its exact line says (the drug, gesture, organ, food or situation being spoken about)? Name every B-roll that is generic filler or illustrates a different sentence.
+   - REPETITION: is any subject + action shown twice (e.g. two pill-blister close-ups)? Name the pair and say which to replace with what.
 
 8. DENSITY BALANCE (Critical):
    - Is any section visually overloaded? (transition + icon + B-roll all firing within 2 seconds)
    - Is any section visually barren during a complex explanation that needs visual support?
    - Does the density follow the content's complexity curve?
    - Are warm/emotional/personal moments left clean (zero or minimal post-production)?
+   - Is the viewer ever overloaded (B-roll + full-screen text + zoom on one sentence, or B-rolls closer than ~8 s) or bored (an explanation over ~40 s with nothing new on screen)? Give the cue words of each spot.
 
 9. PLATFORM FIT (Warning):
    - Do the visual choices match the target platform's conventions?

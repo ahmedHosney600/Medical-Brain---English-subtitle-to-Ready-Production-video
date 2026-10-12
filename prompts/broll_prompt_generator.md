@@ -30,7 +30,9 @@ E. NO TEXT INSIDE GENERATED MEDIA: AI image/video tools garble letters and digit
 
 F. ONE CHANNEL LOOK: write the "Consistent style direction" once (colour grade, colour temperature, one accent colour, contrast, lens family) and repeat its key words in EVERY prompt, so every clip looks shot in the same session.
 
-G. DENSITY THAT HOLDS ATTENTION: at least one B-roll (or whiteboard drawing) in the first 20 seconds; during explanations, a B-roll, drawing or overlay at least every 30–40 seconds; overall roughly 1.5–2 B-roll moments per minute. Leave warm, personal, eye-contact moments on the presenter.
+G. DENSITY THAT HOLDS ATTENTION — WITHOUT OVERLOAD: at least one B-roll (or whiteboard drawing) in the first 20 seconds; during explanations, a B-roll, drawing or overlay at least every 30–40 seconds; overall roughly 1.5–2 B-roll moments per minute OF THE ACTUAL SCRIPT (its length is given in the input — size the count to it, not to a planned duration). Never stack: a B-roll, a full-screen title/drawing and a zoom do not start on the same sentence, and two B-rolls are at least ~8 seconds apart. Leave warm, personal, eye-contact moments (empathy, advice, the CTA) on the presenter. A clip lasts 3–8 seconds — long enough to read, short enough to keep pace.
+H. EXACT FIT TO THE LINE: each B-roll illustrates the sentence its cues cover — the "Script Context" column quotes or closely paraphrases that sentence, and the "Main Cue" is the concrete thing that sentence talks about (the drug, the gesture, the organ, the food, the situation). A clip that would fit anywhere in the video is filler; rewrite it so it could only belong to this line.
+I. NO REPEATED IMAGERY: never reuse the same subject + action twice in a video (e.g. two "hands with a pill blister pack" clips); if the script returns to an idea, show a different angle of it (the consequence, the setting, the mechanism, the person's reaction).
 
 H. LOCAL AND HUMAN: Egyptian / Arab-world settings, faces and objects whenever the scene has people or places; natural, believable expressions (worried, relieved, curious) — never exaggerated acting.
 
@@ -109,7 +111,8 @@ OUTPUT FORMAT:
 ### Visual Consistency Checklist
 - [ ] Every 🎬 prompt has a subject action AND a named camera move; every 🖼️ still has a Ken Burns move in Composition Notes
 - [ ] No prompt asks for readable text, numbers or UI words inside the image — those are Premiere overlays
-- [ ] First B-roll within 20 s; no explanation stretch longer than ~40 s without a visual change; ~1.5–2 B-rolls per minute
+- [ ] First B-roll within 20 s; no explanation stretch longer than ~40 s without a visual change; ~1.5–2 B-rolls per minute of the actual script; no two B-rolls within ~8 s; nothing stacked on one sentence
+- [ ] Every B-roll could only belong to its line (exact fit); no subject + action repeated anywhere in the video
 - [ ] No two consecutive B-rolls with the same shot size or subject type
 - [ ] All prompts include anti-AI-detection keywords (photorealistic, natural grain, real-camera lens)
 - [ ] All prompts share the same color temperature and lighting direction
