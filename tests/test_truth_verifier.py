@@ -141,7 +141,7 @@ class TruthVerifierWholeTightenTest(unittest.TestCase):
 
         with mock.patch.object(script_writing, "call_llm", fake_llm):
             out = quality.medical_truth_verifier(state(
-                refined_script=self.LONG, research_dossier="",
+                refined_script=self.LONG, research_dossier="", target_minutes=10,
                 blueprint={"target_minutes": 10, "chapters": [
                     {"id": "1", "title": "الفصل", "words": 1350}]}))
 
@@ -171,6 +171,40 @@ class TruthVerifierWholeTightenTest(unittest.TestCase):
                 blueprint={"chapters": [{"id": "1", "title": "الفصل", "words": 3000}]}))
 
         self.assertEqual(out["refined_script"], self.LONG.strip())
+
+    def test_soft_mode_keeps_a_mild_overrun(self):
+        # No state target (user gave no duration): 1700 words is 1.26 × the 1350 plan,
+        # under the 1.35× soft trigger — kept as written.
+        fake = FakeJSON(lambda system, user: (verifier_answer(self.LONG), "raw"))
+        use(self, fake)
+        with mock.patch.object(script_writing, "call_llm",
+                               lambda *a, **k: self.fail("soft mode must not trim a mild overrun")):
+            out = quality.medical_truth_verifier(state(
+                refined_script=self.LONG, research_dossier="",
+                blueprint={"target_minutes": 10, "chapters": [
+                    {"id": "1", "title": "الفصل", "words": 1350}]}))
+
+        self.assertEqual(out["refined_script"], self.LONG.strip())
+
+    def test_soft_mode_trims_a_far_overrun(self):
+        long_script = "كلمة " * 2000        # 1.48 × 1350: over the 1.35× soft trigger
+        fake = FakeJSON(lambda system, user: (verifier_answer(long_script), "raw"))
+        use(self, fake)
+        calls = []
+
+        def fake_llm(system, user, temperature=None, max_tokens=None, **kwargs):
+            calls.append(user)
+            return self.SHORT
+
+        with mock.patch.object(script_writing, "call_llm", fake_llm):
+            out = quality.medical_truth_verifier(state(
+                refined_script=long_script, research_dossier="",
+                blueprint={"target_minutes": 10, "chapters": [
+                    {"id": "1", "title": "الفصل", "words": 1350}]}))
+
+        self.assertEqual(len(calls), 1)
+        self.assertIn("TRIM this complete script", calls[0])
+        self.assertEqual(out["refined_script"], self.SHORT)
 
 
 if __name__ == "__main__":

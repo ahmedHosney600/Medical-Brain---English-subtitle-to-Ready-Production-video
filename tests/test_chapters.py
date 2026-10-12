@@ -549,7 +549,8 @@ class ChapterLengthGuardTest(unittest.TestCase):
 
         use(self, script_writing, "call_llm", FakeLLM(answer))
         with mock.patch("builtins.print"):
-            out = script_writing.body_restructurer(base_state(blueprint=self._bp()))
+            out = script_writing.body_restructurer(
+                base_state(blueprint=self._bp(), target_minutes=20))   # user gave a duration → strict
         return calls, out
 
     def test_overlong_chapter_is_tightened(self):
@@ -588,7 +589,8 @@ class ChapterLengthGuardTest(unittest.TestCase):
 
         use(self, script_writing, "call_llm", FakeLLM(answer))
         with mock.patch("builtins.print"):
-            out = script_writing.body_restructurer(base_state(blueprint=self._bp()))
+            out = script_writing.body_restructurer(
+                base_state(blueprint=self._bp(), target_minutes=20))
         tighten = [c for c in calls if "TIGHTEN this chapter" in c]
         self.assertEqual(len(tighten), 2)
         self.assertIn("b699", out["revised_body"])
@@ -607,7 +609,8 @@ class ChapterLengthGuardTest(unittest.TestCase):
 
         use(self, script_writing, "call_llm", FakeLLM(answer))
         with mock.patch("builtins.print"):
-            script_writing.body_restructurer(base_state(blueprint=self._bp()))
+            script_writing.body_restructurer(
+                base_state(blueprint=self._bp(), target_minutes=20))
         tighten = [system for system, user in seen if "TIGHTEN this chapter" in user]
         self.assertEqual(len(tighten), 1)
         self.assertIn("Your only job is to CUT", tighten[0])
@@ -639,7 +642,7 @@ class TotalLengthLineTest(unittest.TestCase):
     def test_single_chapter_refinement_gets_the_whole_video_target(self):
         fake = use(self, script_writing, "call_llm", FakeLLM(lambda *a: "REFINED"))
         bp = dict(ONE_CHAPTER, target_minutes=10, words_per_minute=135)
-        script_writing.script_refinement(base_state(blueprint=bp))
+        script_writing.script_refinement(base_state(blueprint=bp, target_minutes=10))
         self.assertIn("TARGET LENGTH: about 1350 spoken words for the WHOLE video", fake.calls[0]["user"])
 
     def test_no_minutes_no_line(self):
@@ -651,10 +654,10 @@ class SingleChapterUnchangedTest(unittest.TestCase):
 
     def test_body_prompt_unchanged(self):
         fake = use(self, script_writing, "call_llm", FakeLLM(lambda *a: "BODY"))
-        script_writing.body_restructurer(base_state(blueprint={}))
+        script_writing.body_restructurer(base_state(blueprint={}, target_minutes=5))
         old = dict(fake.calls[0])
         fake.calls.clear()
-        script_writing.body_restructurer(base_state(blueprint=ONE_CHAPTER))
+        script_writing.body_restructurer(base_state(blueprint=ONE_CHAPTER, target_minutes=5))
         new = fake.calls[0]
         self.assertEqual(old["system"], new["system"])
         # The only addition is the blueprint's word budget.
@@ -673,7 +676,8 @@ class SingleChapterUnchangedTest(unittest.TestCase):
 
         use(self, script_writing, "call_llm", FakeLLM(answer))
         with mock.patch("builtins.print"):
-            out = script_writing.body_restructurer(base_state(blueprint=ONE_CHAPTER))
+            out = script_writing.body_restructurer(
+                base_state(blueprint=ONE_CHAPTER, target_minutes=5))
         self.assertEqual(out["revised_body"], short_body)
 
     def test_dialect_prompt_unchanged(self):
@@ -774,7 +778,8 @@ class SingleChapterFrameTest(unittest.TestCase):
         use(self, script_writing, "call_llm", FakeLLM(lambda *a: long_script))
         bp = dict(ONE_CHAPTER, target_minutes=10, words_per_minute=135)
         with mock.patch("builtins.print") as printed:
-            out = script_writing.script_refinement(base_state(blueprint=bp, dialect_warmth_output="D"))
+            out = script_writing.script_refinement(
+                base_state(blueprint=bp, target_minutes=10, dialect_warmth_output="D"))
         self.assertEqual(out["refined_script"], long_script)
         text = " ".join(str(c.args[0]) for c in printed.call_args_list)
         self.assertIn("1600", text)
@@ -803,6 +808,9 @@ class SingleChapterWholeScriptTightenTest(unittest.TestCase):
         return " ".join(f"{prefix}{i}" for i in range(n))
 
     def _state(self, **over):
+        # target_minutes on the state means the user gave a duration → strict guards.
+        # Pass target_minutes=0 to exercise soft mode (planner target only).
+        over.setdefault("target_minutes", 10)
         return base_state(blueprint=self.BP, dialect_warmth_output="D", **over)
 
     def test_overlong_refined_script_is_tightened(self):
@@ -891,6 +899,113 @@ class SingleChapterWholeScriptTightenTest(unittest.TestCase):
         tighten = [system for system, user in seen if "TIGHTEN this complete script" in user]
         self.assertEqual(len(tighten), 1)
         self.assertIn("Your only job is to CUT", tighten[0])
+
+    # --- soft mode: no user duration, only the planner's own target ---
+
+    def test_soft_mild_overrun_is_not_tightened(self):
+        script = self._words("w", 1620)               # 1.2 × the 1350 plan
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            return script
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        out = script_writing.script_refinement(self._state(target_minutes=0))
+        self.assertEqual([c for c in calls if "TRIM this complete script" in c], [])
+        self.assertEqual(out["refined_script"], script)
+
+    def test_soft_far_overrun_gets_one_trim(self):
+        script = self._words("w", 2025)               # 1.5 × the 1350 plan
+        tight = self._words("t", 1300)
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            return tight if "TRIM this complete script" in user else script
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            out = script_writing.script_refinement(self._state(target_minutes=0))
+        trim = [c for c in calls if "TRIM this complete script" in c]
+        self.assertEqual(len(trim), 1)
+        self.assertIn("TRIM this complete script: remove repetition, padding and side tangents only",
+                      trim[0])
+        self.assertIn("keep the opening hook, the disclaimer", trim[0])
+        self.assertIn("never cut a real point to get there.", trim[0])
+        self.assertEqual(out["refined_script"], tight)
+
+
+class SoftChapterLengthGuardTest(unittest.TestCase):
+    """Without a user duration (state target_minutes == 0) a chapter's length is only a
+    guide: 20% over its own plan is kept, 1.5× gets ONE trim pass with the TRIM wording."""
+
+    def _bp(self):
+        return {"target_minutes": 20, "words_per_minute": 135, "chapters": [
+            {"id": "C1", "title": "طويل", "job": "j", "words": 800, "covers": [],
+             "opens_loops": [], "closes_loops": [], "depends_on_previous": False},
+            {"id": "C2", "title": "ق", "job": "j", "words": 800, "covers": [],
+             "opens_loops": [], "closes_loops": [], "depends_on_previous": True},
+        ]}
+
+    def _run(self, writer):
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            if "TRIM this chapter" in user:
+                return "=== طويل ===\n" + " ".join(f"t{i}" for i in range(900))
+            if "id: C1" in user:
+                return "=== طويل ===\n" + writer
+            return "=== ق ===\nنص قصير"
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            out = script_writing.body_restructurer(base_state(blueprint=self._bp()))
+        return calls, out
+
+    def test_twenty_percent_over_is_not_trimmed(self):
+        writer = " ".join(f"w{i}" for i in range(960))     # 1.2 × 800
+        calls, out = self._run(writer)
+        self.assertEqual([c for c in calls if "TRIM this chapter" in c], [])
+        self.assertIn("w959", out["revised_body"])
+
+    def test_fifty_percent_over_gets_one_trim(self):
+        writer = " ".join(f"w{i}" for i in range(1200))    # 1.5 × 800
+        calls, out = self._run(writer)
+        trim = [c for c in calls if "TRIM this chapter" in c]
+        self.assertEqual(len(trim), 1)
+        self.assertIn("TRIM this chapter: remove repetition, padding and side tangents only", trim[0])
+        self.assertIn("keep every medical point, example that explains something, advice, red flag",
+                      trim[0])
+        self.assertIn("Aim for about 800 words, but never cut a real point to get there.", trim[0])
+        self.assertIn("t899", out["revised_body"])
+        self.assertNotIn("w1199", out["revised_body"])
+
+
+class LengthGuideSoftModeTest(unittest.TestCase):
+    """Without a user duration the length lines are guidance; with one they are budgets."""
+
+    def test_body_line_is_a_guide_without_a_user_duration(self):
+        fake = use(self, script_writing, "call_llm", FakeLLM(lambda *a: "BODY"))
+        script_writing.body_restructurer(base_state(blueprint=ONE_CHAPTER))
+        prompt = fake.calls[0]["user"]
+        self.assertIn("LENGTH GUIDE: about 300 spoken words planned for the body", prompt)
+        self.assertIn("do not pad, do not compress real points", prompt)
+        self.assertNotIn("LENGTH BUDGET", prompt)
+
+    def test_body_line_is_a_budget_with_a_user_duration(self):
+        fake = use(self, script_writing, "call_llm", FakeLLM(lambda *a: "BODY"))
+        script_writing.body_restructurer(base_state(blueprint=ONE_CHAPTER, target_minutes=5))
+        self.assertIn("LENGTH BUDGET: about 300 spoken words", fake.calls[0]["user"])
+
+    def test_refinement_line_is_a_guide_without_a_user_duration(self):
+        fake = use(self, script_writing, "call_llm", FakeLLM(lambda *a: "REFINED"))
+        bp = dict(ONE_CHAPTER, target_minutes=10, words_per_minute=135)
+        script_writing.script_refinement(base_state(blueprint=bp, dialect_warmth_output="D"))
+        prompt = fake.calls[0]["user"]
+        self.assertIn("LENGTH GUIDE: about 1350 spoken words planned for the body", prompt)
+        self.assertNotIn("TARGET LENGTH", prompt)
 
 
 class DialectLengthLineTest(unittest.TestCase):

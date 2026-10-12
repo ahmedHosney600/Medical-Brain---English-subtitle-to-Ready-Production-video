@@ -326,9 +326,10 @@ The ORIGINAL SOURCE above is a verified RESEARCH DOSSIER with citations [S#]. Ev
         # budgeted per chapter and is left untouched.
         blueprint = state.get("blueprint") or {}
         if not chapters.chapter_mode_on(blueprint):
-            from .script_writing import _target_minutes, _tighten_whole_script
+            from .script_writing import duration_fixed, _target_minutes, _tighten_whole_script
             if _target_minutes(blueprint) > 0:
-                final_script = _tighten_whole_script(blueprint, final_script)
+                final_script = _tighten_whole_script(blueprint, final_script,
+                                                     strict=duration_fixed(state))
 
         return {
             "truth_verification_report": report,

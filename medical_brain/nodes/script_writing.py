@@ -169,6 +169,45 @@ TRANSLATION RISK / CONTEXTUAL ALIGNMENT REPORT (fix only what it flags in this c
 # A fresh chapter longer than this × its blueprint words gets one tightening call. In a
 # 20-minute run every chapter came in 20–25% over and the script ran 27 minutes.
 TIGHTEN_ABOVE = 1.1
+# Without a user-given duration the length is only a guide: a script is trimmed only when
+# it runs far over its own plan (real padding), never squeezed toward the number.
+SOFT_TIGHTEN_ABOVE = 1.35
+
+
+def duration_fixed(state: PipelineState) -> bool:
+    """True when the user passed a duration (--minutes → target_minutes > 0), which keeps
+    the length guards strict. False means the script may size itself to its material."""
+    try:
+        return int(float((state or {}).get("target_minutes") or 0)) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _soft_tighten_chapter(cid: str, title: str, target: int, text: str, memory: dict) -> tuple:
+    """ONE cut-only pass in soft mode (no user duration): trim real padding only when a
+    chapter runs far over its own plan. Never squeezes content toward the number."""
+    before = chapters.spoken_words(text)
+    print(f"  ✂️ chapter {cid}: {before} words vs planned {target} — trimming padding")
+    user_prompt = (f"TRIM this chapter: remove repetition, padding and side tangents only — keep every "
+                   "medical point, example that explains something, advice, red flag, the opening "
+                   "continuity, the loops and the bridge. Aim for about "
+                   f"{target} words, but never cut a real point to get there.\n\n"
+                   + text)
+    try:
+        response = call_llm(load_prompt("script_tighten"), user_prompt, temperature=0.75,
+                            max_tokens=chapters.budget_for_words(target))
+    except Exception as error:                     # a failed pass keeps the original text
+        print(f"  ✂️ chapter {cid}: trimming failed ({error}); keeping the original")
+        return text, memory
+
+    tightened, tight_memory = chapters.split_memory(response)
+    tightened = _ensure_header(tightened, title)
+    after = chapters.spoken_words(tightened)
+    if 0.7 * target <= after < before:
+        print(f"  ✂️ chapter {cid}: trimmed to {after} words")
+        return tightened, (tight_memory or memory)
+    print(f"  ✂️ chapter {cid}: trimmed to {after} words (out of range); keeping the original")
+    return text, memory
 
 
 def _tighten_chapter(state: PipelineState, system_prompt: str, chapter: dict,
@@ -185,7 +224,17 @@ def _tighten_chapter(state: PipelineState, system_prompt: str, chapter: dict,
     forbids cutting)."""
     target = _chapter_words(chapter)
     before = chapters.spoken_words(text)
-    if target <= 0 or before <= target * TIGHTEN_ABOVE:
+    if target <= 0:
+        return text, memory
+
+    if not duration_fixed(state):
+        # Soft mode: only a chapter far over its own plan (1.35×) is trimmed, in ONE pass.
+        if before <= target * SOFT_TIGHTEN_ABOVE:
+            return text, memory
+        title = str(chapter.get("title", "") or "").strip()
+        return _soft_tighten_chapter(_chapter_key(chapter), title, target, text, memory)
+
+    if before <= target * TIGHTEN_ABOVE:
         return text, memory
 
     title = str(chapter.get("title", "") or "").strip()
@@ -305,9 +354,15 @@ def body_restructurer(state: PipelineState) -> dict:
     # The blueprint's word budget, stated outright: without it a 10-minute body came out
     # at 2,362 spoken words for a 1,175-word budget.
     target = _target_words(blueprint)
-    length_line = (f"\nLENGTH BUDGET: about {target} spoken words for the body (cues and visual "
-                   f"notes not counted), never more than {int(target * TIGHTEN_ABOVE)}. Depth comes "
-                   "from choosing the most useful points, not from adding more.\n") if target > 0 else ""
+    if target > 0 and duration_fixed(state):
+        length_line = (f"\nLENGTH BUDGET: about {target} spoken words for the body (cues and visual "
+                       f"notes not counted), never more than {int(target * TIGHTEN_ABOVE)}. Depth comes "
+                       "from choosing the most useful points, not from adding more.\n")
+    elif target > 0:
+        length_line = (f"\nLENGTH GUIDE: about {target} spoken words planned for the body — use the "
+                       "room the content needs; do not pad, do not compress real points.\n")
+    else:
+        length_line = ""
 
     user_prompt = f"""Rebuild the script body in Egyptian Arabic.
 
@@ -816,9 +871,12 @@ def _refinement_chapter_mode(state: PipelineState, blueprint: dict) -> dict:
     return {"refined_script": edited, "integrity_report": report}
 
 
-def _total_length_line(blueprint: dict) -> str:
+def _total_length_line(blueprint: dict, strict: bool = True) -> str:
     """The whole video's spoken-word target for single-chapter assembly. A 10-minute run
-    assembled 2,519 words: one hook and one CTA are picked, but they were long."""
+    assembled 2,519 words: one hook and one CTA are picked, but they were long.
+
+    With a user-given duration (strict) the target is a hard budget; without one it is
+    only a guide, so the script can use the room its content needs."""
     try:
         minutes = float(blueprint.get("target_minutes", 0) or 0)
         wpm = float(blueprint.get("words_per_minute", 135) or 135)
@@ -827,6 +885,9 @@ def _total_length_line(blueprint: dict) -> str:
     if minutes <= 0 or wpm <= 0:
         return ""
     total = int(minutes * wpm)
+    if not strict:
+        return (f"\n\nLENGTH GUIDE: about {total} spoken words planned for the body — use the room "
+                "the content needs; do not pad, do not compress real points.")
     return (f"\n\nTARGET LENGTH: about {total} spoken words for the WHOLE video (hook + body + CTA), "
             f"never more than {int(total * 1.1)}. Use ONE hook and ONE CTA, each short (hook ≤ 120 words, "
             "CTA and sign-off ≤ 150); the body is already at its budget — do not expand it.")
@@ -838,12 +899,40 @@ def _total_length_line(blueprint: dict) -> str:
 WHOLE_TIGHTEN_ABOVE = 1.15
 
 
-def _tighten_whole_script(blueprint: dict, script: str) -> str:
+def _soft_tighten_whole_script(script: str, target: int) -> str:
+    """ONE cut-only pass in soft mode (no user duration): trim real padding only when the
+    assembled script runs far over its own plan. Never squeezes content toward the number."""
+    current_words = chapters.spoken_words(script)
+    print(f"  ✂️ whole script: {current_words} words vs planned {target} — trimming padding")
+    user_prompt = (f"TRIM this complete script: remove repetition, padding and side tangents only — keep "
+                   "the opening hook, the disclaimer, every medical point and red flag, the call to "
+                   "action and the sign-off, and all [cues]/stage directions. Aim for about "
+                   f"{target} spoken words, but never cut a real point to get there.\n\n"
+                   + script)
+    try:
+        response = call_llm(load_prompt("script_tighten"), user_prompt, temperature=0.5,
+                            max_tokens=max(9000, chapters.budget_for_words(target)))
+    except Exception as error:                     # a failed pass keeps the original text
+        print(f"  ✂️ whole script: trimming failed ({error}); keeping the original")
+        return script
+    after = chapters.spoken_words(response)
+    if 0.7 * target <= after < current_words:
+        print(f"  ✂️ whole script: {current_words} → {after} words")
+        return response
+    print(f"  ✂️ whole script: trimmed to {after} words (out of range); keeping the original")
+    return script
+
+
+def _tighten_whole_script(blueprint: dict, script: str, strict: bool = True) -> str:
     """Up to two tightening calls when the assembled non-chapter script overruns the
     whole-video word budget (minutes × wpm). The first tightened text replaces the
     original when it is shorter and keeps ≥ 0.7 × target; if that accepted text is
     still > target × 1.15, ONE more call is made on it (same prompt form) and accepted
-    under the same rule. Failures and out-of-range answers keep the current text."""
+    under the same rule. Failures and out-of-range answers keep the current text.
+
+    With a user-given duration (strict=True, the default) that budget is hard. Without one
+    (strict=False) it is only a guide: ONE pass trims real padding when the script runs
+    more than SOFT_TIGHTEN_ABOVE × its own plan."""
     minutes = _target_minutes(blueprint)
     if minutes <= 0:
         return script
@@ -857,8 +946,10 @@ def _tighten_whole_script(blueprint: dict, script: str) -> str:
     if target <= 0:
         return script
     before = chapters.spoken_words(script)
-    if before <= target * WHOLE_TIGHTEN_ABOVE:
+    if before <= target * (WHOLE_TIGHTEN_ABOVE if strict else SOFT_TIGHTEN_ABOVE):
         return script
+    if not strict:
+        return _soft_tighten_whole_script(script, target)
 
     # Tightening is a cut-only edit: use the script_tighten system prompt, not the
     # refinement prompt (which asks the model to assemble/polish and forbids compressing).
@@ -930,7 +1021,7 @@ RESTRUCTURE STRATEGY PLAN (word count target, retention schedule):
 VOICE STYLE: {state.get("voice_style", "")}
 MANDATORY MENTIONS: {state.get("mandatory_mentions", "")}
 
-Assemble into one continuous, polished script.{_total_length_line(blueprint)}"""
+Assemble into one continuous, polished script.{_total_length_line(blueprint, strict=duration_fixed(state))}"""
 
     # Only include revision mode block when we're actually revising
     if state.get("quality_revision_count", 0) > 0:
@@ -945,15 +1036,16 @@ Context only — don't re-litigate what upstream nodes already fixed in this pas
 AUDIT / CRITIQUE REPORT:
 {state.get("self_critique_output", "")}"""
 
+    strict = duration_fixed(state)
     response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=9000)
-    response = _tighten_whole_script(blueprint, response)
-    _warn_if_refined_too_long(blueprint, response)
+    response = _tighten_whole_script(blueprint, response, strict=strict)
+    _warn_if_refined_too_long(blueprint, response, strict=strict)
     return {"refined_script": response}
 
 
-def _warn_if_refined_too_long(blueprint: dict, script: str) -> None:
+def _warn_if_refined_too_long(blueprint: dict, script: str, strict: bool = True) -> None:
     """One-line warning (no LLM call) when the assembled single-chapter script overruns
-    the whole-video word budget by more than 15%."""
+    the whole-video word budget by more than 15% (1.35× without a user duration)."""
     minutes = _target_minutes(blueprint)
     if minutes <= 0:
         return
@@ -964,7 +1056,8 @@ def _warn_if_refined_too_long(blueprint: dict, script: str) -> None:
     if wpm <= 0:
         return
     target = minutes * wpm
+    limit = 1.15 if strict else SOFT_TIGHTEN_ABOVE
     spoken = chapters.spoken_words(script)
-    if spoken > target * 1.15:
+    if spoken > target * limit:
         print(f"  ⏱️ refined script: {spoken} spoken words vs target {int(target)} "
-              f"({minutes:g} min × {wpm:g} wpm) — over the 1.15× limit ({int(target * 1.15)})")
+              f"({minutes:g} min × {wpm:g} wpm) — over the {limit:g}× limit ({int(target * limit)})")
