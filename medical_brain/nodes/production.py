@@ -407,6 +407,8 @@ def _broll_chapter_prompt(state: PipelineState, spans: list, i: int,
     overlays = chapters.chapter_section(state.get("text_animation_overlay", ""), span["title"])
     prompt = f"""Generate AI-ready B-roll prompts for ONE CHAPTER of this finalized script.
 
+{_script_length_line(span.get("text", ""), state.get("blueprint"))}
+
 THIS CHAPTER: {_span_label(span, i, len(spans))}
 
 THIS CHAPTER'S SCRIPT:
@@ -466,6 +468,8 @@ def _broll_chapter_mode(state: PipelineState, system_prompt: str, blueprint: dic
 
 def _broll_single_call(state: PipelineState, system_prompt: str) -> dict:
     user_prompt = f"""Generate AI-ready B-roll prompts for every visual moment in this script.
+
+{_script_length_line(state.get("refined_script", ""), state.get("blueprint"))}
 
 FINALIZED SCRIPT:
 {state.get("refined_script", "")}
@@ -528,9 +532,52 @@ def _seconds(stamp: str):
     return int(m.group(1)) * 60 + int(m.group(2)) if m else None
 
 
-def broll_engagement_problems(broll_prompts: str, overlay_guide: str = "", minutes: float = 0) -> list:
+def _script_length_line(script: str, blueprint) -> str:
+    """How long the (chapter's) spoken script is, and how many B-roll moments to plan."""
+    wpm = ew.blueprint_wpm(blueprint)
+    words = len(ew.spoken_text(script or "").split())
+    minutes = words / wpm if wpm else 0
+    return (f"SCRIPT LENGTH: about {words} spoken words ≈ {minutes:.1f} minutes at {wpm:g} wpm "
+            f"→ plan about {round(minutes * 1.5)}–{round(minutes * 2)} B-roll moments "
+            "(1.5–2 per minute).")
+
+
+# Words that carry no visual meaning in a B-roll prompt (camera/style boilerplate).
+_BROLL_STOPWORDS = frozenset("""
+photorealistic cinematic shot lens lighting camera natural film grain middle eastern realistic
+with that this from into over under very then than they them their there here when what which
+while your have has been being will would could should about above after before between both
+each more most some such only also just like make made shows show view scene image video
+close wide angle light color colour tone mood style high low full frame background foreground
+detail texture quality slow push dolly orbit track tracking zoom pan tilt move moving
+""".split())
+
+
+def _broll_visible(prompt: str) -> str:
+    """The visible part of a B-roll prompt: everything before an 'Avoid'/'negative' note."""
+    return re.split(r"\b(avoid|negative)\b", prompt or "", maxsplit=1, flags=re.IGNORECASE)[0]
+
+
+def _broll_content_words(prompt: str) -> set:
+    """Lowercase 4+ letter content words of a prompt, minus camera/style stopwords."""
+    return {w for w in re.findall(r"[a-z]{4,}", _broll_visible(prompt).lower())
+            if w not in _BROLL_STOPWORDS}
+
+
+def _jaccard(a: set, b: set) -> float:
+    union = a | b
+    return len(a & b) / len(union) if union else 0.0
+
+
+def broll_engagement_problems(broll_prompts: str, overlay_guide: str = "", minutes: float = 0,
+                              script: str = "", wpm: float = 135) -> list:
     """Code checks that keep B-roll eye-catching (they hold whatever model wrote it):
-    motion in every video clip, no text inside generated media, enough visual events, no long gaps."""
+    motion in every video clip, no text inside generated media, enough visual events, no long
+    gaps, and no stacked or near-duplicate moments.
+
+    When `script` is given the rows are timed by where their START CUE sits in the spoken
+    script (falling back to the Timestamp column), the video's length is the real spoken
+    length, and the extra stacking/repetition checks run. Without it, behaviour is unchanged."""
     lines = (broll_prompts or "").splitlines()
     head = next((i for i, l in enumerate(lines) if l.strip().startswith("|") and "PROMPT" in l.upper()
                  and ("TYPE" in l.upper() or "TIMESTAMP" in l.upper())), None)
@@ -543,7 +590,12 @@ def broll_engagement_problems(broll_prompts: str, overlay_guide: str = "", minut
 
     c_num, c_time, c_type = col("#"), col("TIMESTAMP", "TIME"), col("TYPE")
     c_prompt, c_notes = col("GENERATION PROMPT", "PROMPT"), col("COMPOSITION", "NOTES")
-    problems, times, rows = [], [], 0
+    c_cue = col("START CUE", "START", "▶")
+    wpm = ew.blueprint_wpm({"words_per_minute": wpm})
+    if script:
+        spoken = len(ew.spoken_text(script).split())
+        minutes = spoken / wpm if spoken else 0
+    problems, timed, prompts, rows = [], [], [], 0
     for line in lines[head + 1:]:
         if not line.strip().startswith("|"):
             if rows:
@@ -557,10 +609,17 @@ def broll_engagement_problems(broll_prompts: str, overlay_guide: str = "", minut
         prompt = cells[c_prompt] if c_prompt is not None else ""
         kind = cells[c_type] if c_type is not None else ""
         notes = cells[c_notes] if c_notes is not None and c_notes < len(cells) else ""
-        t = _seconds(cells[c_time]) if c_time is not None else None
+        t = None
+        if script and c_cue is not None and c_cue < len(cells):
+            seconds = ew.cue_seconds(cells[c_cue], script, wpm)
+            if seconds is not None:
+                t = int(round(seconds))
+        if t is None and c_time is not None:
+            t = _seconds(cells[c_time])
         if t is not None:
-            times.append(t)
-        visible = re.split(r"\b(avoid|negative)\b", prompt, maxsplit=1, flags=re.IGNORECASE)[0]
+            timed.append((t, num))
+        prompts.append((num, _broll_content_words(prompt)))
+        visible = _broll_visible(prompt)
         if "VIDEO" in kind.upper() or "🎬" in kind:
             if not _CAMERA_MOVE.search(prompt):
                 problems.append(f"B-roll #{num} (video) has no camera move: add one (slow push-in, dolly, orbit, "
@@ -576,13 +635,24 @@ def broll_engagement_problems(broll_prompts: str, overlay_guide: str = "", minut
     if minutes and rows + drawings < round(1.2 * minutes):
         problems.append(f"Only {rows} B-rolls + {drawings} whiteboard drawings for a ~{minutes:.0f}-minute video: "
                         f"plan at least {round(1.5 * minutes)} visual moments (about 1.5–2 per minute).")
-    times.sort()
+    timed.sort()
+    times = [t for t, _ in timed]
     if times and times[0] > 20:
         problems.append(f"The first B-roll starts at {times[0] // 60}:{times[0] % 60:02d}: add one in the first 20 seconds.")
-    for a, b in zip(times, times[1:]):
-        if b - a > 90:
+    gap = 60 if script else 90
+    for (a, _), (b, _) in zip(timed, timed[1:]):
+        if b - a > gap:
             problems.append(f"No B-roll between {a // 60}:{a % 60:02d} and {b // 60}:{b % 60:02d}: "
                             "add one in that stretch (or a whiteboard drawing).")
+    if script:
+        for (a, na), (b, nb) in zip(timed, timed[1:]):
+            if b - a < 8:
+                problems.append(f"B-rolls #{na} and #{nb} start {b - a}s apart: too heavy — spread them or drop one.")
+        for i in range(len(prompts)):
+            for j in range(i + 1, len(prompts)):
+                if _jaccard(prompts[i][1], prompts[j][1]) >= 0.5:
+                    problems.append(f"B-rolls #{prompts[i][0]} and #{prompts[j][0]} show nearly the same image: "
+                                    "replace one with a different angle of the idea")
     return problems
 
 
@@ -597,7 +667,8 @@ def _video_minutes(state: PipelineState) -> float:
 def production_quality_critique(state: PipelineState) -> dict:
     system_prompt = load_prompt("production_quality_critique")
     code_problems = broll_engagement_problems(state.get("broll_prompts", ""), state.get("text_animation_overlay", ""),
-                                              _video_minutes(state))
+                                              _video_minutes(state), script=state.get("refined_script", ""),
+                                              wpm=ew.blueprint_wpm(state.get("blueprint")))
     code_note = ("\n\n### Code checks — B-roll engagement (must fix)\n" + "\n".join(f"- {p}" for p in code_problems)
                  if code_problems else "")
 

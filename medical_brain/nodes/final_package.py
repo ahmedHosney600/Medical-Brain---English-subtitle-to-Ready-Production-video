@@ -681,6 +681,11 @@ RULES:
                                     approved_broll, filmed_script)
     part2, best_2 = result
 
+    # Real timecodes: after the storyboard is stitched and the cues repaired, every
+    # storyboard "⏱️ Timecode" and B-roll "Timestamp" becomes M:SS from where its
+    # START CUE sits in the spoken script. Runs once, for both modes.
+    part2 = ew.rewrite_timecodes(part2, filmed_script, ew.blueprint_wpm(state.get("blueprint")))
+
     final_package = part1 + "\n\n---\n\n" + part2
     # Models sometimes double a heading's marks ("#### #### A/B Test Set").
     final_package = re.sub(r"^(#{1,6})\s+#{1,6}\s+", r"\1 ", final_package, flags=re.MULTILINE)

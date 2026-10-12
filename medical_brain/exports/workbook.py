@@ -60,6 +60,37 @@ def find_cue(cue: str, norm_script: str) -> int:
     return len(re.findall(r"(?:^|\s)" + re.escape(c) + r"(?=\s|$)", norm_script))
 
 
+def blueprint_wpm(blueprint) -> float:
+    """The blueprint's words_per_minute (135 by default; junk or non-positive → 135)."""
+    bp = blueprint if isinstance(blueprint, dict) else {}
+    try:
+        wpm = float(bp.get("words_per_minute", 135) or 135)
+    except (TypeError, ValueError):
+        wpm = 135
+    return wpm if wpm > 0 else 135
+
+
+def cue_seconds(cue: str, script: str, wpm: float = 135) -> Optional[float]:
+    """Seconds from the start of the spoken script to where `cue` begins:
+    (spoken words before the cue / wpm) × 60. None when the cue is empty or not found.
+    Uses the same normalisation as find_cue, so it matches how cues are checked."""
+    try:
+        wpm = float(wpm or 135)
+    except (TypeError, ValueError):
+        wpm = 135
+    if wpm <= 0:
+        wpm = 135
+    c = normalize_ar(spoken_text(cue))
+    if not c:
+        return None
+    norm_script = normalize_ar(spoken_text(script))
+    m = re.search(r"(?:^|\s)(" + re.escape(c) + r")(?=\s|$)", norm_script)
+    if not m:
+        return None
+    words_before = len(norm_script[:m.start(1)].split())
+    return words_before / wpm * 60.0
+
+
 def cue_problem(cue: str, norm_script: str, min_words: int = 3) -> Optional[str]:
     """None when the cue is usable; otherwise a short reason."""
     raw = (cue or "").strip()
@@ -602,6 +633,56 @@ def parse_storyboard(text: str) -> list:
             "detail": " | ".join(cells[6:]).strip(),
         })
     return rows
+
+
+# Columns that carry a row's start time, and the cue it starts on.
+_TIME_COLUMN_NAMES = ("TIMECODE", "TIMESTAMP", "⏱")
+_CUE_COLUMN_NAMES = ("START CUE", "START", "▶")
+
+
+def _rewrite_time_column(text: str, section_key: str, script: str, wpm: float) -> str:
+    """Rewrites the time column of every table in `section_key` whose header also names a
+    START CUE column: the time becomes M:SS from where that cue begins in `script`.
+    A row whose cue is not found keeps its original value."""
+    lines = text.splitlines(keepends=True)
+    in_section, header_seen, time_col, cue_col = False, False, None, None
+    for i, line in enumerate(lines):
+        if _is_part_heading(line.rstrip("\n")):
+            in_section = section_key.upper() in line.upper()
+            header_seen = False
+            continue
+        if not in_section or not line.lstrip().startswith("|"):
+            continue
+        parts = re.split(r"(?<!\\)\|", line)
+        cells = [c.strip() for c in parts[1:-1]]
+        if all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
+            head = [c.strip().upper() for c in re.split(r"(?<!\\)\|", lines[i - 1])[1:-1]] if i else []
+            time_col = next((k for k, h in enumerate(head) if any(n in h for n in _TIME_COLUMN_NAMES)), None)
+            cue_col = next((k for k, h in enumerate(head) if any(n in h for n in _CUE_COLUMN_NAMES)), None)
+            header_seen = time_col is not None and cue_col is not None
+            continue
+        if not header_seen or len(cells) <= max(time_col, cue_col):
+            continue
+        seconds = cue_seconds(cells[cue_col], script, wpm)
+        if seconds is None:
+            continue
+        total = int(round(seconds))
+        parts[time_col + 1] = f" {total // 60}:{total % 60:02d} "
+        lines[i] = "|".join(parts)
+    return "".join(lines)
+
+
+def rewrite_timecodes(text: str, script: str, wpm: float = 135) -> str:
+    """Real timecodes for the final package: the storyboard's "⏱️ Timecode" and the
+    inserted B-roll table's "Timestamp" become M:SS from where each row's START CUE
+    begins in the spoken script (see cue_seconds). Rows whose cue is not found keep
+    their original value. Called once after the storyboard is stitched and cues
+    repaired, so both single-call and chapter mode get the same real timeline."""
+    if not text or not script:
+        return text
+    text = _rewrite_time_column(text, "INTEGRATED PRODUCTION STORYBOARD", script, wpm)
+    text = _rewrite_time_column(text, "AI B-ROLL GENERATION PROMPTS", script, wpm)
+    return text
 
 
 TEXT_LAYERS = ["TOP-RIGHT POPUP", "TEXT OVERLAY TITLE", "WARNING/ALERT BOX", "QUOTE BOX", "KINETIC TEXT", "LOWER-THIRD"]
