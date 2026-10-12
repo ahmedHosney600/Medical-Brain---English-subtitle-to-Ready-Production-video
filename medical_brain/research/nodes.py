@@ -360,6 +360,40 @@ def _save_planner_raw(state: dict, attempt: int, raw: str) -> str:
         return ""
 
 
+# Words that say nothing about which remedy a check names: dose/route/form words and
+# generic clinical nouns. They are dropped before two check names are compared.
+_CHECK_GENERIC = {
+    "supplement", "supplements", "tablet", "tablets", "pill", "pills",
+    "capsule", "capsules", "daily", "oral", "use", "using", "taking",
+    "intake", "therapy", "treatment",
+}
+
+
+def _check_words(text: str) -> list:
+    """The meaningful words of a check name: lowercased, parenthetical text dropped,
+    generic form/dose words removed, non-letters already gone."""
+    t = re.sub(r"\([^)]*\)", " ", str(text or "").lower())   # drop "(400–600 mg/day)" etc.
+    return [w for w in re.findall(r"[a-z]+", t) if w not in _CHECK_GENERIC]
+
+
+def same_check(a, b) -> bool:
+    """True when two classic-check names refer to the same remedy.
+
+    Compares the names' meaningful-word keys: equal keys, or one name's word set contained
+    in the other's, or a word-set Jaccard similarity of 0.6 or more. So "Magnesium
+    supplements (400–600 mg/day)" and "Magnesium (400–600 mg/day)" are one check."""
+    wa, wb = _check_words(a), _check_words(b)
+    if not wa or not wb:
+        return False
+    if "".join(wa) == "".join(wb):
+        return True
+    sa, sb = set(wa), set(wb)
+    if sa <= sb or sb <= sa:
+        return True
+    union = sa | sb
+    return len(sa & sb) / len(union) >= 0.6
+
+
 def topic_planner(state: dict) -> dict:
     system_prompt = load_prompt("research/topic_planner")
     user_prompt = f"""TOPIC: {state.get("topic", "")}
@@ -405,8 +439,13 @@ Plan the research. Output ONLY the JSON object."""
         if not isinstance(c, dict):
             continue
         item = str(pick(c, "item", default="") or "").strip()
-        if item:
-            classic.append({"item": item, "section": str(pick(c, "section", default="") or "").strip()})
+        if not item:
+            continue
+        # The model may name the same remedy twice in slightly different words: keep the
+        # first name so its facts land in one row instead of splitting the evidence.
+        if any(same_check(item, existing["item"]) for existing in classic):
+            continue
+        classic.append({"item": item, "section": str(pick(c, "section", default="") or "").strip()})
     special = [str(g).strip() for g in (pick(data, "special_groups", default=[]) or []) if str(g).strip()]
     # Complementary items are classic checks too: every one gets its own evidence row.
     comp_raw = pick(data, "complementary", default={}) or {}
@@ -418,16 +457,22 @@ Plan the research. Output ONLY the JSON object."""
     comp = {"applies": bool(pick(comp_raw, "applies", default=False, kind=bool)),
             "why": str(pick(comp_raw, "why", default="") or "").strip(),
             "items": [str(i).strip() for i in comp_items if str(i).strip()]}
-    seen_items = {c["item"].strip().lower() for c in classic}
     # Add a forgotten complementary item to the section that reads "complementary/traditional"
     # (by its title), else to the last section — the same label the model would have used.
     comp_section = next((s["title"] for s in outline
                          if re.search(r"omplementary|raditional", s["title"], re.I)),
                         outline[-1]["title"] if outline else "")
+    canonical = [c["item"] for c in classic]
+    named_items = []
     for item in comp["items"]:
-        if item.lower() not in seen_items:
-            classic.append({"item": item, "section": comp_section})
-            seen_items.add(item.lower())
+        match = next((name for name in canonical if same_check(item, name)), None)
+        if match:                       # already a check: use its name, add no second check
+            named_items.append(match)
+            continue
+        classic.append({"item": item, "section": comp_section})
+        canonical.append(item)
+        named_items.append(item)
+    comp["items"] = named_items
     _log(f"type: {topic_type or '(none)'}; classic checks: {len(classic)}; "
          f"special groups: {', '.join(special) or '(none)'}")
     _log("complementary: " + ("applies" if comp["applies"] else "not applicable")
@@ -1784,11 +1829,21 @@ def validate_guide(guide: dict, state: dict) -> tuple:
                                   for it in (guide.get("myths") or [])) if m]
 
     comp = guide.get("complementary") if isinstance(guide.get("complementary"), dict) else {}
-    rows = {str(r.get("item", "")).strip().lower(): r for r in classic_check_table(state)}
+    table = classic_check_table(state)
+    exact_rows = {str(r.get("item", "")).strip().lower(): r for r in table}
+
+    def find_row(name: str):
+        """The classic-check row for an option item: exact name first, then a near-duplicate
+        name (the planner and the guide may spell the same remedy slightly differently)."""
+        exact = exact_rows.get(str(name or "").strip().lower())
+        if exact is not None:
+            return exact
+        return next((r for r in table if same_check(name, str(r.get("item", "")))), None)
+
     options, moved = [], []
     for it in comp.get("options") or []:
-        name = str(it.get("item", "")).strip().lower() if isinstance(it, dict) else ""
-        row = rows.get(name)
+        name = str(it.get("item", "")).strip() if isinstance(it, dict) else ""
+        row = find_row(name)
         if row and row.get("verdict") in _EVIDENCE_OPTION_VERDICTS and not row.get("harmful"):
             options.append(it)
         else:

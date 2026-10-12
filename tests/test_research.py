@@ -624,6 +624,43 @@ class PlannerFieldsTest(unittest.TestCase):
                       out["classic_checks"])
         self.assertEqual(len([c for c in out["classic_checks"] if c["item"].lower() == "cupping"]), 1)
 
+    def test_planner_merges_near_duplicate_check_names(self):
+        # The model names the same remedy once as a check and once as a complementary item,
+        # in slightly different words: they must become ONE check and the comp item's name
+        # must be rewritten to the check's name.
+        reply = {"classic_checks": [{"item": "Magnesium supplements (400–600 mg/day)", "section": "B"}],
+                 "complementary": {"applies": True, "why": "people try it",
+                                   "items": ["Magnesium (400–600 mg/day)"]},
+                 "sections": [{"title": "Why it happens", "questions": ["q"],
+                               "literature_queries": [], "public_queries": []},
+                              {"title": "Complementary and traditional options", "questions": ["q"],
+                               "literature_queries": ["l"], "public_queries": ["p"]}]}
+        fake = FakeLlmJson(reply)
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            out = nodes.topic_planner(new_state("t"))
+        self.assertEqual(out["classic_checks"],
+                         [{"item": "Magnesium supplements (400–600 mg/day)", "section": "B"}])
+        self.assertEqual(out["complementary"]["items"], ["Magnesium supplements (400–600 mg/day)"])
+
+    def test_planner_dedupes_its_own_near_duplicate_checks(self):
+        reply = {"classic_checks": [{"item": "Magnesium", "section": "A"},
+                                    {"item": "Magnesium supplements daily", "section": "B"}],
+                 "sections": [{"title": "S", "questions": ["q"], "literature_queries": [],
+                               "public_queries": []}]}
+        fake = FakeLlmJson(reply)
+        with mock.patch.object(nodes, "call_llm_json", fake):
+            out = nodes.topic_planner(new_state("t"))
+        self.assertEqual(out["classic_checks"], [{"item": "Magnesium", "section": "A"}])
+
+    def test_same_check_compares_remedy_names(self):
+        self.assertTrue(nodes.same_check("Magnesium supplements (400–600 mg/day)",
+                                         "Magnesium (400–600 mg/day)"))
+        self.assertTrue(nodes.same_check("Magnesium", "magnesium tablets daily"))
+        self.assertTrue(nodes.same_check("Ginger", "Ginger tea"))     # subset rule, accepted
+        self.assertFalse(nodes.same_check("Magnesium", "Riboflavin"))
+        self.assertFalse(nodes.same_check("Magnesium", "Ginger"))
+        self.assertFalse(nodes.same_check("", "Magnesium"))
+
     def test_planner_falls_back_to_last_section_for_a_forgotten_item(self):
         reply = {"complementary": {"applies": True, "why": "y", "items": ["honey"]},
                  "sections": [{"title": "First", "questions": ["q"], "literature_queries": [], "public_queries": []},
@@ -2026,6 +2063,41 @@ class GuideValidationTest(unittest.TestCase):
         self.assertEqual([i["item"] for i in clean["complementary"]["not_proven"]], ["cupping"])
         self.assertEqual(report["dropped"], 0)                     # moved, never dropped
         self.assertEqual(report["moved_to_not_proven"], ["cupping People use it for pain."])
+
+    def test_near_duplicate_complementary_name_finds_the_check_row(self):
+        # The option is named like the check's near-duplicate, not its exact text: the exact
+        # lookup used to miss, moving a proven option to "not proven". It must stay an option.
+        facts = [_mk_fact("F1", "Magnesium supplements (400–600 mg/day)", "proven")]
+        checks = [{"item": "Magnesium supplements (400–600 mg/day)", "section": "A"}]
+        guide = empty_guide(complementary={"options": [
+            {"item": "Magnesium (400–600 mg/day)", "text": "May help with cramps.",
+             "facts": ["F1"]}], "not_proven": []})
+        clean, report = nodes.validate_guide(guide, self.state(facts, classic_checks=checks))
+        self.assertEqual([i["item"] for i in clean["complementary"]["options"]],
+                         ["Magnesium (400–600 mg/day)"])
+        self.assertEqual(clean["complementary"]["not_proven"], [])
+        self.assertEqual(report["moved_to_not_proven"], [])
+
+    def test_exact_complementary_name_still_wins_over_a_near_duplicate_row(self):
+        # Two rows, one an exact match and one a near-duplicate: the exact row is used.
+        facts = [_mk_fact("F1", "Magnesium", "proven"),
+                 _mk_fact("F2", "Magnesium citrate", "untested")]
+        checks = [{"item": "Magnesium citrate", "section": "A"},
+                  {"item": "Magnesium", "section": "A"}]
+        guide = empty_guide(complementary={"options": [
+            {"item": "Magnesium", "text": "May help with cramps.", "facts": ["F1"]}],
+            "not_proven": []})
+        clean, _ = nodes.validate_guide(guide, self.state(facts, classic_checks=checks))
+        self.assertEqual([i["item"] for i in clean["complementary"]["options"]], ["Magnesium"])
+
+    def test_different_remedy_option_is_not_matched_and_moves(self):
+        facts = [_mk_fact("F1", "Magnesium", "proven")]
+        checks = [{"item": "Magnesium", "section": "A"}]
+        guide = empty_guide(complementary={"options": [
+            {"item": "Riboflavin", "text": "People take it.", "facts": ["F1"]}], "not_proven": []})
+        clean, _ = nodes.validate_guide(guide, self.state(facts, classic_checks=checks))
+        self.assertEqual(clean["complementary"]["options"], [])
+        self.assertEqual([i["item"] for i in clean["complementary"]["not_proven"]], ["Riboflavin"])
 
     def test_strength_is_the_weakest_cited_label(self):
         facts = [_mk_fact("F1", "magnesium", "proven"), _mk_fact("F2", "magnesium", "weak_or_disputed"),
