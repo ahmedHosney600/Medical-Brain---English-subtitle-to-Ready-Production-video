@@ -29,7 +29,7 @@ WHAT TO PRODUCE
 - "sections": 5–8 sections in the order a viewer's questions naturally come (follow the topic type: e.g. symptom → what to do now, is it dangerous, why it happens, prevention, what works/doesn't, special groups, when to see a doctor). Each section: "title" (viewer language), "question" (the viewer's question it answers), "points": 3–8 points, each {"text", "facts"}. Merge facts that make the same point. Prefer the strongest evidence. Drop facts that don't help this viewer (narrow research populations, study-design detail, trivia).
 - "special_groups": [{"group", "advice", "facts"}] — only groups with specific advice in the facts.
 - "myths": [{"myth", "truth", "facts"}] — beliefs the facts correct.
-- "complementary": {"options": [{"item", "text", "facts"}], "not_proven": [{"item", "text", "facts"}]} — follow rule 4; empty lists if the topic has no complementary checks.
+- "complementary": {"options": [{"item", "text", "facts"}], "not_proven": [{"item", "text", "facts"}]} — follow rule 4; ONE remedy per entry, with "item" written exactly as in the CLASSIC CHECKS table (never "X and Y" in one entry); empty lists if the topic has no complementary checks.
 - "key_numbers": up to 5 numbers worth saying on camera, each {"text", "facts"} (the number must be in the cited fact).
 - "uncertain": up to 5 things the evidence does NOT settle, each {"text", "facts"} — so the video doesn't overclaim.
 
