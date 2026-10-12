@@ -35,6 +35,19 @@ class OverclaimContextTest(unittest.TestCase):
             self.assertIsNotNone(overclaim_in(s), s)
 
 
+class RangeEndpointHundredTest(unittest.TestCase):
+    """A "100%" that ends a numeric range is an endpoint, not a certainty claim."""
+
+    def test_hundred_at_the_end_of_a_range_is_not_an_overclaim(self):
+        for s in ["من خمسة وسبعين لحد مية في المية من محيط الذراع",
+                  "75-100%", "75 to 100%", "٧٥ لحد ١٠٠٪"]:
+            self.assertIsNone(overclaim_in(s), s)
+
+    def test_other_hundred_uses_are_still_flagged(self):
+        for s in ["النتيجة مضمونة 100%", "بيعالج مية في المية"]:
+            self.assertIsNotNone(overclaim_in(s), s)
+
+
 class RedFlagOnsetTest(unittest.TestCase):
     def test_sudden_symptom_with_emergency_is_not_an_overclaim(self):
         s = "لو حسيت بضعف ظهر فجأة في ثواني في جنب واحد، دي حالة طارئة وروح الطوارئ فوراً."

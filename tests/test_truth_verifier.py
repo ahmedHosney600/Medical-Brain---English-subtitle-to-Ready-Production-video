@@ -4,7 +4,7 @@ in code only when an edit's find text is unique."""
 import unittest
 from unittest import mock
 
-from medical_brain.nodes import quality
+from medical_brain.nodes import quality, script_writing
 
 
 class FakeJSON:
@@ -121,6 +121,56 @@ class TruthVerifierOverclaimFixTest(unittest.TestCase):
         use(self, fake)
         quality.medical_truth_verifier(state(refined_script=clean))
         self.assertEqual(len(fake.calls), 1)
+
+
+class TruthVerifierWholeTightenTest(unittest.TestCase):
+    """After the overclaim pass, a single-chapter script that overran its whole-video
+    budget is tightened again; chapter mode and target-less blueprints are not."""
+
+    LONG = "كلمة " * 1700
+    SHORT = "قصير " * 1000
+
+    def test_single_chapter_with_target_is_tightened(self):
+        fake = FakeJSON(lambda system, user: (verifier_answer(self.LONG), "raw"))
+        use(self, fake)
+        calls = []
+
+        def fake_llm(system, user, temperature=None, max_tokens=None, **kwargs):
+            calls.append(user)
+            return self.SHORT
+
+        with mock.patch.object(script_writing, "call_llm", fake_llm):
+            out = quality.medical_truth_verifier(state(
+                refined_script=self.LONG, research_dossier="",
+                blueprint={"target_minutes": 10, "chapters": [
+                    {"id": "1", "title": "الفصل", "words": 1350}]}))
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(out["refined_script"], self.SHORT)
+
+    def test_chapter_mode_is_not_tightened(self):
+        fake = FakeJSON(lambda system, user: (verifier_answer(self.LONG), "raw"))
+        use(self, fake)
+        with mock.patch.object(script_writing, "call_llm",
+                               lambda *a, **k: self.fail("chapter mode must not tighten")):
+            out = quality.medical_truth_verifier(state(
+                refined_script=self.LONG, research_dossier="",
+                blueprint={"target_minutes": 10, "chapters": [
+                    {"id": "1", "title": "أ", "words": 900},
+                    {"id": "2", "title": "ب", "words": 900}]}))
+
+        self.assertEqual(out["refined_script"], self.LONG.strip())
+
+    def test_no_target_is_not_tightened(self):
+        fake = FakeJSON(lambda system, user: (verifier_answer(self.LONG), "raw"))
+        use(self, fake)
+        with mock.patch.object(script_writing, "call_llm",
+                               lambda *a, **k: self.fail("no target must not tighten")):
+            out = quality.medical_truth_verifier(state(
+                refined_script=self.LONG, research_dossier="",
+                blueprint={"chapters": [{"id": "1", "title": "الفصل", "words": 3000}]}))
+
+        self.assertEqual(out["refined_script"], self.LONG.strip())
 
 
 if __name__ == "__main__":

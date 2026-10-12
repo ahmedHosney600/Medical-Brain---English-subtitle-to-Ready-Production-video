@@ -321,6 +321,14 @@ The ORIGINAL SOURCE above is a verified RESEARCH DOSSIER with citations [S#]. Ev
         final_script = verified_script if verified_script else state.get("refined_script", "")
         if state.get("research_dossier"):
             final_script, report = _overclaim_fix_pass(state, final_script, report)
+        # A single-chapter script can still grow past its whole-video budget while being
+        # verified/overclaim-fixed; re-apply the whole-script tightening. Chapter mode is
+        # budgeted per chapter and is left untouched.
+        blueprint = state.get("blueprint") or {}
+        if not chapters.chapter_mode_on(blueprint):
+            from .script_writing import _target_minutes, _tighten_whole_script
+            if _target_minutes(blueprint) > 0:
+                final_script = _tighten_whole_script(blueprint, final_script)
 
         return {
             "truth_verification_report": report,

@@ -8,13 +8,23 @@ _AR = [
     r"(?:في|خلال|بعد)\s+(?:\d+|[٠-٩]+|عشر|عشرة|خمس|خمسة|كام|ثلاث|تلات)?\s*ثوان[يى]?(?:\s+معدودة)?",
     r"في\s+ثواني\s+معدودة", r"في\s+لحظتها", r"في\s+ساعتها", r"على\s+طول", r"فورا|فوراً|فوري(?:ة|اً)?",
     r"نهائيا|نهائياً|للأبد", r"مضمون(?:ة)?", r"(?:علاج|حل)\s+(?:نهائي|سحري|جذري)", r"سحري(?:ة)?",
-    r"100\s*[%٪]", r"مية\s+في\s+المية", r"بيعالج\s+تماما|بيعالج\s+تماماً", r"مثبت(?:ة)?\s+علمياً?\s+100",
+    r"100\s*[%٪]", r"١٠٠\s*[%٪]", r"مية\s+في\s+المية", r"بيعالج\s+تماما|بيعالج\s+تماماً", r"مثبت(?:ة)?\s+علمياً?\s+100",
 ]
 _EN = [r"\bwithin (?:a few )?seconds\b", r"\bin (?:\d+ )?seconds\b", r"\binstant(?:ly)?\b", r"\bimmediately\b",
        r"\bguaranteed?\b", r"\bcures?\b", r"\bpermanent(?:ly)? (?:fix|cure)\b", r"\bmiracle\b", r"\b100 ?%"]
 OVERCLAIM = re.compile("|".join(_AR + _EN), re.IGNORECASE)
 
 _SENTENCE = re.compile(r"[^.!?؟\n]+[.!?؟]?")
+
+# The "100%" certainty forms. A 100% that ends a numeric range is a range endpoint, not a
+# claim ("75 to 100% of arm circumference"), so it is judged by what precedes it.
+_HUNDRED = re.compile(r"100\s*[%٪]|١٠٠\s*[%٪]|مية\s+في\s+المية", re.IGNORECASE)
+# The text just before a 100% must END with a range word (or a dash) to be an endpoint.
+_RANGE_BEFORE = re.compile(
+    r"(?:^|\s)(?:لحد|لغاية|إلى|الى|ل)\s*$"
+    r"|(?:^|\s)to\s*$"
+    r"|[-–—]\s*$",
+    re.IGNORECASE)
 
 
 _SECONDS = re.compile(_AR[0] + r"|في\s+ثواني\s+معدودة|\bwithin (?:a few )?seconds\b|\bin (?:\d+ )?seconds\b", re.IGNORECASE)
@@ -48,8 +58,14 @@ def overclaim_in(sentence: str):
     if _NEGATED.search(sentence):
         return None
     for m in OVERCLAIM.finditer(sentence):         # seconds / immediately were judged above
-        if not _IMMEDIATE.fullmatch(m.group(0)) and not _SECONDS.fullmatch(m.group(0)):
-            return m.group(0)
+        phrase = m.group(0)
+        if _IMMEDIATE.fullmatch(phrase) or _SECONDS.fullmatch(phrase):
+            continue
+        # "100%" ending a numeric range ("75 to 100%", "75-100%", "٧٥ لحد ١٠٠٪") is an
+        # endpoint, not a certainty claim.
+        if _HUNDRED.search(phrase) and _RANGE_BEFORE.search(sentence[:m.start()]):
+            continue
+        return phrase
     return None
 
 
