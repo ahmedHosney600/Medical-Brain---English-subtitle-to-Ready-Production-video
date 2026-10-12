@@ -9,6 +9,7 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 
+from ..exports.workbook import spoken_text
 from ..llm.progress import quiet
 from ..utils.llm_json import parse_llm_json
 
@@ -444,11 +445,13 @@ def strip_segment_notes(text: str) -> str:
 
 
 def spoken_words(text: str) -> int:
-    """A chapter/segment's spoken word count: its chapter header and any markdown
-    label lines are not spoken, so they are not counted."""
+    """A chapter/segment's spoken word count: chapter headers and markdown label lines
+    are not spoken, and neither are the non-spoken parts workbook.spoken_text drops
+    ([cues], line-opening/long stage directions, "=== headers ===", "**speaker labels:**"
+    and markdown markers). Short inline parentheses that are spoken terms stay."""
     lines = [line for line in (text or "").split("\n")
              if not _HEADER_RE.match(line) and not _MD_HEADING_RE.match(line)]
-    return len(" ".join(lines).split())
+    return len(spoken_text("\n".join(lines)).split())
 
 
 def clean_spoken_script(text: str) -> str:

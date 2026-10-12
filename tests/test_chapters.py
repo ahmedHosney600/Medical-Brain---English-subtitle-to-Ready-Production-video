@@ -6,6 +6,7 @@ import re
 import unittest
 from unittest import mock
 
+from medical_brain.exports import workbook as ew
 from medical_brain.nodes import analysis, chapters, script_writing
 from medical_brain.prompts import load_prompt
 
@@ -523,6 +524,46 @@ class CleanSpokenScriptTest(unittest.TestCase):
     def test_plain_script_is_unchanged(self):
         script = "=== C1 ===\nنص\n\n=== C2 ===\nنص تاني"
         self.assertEqual(chapters.clean_spoken_script(script), script)
+
+
+class SpokenWordsTest(unittest.TestCase):
+    """spoken_words counts only words that are actually spoken: it drops chapter and
+    markdown headings plus the non-spoken parts workbook.spoken_text removes."""
+
+    def test_headers_and_markdown_lines_are_not_spoken(self):
+        text = "=== الفصل الأول ===\n# عنوان\nكلمة واحدة\n## عنوان تاني\nكلمة"
+        self.assertEqual(chapters.spoken_words(text), 3)
+
+    def test_bracket_cues_are_not_spoken(self):
+        text = "كلمة [الكاميرا قريبة جدا] كلمة تانية"
+        self.assertEqual(chapters.spoken_words(text), 3)
+
+    def test_line_opening_stage_directions_are_not_spoken(self):
+        text = "(نبرة هادئة)\nكلمة\nكلمة تانية"
+        self.assertEqual(chapters.spoken_words(text), 3)
+
+    def test_long_parentheses_are_not_spoken(self):
+        text = "كلمة (هنا وصف طويل للمشهد فيه كلمات كتير جدا زيادة عن اللزوم) كلمة تانية"
+        self.assertEqual(chapters.spoken_words(text), 3)
+
+    def test_short_inline_parentheses_are_spoken(self):
+        text = "الـ (AF) بيتقال في الـ (EP)"
+        self.assertEqual(chapters.spoken_words(text), 6)
+
+    def test_speaker_labels_are_not_spoken(self):
+        text = "**د. أحمد حسني:**\nكلمة من المتحدث"
+        self.assertEqual(chapters.spoken_words(text), 3)
+
+    def test_matches_workbook_spoken_text_when_there_are_no_headings(self):
+        """For text with no chapter/markdown headings, the length guards see exactly the
+        spoken words cue checking does."""
+        script = ("**(المشهد الأول، الكاميرا قريبة، نبرة هادئة)**\n"
+                  "**د. أحمد حسني:**\n"
+                  "الـ (AF) بيدي كلمة هنا [VISUAL NOTE: لقطة]\n"
+                  "(وصف طويل للمشهد فيه كلمات كتير جدا زيادة عن الحد)\n"
+                  "وكلمة أخيرة للحديث\n")
+        self.assertEqual(chapters.spoken_words(script),
+                         len(ew.spoken_text(script).split()))
 
 
 class ChapterLengthGuardTest(unittest.TestCase):
