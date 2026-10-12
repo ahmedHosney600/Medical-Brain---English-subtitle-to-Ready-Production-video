@@ -619,9 +619,10 @@ def _dialect_chapter_mode(state: PipelineState, system_prompt: str, revising: bo
 
 def dialect_warmth_layer(state: PipelineState) -> dict:
     system_prompt = load_prompt("dialect_warmth_layer")
+    blueprint = state.get("blueprint") or {}
 
     revising = state.get("quality_revision_count", 0) > 0 and state.get("refined_script", "")
-    if chapters.chapter_mode_on(state.get("blueprint")):
+    if chapters.chapter_mode_on(blueprint):
         return _dialect_chapter_mode(state, system_prompt, bool(revising))
 
     if revising:
@@ -633,9 +634,9 @@ def dialect_warmth_layer(state: PipelineState) -> dict:
 
 REVISED RETENTION, DISCLAIMER & CTA LINES (from this pass — apply them where the critique flagged open loops, the disclaimer or the CTA):
 {state.get("cta_output", "")}"""
+        length_source = state.get("refined_script", "") or ""
     else:
         frame = None
-        blueprint = state.get("blueprint") or {}
         # A single-chapter video still needs ONE chosen opening and ONE chosen closing:
         # without the frame step the raw hook options (~935 words) and CTA material
         # (~650 words) reach this model and the script runs ~60% long.
@@ -648,6 +649,10 @@ REVISED RETENTION, DISCLAIMER & CTA LINES (from this pass — apply them where t
                             f"{state.get('revised_body', '')}"
                             "\n\nCLOSING (already chosen call to action and sign-off — polish only, "
                             f"keep its length):\n{frame.get('closing', '')}")
+            length_source = "\n\n".join(
+                x for x in (frame.get("opening", ""), frame.get("disclaimer", ""),
+                            state.get("revised_body", ""), frame.get("closing", ""))
+                if x and str(x).strip())
         else:
             script_block = f"""HOOK:
 {state.get("hook", "")}
@@ -657,6 +662,9 @@ SCRIPT BODY (post translation-fidelity gate):
 
 RETENTION, DISCLAIMER & CTA LAYER:
 {state.get("cta_output", "")}"""
+            length_source = "\n\n".join(x for x in (state.get("hook", ""),
+                                                    state.get("revised_body", ""),
+                                                    state.get("cta_output", "")) if x and str(x).strip())
 
     user_prompt = f"""Rewrite for dialect authenticity and warmth.
 
@@ -691,6 +699,13 @@ MEDICAL TRUTH VERIFICATION REPORT (score {state.get("truth_score", 0)}/10):
 
 MEDICAL FIDELITY AUDIT:
 {state.get("fidelity_audit_output", "")}"""
+
+    if _target_minutes(blueprint) > 0:
+        # The dialect rewrite is where a budgeted video grew last: in a 10-minute run
+        # this pass took the script to ~2,400 words against a 1,350-word target.
+        user_prompt += (f"\n\nLENGTH: the script above has {chapters.spoken_words(length_source)} "
+                        "spoken words; keep your rewrite within ±5% — change wording, do not add "
+                        "new sentences, examples or asides (the video's length is already budgeted).")
 
     response = call_llm(system_prompt, user_prompt, temperature=0.75, max_tokens=9000)
     result = {"dialect_warmth_output": response}
@@ -813,6 +828,77 @@ def _total_length_line(blueprint: dict) -> str:
             "CTA and sign-off ≤ 150); the body is already at its budget — do not expand it.")
 
 
+# A single-chapter script more than this × its whole-video budget gets tightened
+# as one text. In a 10-minute run script_refinement kept 2,333 spoken words for a
+# 1,350-word target.
+WHOLE_TIGHTEN_ABOVE = 1.15
+
+
+def _tighten_whole_script(blueprint: dict, script: str) -> str:
+    """Up to two tightening calls when the assembled non-chapter script overruns the
+    whole-video word budget (minutes × wpm). The first tightened text replaces the
+    original when it is shorter and keeps ≥ 0.7 × target; if that accepted text is
+    still > target × 1.15, ONE more call is made on it (same prompt form) and accepted
+    under the same rule. Failures and out-of-range answers keep the current text."""
+    minutes = _target_minutes(blueprint)
+    if minutes <= 0:
+        return script
+    try:
+        wpm = float((blueprint or {}).get("words_per_minute", 135) or 135)
+    except (TypeError, ValueError):
+        wpm = 135
+    if wpm <= 0:
+        return script
+    target = int(minutes * wpm)
+    if target <= 0:
+        return script
+    before = chapters.spoken_words(script)
+    if before <= target * WHOLE_TIGHTEN_ABOVE:
+        return script
+
+    system_prompt = load_prompt("script_refinement")
+    current = script
+    for attempt in (1, 2):
+        current_words = chapters.spoken_words(current)
+        if attempt == 1:
+            print(f"  ✂️ whole script: {current_words} words vs target {target} — tightening")
+        else:
+            print(f"  ✂️ whole script: still {current_words} words vs target {target} — tightening again")
+        # Writers overshoot a requested length, so the request aims a little under it.
+        user_prompt = (f"TIGHTEN this complete script to about {int(target * 0.9)} spoken words "
+                       f"(never more than {target}): keep the opening hook, the disclaimer, "
+                       "every medical point and red flag, the call to action and the sign-off, and "
+                       "all [cues]/stage directions; cut repetition, padding and side stories."
+                       "\n\n" + current)
+        try:
+            response = call_llm(system_prompt, user_prompt, temperature=0.5,
+                                max_tokens=max(9000, chapters.budget_for_words(target)))
+        except Exception as error:                 # a failed pass keeps the current text
+            if attempt == 1:
+                print(f"  ✂️ whole script: tightening failed ({error}); keeping the original")
+                return script
+            print(f"  ✂️ whole script: second tightening failed ({error}); "
+                  "keeping the first tightened text")
+            return current
+
+        after = chapters.spoken_words(response)
+        # A tightened script that is shorter but still a bit long beats the current text;
+        # only a cut below 70% of the target (content likely lost) is rejected.
+        if 0.7 * target <= after < current_words:
+            current = response
+            print(f"  ✂️ whole script: {current_words} → {after} words")
+            if after <= target * WHOLE_TIGHTEN_ABOVE:
+                return current
+            continue                                # accepted but still over: try once more
+        if attempt == 1:
+            print(f"  ✂️ whole script: tightened to {after} words (out of range); keeping the original")
+            return script
+        print(f"  ✂️ whole script: second tightening to {after} words (out of range); "
+              "keeping the first tightened text")
+        return current
+    return current
+
+
 def script_refinement(state: PipelineState) -> dict:
     system_prompt = load_prompt("script_refinement")
     blueprint = state.get("blueprint") or {}
@@ -854,6 +940,7 @@ AUDIT / CRITIQUE REPORT:
 {state.get("self_critique_output", "")}"""
 
     response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=9000)
+    response = _tighten_whole_script(blueprint, response)
     _warn_if_refined_too_long(blueprint, response)
     return {"refined_script": response}
 

@@ -772,6 +772,134 @@ class SingleChapterFrameTest(unittest.TestCase):
         self.assertNotIn("refined script:", text)
 
 
+class SingleChapterWholeScriptTightenTest(unittest.TestCase):
+    """script_refinement tightens the whole non-chapter script when it overruns the
+    whole-video budget (target_minutes × words_per_minute)."""
+
+    BP = {"target_minutes": 10, "words_per_minute": 135,
+          "chapters": [{"id": "C1", "title": "الفصل الوحيد", "job": "j", "words": 500,
+                        "covers": [], "opens_loops": [], "closes_loops": [],
+                        "depends_on_previous": False}]}
+
+    def _words(self, prefix, n):
+        return " ".join(f"{prefix}{i}" for i in range(n))
+
+    def _state(self, **over):
+        return base_state(blueprint=self.BP, dialect_warmth_output="D", **over)
+
+    def test_overlong_refined_script_is_tightened(self):
+        long_script = self._words("w", 2000)          # target 1350, limit 1552.5
+        tight = self._words("t", 1200)
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append({"user": user, "temperature": temperature, "max_tokens": max_tokens})
+            return tight if "TIGHTEN this complete script" in user else long_script
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print") as printed:
+            out = script_writing.script_refinement(self._state())
+        tighten = [c for c in calls if "TIGHTEN this complete script" in c["user"]]
+        self.assertEqual(len(tighten), 1)
+        self.assertIn("TIGHTEN this complete script to about 1215 spoken words "
+                      "(never more than 1350)", tighten[0]["user"])
+        self.assertEqual(tighten[0]["temperature"], 0.5)
+        self.assertEqual(tighten[0]["max_tokens"], max(9000, chapters.budget_for_words(1350)))
+        self.assertEqual(out["refined_script"], tight)
+        text = " ".join(str(c.args[0]) for c in printed.call_args_list)
+        self.assertIn("whole script: 2000 → 1200 words", text)
+
+    def test_second_tightening_only_when_still_over(self):
+        long_script = self._words("w", 2000)
+        first = self._words("a", 1800)                # accepted, still > 1552.5
+        second = self._words("b", 1300)               # within budget
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            if "TIGHTEN this complete script" in user:
+                return second if "a1799" in user else first
+            return long_script
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            out = script_writing.script_refinement(self._state())
+        tighten = [c for c in calls if "TIGHTEN this complete script" in c]
+        self.assertEqual(len(tighten), 2)
+        self.assertIn("a1799", tighten[1])            # the second call tightens the accepted first
+        self.assertEqual(out["refined_script"], second)
+
+    def test_out_of_range_tightening_keeps_the_original(self):
+        long_script = self._words("w", 2000)
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            return self._words("t", 100) if "TIGHTEN this complete script" in user else long_script
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            out = script_writing.script_refinement(self._state())
+        self.assertEqual(len([c for c in calls if "TIGHTEN this complete script" in c]), 1)
+        self.assertEqual(out["refined_script"], long_script)
+
+    def test_no_target_minutes_never_tightens(self):
+        long_script = self._words("w", 2000)
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            return long_script
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        out = script_writing.script_refinement(
+            base_state(blueprint=ONE_CHAPTER, dialect_warmth_output="D"))
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("TIGHTEN this complete script", calls[0])
+        self.assertEqual(out["refined_script"], long_script)
+
+
+class DialectLengthLineTest(unittest.TestCase):
+    """The non-chapter dialect prompt names the script's spoken length, but only when
+    the blueprint has a target (otherwise the prompt must stay byte-identical)."""
+
+    BP = {"target_minutes": 10, "words_per_minute": 135,
+          "chapters": [{"id": "C1", "title": "الفصل الوحيد", "job": "j", "words": 500,
+                        "covers": [], "opens_loops": [], "closes_loops": [],
+                        "depends_on_previous": False}]}
+
+    LINE = ("LENGTH: the script above has {n} spoken words; keep your rewrite within ±5% — "
+            "change wording, do not add new sentences, examples or asides "
+            "(the video's length is already budgeted).")
+
+    def test_length_line_present_with_a_target(self):
+        frame = use(self, script_writing, "call_llm_json",
+                    frame_fake(opening="a b c", disclaimer="d e", closing="j k"))
+        fake = use(self, script_writing, "call_llm", FakeLLM(lambda *a: "DIALECT"))
+        state = base_state(blueprint=self.BP, hook="H", revised_body="f g h i", cta_output="C")
+        script_writing.dialect_warmth_layer(state)
+        self.assertEqual(len(frame.calls), 1)
+        self.assertIn(self.LINE.format(n=11), fake.calls[0]["user"])
+
+    def test_length_line_absent_without_a_target(self):
+        frame = use(self, script_writing, "call_llm_json", frame_fake())
+        fake = use(self, script_writing, "call_llm", FakeLLM(lambda *a: "DIALECT"))
+        script_writing.dialect_warmth_layer(
+            base_state(blueprint=ONE_CHAPTER, hook="H", revised_body="B", cta_output="C"))
+        self.assertEqual(len(frame.calls), 0)
+        self.assertNotIn("LENGTH: the script above has", fake.calls[0]["user"])
+
+    def test_length_line_present_in_a_revision_pass(self):
+        fake = use(self, script_writing, "call_llm", FakeLLM(lambda *a: "DIALECT"))
+        state = base_state(blueprint=self.BP, quality_revision_count=1,
+                           refined_script="r s t", cta_output="c d",
+                           self_critique_output="dialect wording only")
+        script_writing.dialect_warmth_layer(state)
+        prompt = fake.calls[0]["user"]
+        self.assertIn("LENGTH: the script above has 3 spoken words", prompt)
+        self.assertIn("REVISION PASS", prompt)
+
+
 if __name__ == "__main__":
     unittest.main()
 
