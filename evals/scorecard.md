@@ -34,6 +34,7 @@ One row per scored session. Baseline is the `v1-baseline-research-web` tag; rows
 | 2026-10-12 19:22 | v5-planner-fulltext | migraine | 9980937 | 11.1 | $0.0000 | 93 | 0 | 41.9 | 5/8 | 0.0 | 3.2 | 4 | 8 | 7 | 8 | 8 | 8 | 7.80 | 7/8 | 7.60 |
 | 2026-10-12 19:54 | v5-planner-fulltext | statins | 9980937 | 30.3 | $0.0000 | 96 | 1 | 43.8 | 8/9 | 2.1 | 5.2 | 4 | 8 | 8 | 8 | 7 | 8 | 7.80 | 9/9 | 7.40 |
 | 2026-10-12 20:08 | v5-planner-fulltext | insomnia | 9980937 | 12.7 | $0.0000 | 85 | 4 | 42.4 | 6/8 | 2.4 | 10.6 | 4 | 7 | 7 | 6 | 6 | 9 | 7.00 | 5/8 | 6.80 |
+| 2026-10-12 21:00 | v6-guide-safety | migraine | 1ad073b | 16.4 | $0.0100 | 113 | 0 | 50.4 | 5/8 | 0.9 | 5.3 | 3 | 8 | 7 | 8 | 8 | 8 | 7.80 | 7/8 | 7.20 |
 
 _`cost` is approximate: DeepSeek balance delta (before − after). Concurrent DeepSeek usage would inflate it; `—` means the balance was unavailable._
 
@@ -57,22 +58,23 @@ The guide provides strong, practical first-aid instructions for acute spasms and
 - Daily knee-high compression stockings reduce weekly cramp frequency in adults aged 50 to 85 (moderate evidence). — The action card presents compression stockings as a general 'works' recommendation without cautioning against their use in patients with undiagnosed or suspected peripheral arterial disease (PAD), which is common in older adults and can worsen ischemia.
 
 
-### `migraine` — v5-planner-fulltext · 2026-10-12 19:22 (commit 9980937)
+### `migraine` — v6-guide-safety · 2026-10-12 21:00 (commit 1ad073b)
 
-The dossier provides strong, evidence-backed coverage of medication-overuse headaches, emergency red flags (SNOOP criteria), acute pharmacotherapy, and preventive tiers. However, it lacks key patient distinctions between tension-type headaches and migraines, overlooks non-drug measures for acute attacks, and completely ignores common regional home remedies like Turkish coffee with lemon or head binding. Additionally, while pediatric treatment and cupping data are mentioned, the dossier fails to describe how pediatric migraine presentation differs from adults.
+The dossier provides robust clinical coverage of acute rescue treatments (triptans, gepants), medication overuse headache mechanics, and red-flag neurological emergency indicators. It also includes valuable specifics for neuroimaging utility and common dietary/lifestyle triggers like fasting and sleep changes. However, it lacks non-pharmacologic first-hour guidance, misses clear pediatric symptom profiles, leaves common regional remedies (lemon coffee, head binding) largely unaddressed, and fails to give explicit threshold criteria for when a general patient should initiate preventive therapy.
 
 **Core questions not fully answered:**
 - Q1 (partly): How can I tell if my headache is an actual migraine or just a regular tension or sinus headache?
 - Q3 (partly): What should I do immediately in the first hour of an attack to stop the migraine before it becomes unbearable?
 - Q8 (partly): At what point do I need daily preventive medication rather than just treating each attack as it comes?
 
-**Guide judge** — 7/8 core answered · mean 7.60 · 2 unsafe / misleading items.
+**Guide judge** — 7/8 core answered · mean 7.20 · 3 unsafe / misleading items.
 
-The guide provides strong, clinically relevant information for acute management, red flags, medication overuse headache, and standard preventives. However, it completely omits pediatric migraines (Q11) and leaves tension headache comparisons and specific folk remedies like Turkish coffee with lemon unaddressed. Crucial safety warnings—specifically teratogenicity of valproate/topiramate and NSAID risks after 19 weeks of pregnancy—are absent from the Action Card. Additionally, labeling Botox and triptans as unqualified safe options in pregnancy overstates clinical safety.
+The guide provides strong evidence-based coverage of migraine identification, early acute treatment, medication overuse headache, and regional issues like Ramadan fasting. However, it completely omits pediatric migraine (Q11) and leaves regional remedies like head-tying or lemon coffee unaddressed (Q6), while timeline expectations for preventive drugs are vague (Q9). Crucial safety contraindications—especially cardiovascular cautions for triptans and teratogenicity for topiramate—are buried in special groups rather than prominent on the action card. Additionally, grouping evidence-backed supplements like riboflavin and magnesium under 'popular but not proven' creates confusing mixed messaging.
 
 **Unsafe or misleading:**
-- Triptans, greater occipital nerve blocks, and onabotulinumtoxinA are safe options during pregnancy and breastfeeding. — Stating that OnabotulinumtoxinA (Botox) and triptans are flatly 'safe options' in pregnancy overstates safety certainty; Botox is not standardly considered proven safe in pregnancy and triptans carry specific clinical caveats.
-- Cognitive behavioral therapy and biofeedback to reduce attack frequency and pain (proven). — The text labels this as '(proven)' in the action card despite citing evidence strength 'probably_helps', overstating the strength of evidence.
+- Magnesium supplements: Magnesium citrate has a strong recommendation from the Canadian Headache Society... — Categorized under 'POPULAR BUT NOT PROVEN' despite having guideline endorsements and being listed under '[works]' in the action card, sending conflicting messages to patients about its utility and evidence level.
+- Riboflavin (Vitamin B2, up to 400 mg/day): High-dose riboflavin (100 to 400 mg daily for 3 months) may reduce migraine attack frequency and pain intensity... — Placed under 'POPULAR BUT NOT PROVEN' despite evidence strength being rated 'probably_helps' and listed in the action card under '[works]', confusing the patient on whether it is evidence-based or unproven.
+- Butterbur is not recommended for migraine prevention due to safety concerns. — Fails to explicitly state the severe danger of hepatotoxicity (liver toxicity) associated with unregulated butterbur preparations, leaving a patient unaware of why it is dangerous.
 
 
 ### `statins` — v5-planner-fulltext · 2026-10-12 19:54 (commit 9980937)
