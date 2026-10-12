@@ -50,3 +50,5 @@ FORMAT YOUR OUTPUT:
 ### RECOMMENDED HOOK
 **Use**: Hook A / B / C
 **Reason**: [1–2 sentences]
+
+NO SPEED OR CERTAINTY PROMISES (checked automatically downstream — avoid rewrites): never promise how fast or how surely something works — no "في ثواني", "فوراً", "على طول", "في لحظتها", "مضمون", "علاج نهائي", "حل سحري", "100%", "instantly" for a treatment, remedy, movement or habit — unless the Medical Fact Ledger states that exact timing or certainty. Say what the evidence supports instead: "بيساعد يفك الشد", "عند ناس كتير بيخف خلال دقايق" (only if the ledger says minutes), "مش علاج نهائي بس بيقلل النوبات". Urgency for red flags ("روح الطوارئ فوراً") is fine — that is advice, not a promise.
