@@ -207,5 +207,47 @@ class TruthVerifierWholeTightenTest(unittest.TestCase):
         self.assertEqual(out["refined_script"], self.SHORT)
 
 
+class TruthVerifierWrittenLengthGuardTest(unittest.TestCase):
+    """In soft mode the truth verifier's own passes may not grow the script > 12% over
+    the writers' length; the padding is trimmed back to the written length."""
+
+    def _words(self, prefix, n):
+        return " ".join(f"{prefix}{i}" for i in range(n))
+
+    def _state(self, **over):
+        over.setdefault("revised_body", self._words("b", 90))
+        over.setdefault("script_frame", {"opening": self._words("o", 10), "disclaimer": "",
+                                         "closing": ""})
+        return state(research_dossier="", blueprint={"target_minutes": 10, "chapters": [
+            {"id": "1", "title": "الفصل", "words": 500}]}, **over)
+
+    def test_soft_growth_is_trimmed_to_the_written_length(self):
+        grown = self._words("g", 130)          # written = 100, 1.3 ×
+        tight = self._words("t", 95)
+        fake = FakeJSON(lambda system, user: (verifier_answer(grown), "raw"))
+        use(self, fake)
+        calls = []
+
+        def fake_llm(system, user, temperature=None, max_tokens=None, **kwargs):
+            calls.append(user)
+            return tight
+
+        with mock.patch.object(script_writing, "call_llm", fake_llm):
+            out = quality.medical_truth_verifier(self._state(refined_script="x"))
+
+        self.assertEqual(len(calls), 1)
+        self.assertIn("Aim for about 100 spoken words", calls[0])
+        self.assertEqual(out["refined_script"], tight)
+
+    def test_growth_within_twelve_percent_is_kept(self):
+        script = self._words("g", 110)         # written = 100, 1.1 ×
+        fake = FakeJSON(lambda system, user: (verifier_answer(script), "raw"))
+        use(self, fake)
+        with mock.patch.object(script_writing, "call_llm",
+                               lambda *a, **k: self.fail("mild growth must not be trimmed")):
+            out = quality.medical_truth_verifier(self._state(refined_script="x"))
+        self.assertEqual(out["refined_script"], script)
+
+
 if __name__ == "__main__":
     unittest.main()

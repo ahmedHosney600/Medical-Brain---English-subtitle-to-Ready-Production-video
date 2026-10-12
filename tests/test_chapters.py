@@ -1062,3 +1062,110 @@ class MinWordsTest(unittest.TestCase):
             self.assertFalse(chapters.chapter_mode_on(bp))
             bp["chapters"].append({"id": "C3", "title": "c", "words": 900})
             self.assertTrue(chapters.chapter_mode_on(bp))
+
+
+class SingleChapterWrittenLengthGuardTest(unittest.TestCase):
+    """In soft mode a polishing pass may not grow the writers' script by more than 12%;
+    the words past that are padding and are trimmed back to the written length."""
+
+    BP = {"target_minutes": 10, "words_per_minute": 135,
+          "chapters": [{"id": "C1", "title": "الفصل الوحيد", "job": "j", "words": 500,
+                        "covers": [], "opens_loops": [], "closes_loops": [],
+                        "depends_on_previous": False}]}
+
+    def _words(self, prefix, n):
+        return " ".join(f"{prefix}{i}" for i in range(n))
+
+    def _state(self, **over):
+        # target_minutes=0 on the state means the user gave no duration → soft mode.
+        over.setdefault("target_minutes", 0)
+        return base_state(blueprint=self.BP, dialect_warmth_output="D", **over)
+
+    def test_written_words_uses_the_frame(self):
+        state = self._state(script_frame={"opening": self._words("o", 10), "disclaimer": "",
+                                          "closing": self._words("c", 5)},
+                            revised_body=self._words("b", 90))
+        self.assertEqual(script_writing._written_words(state), 105)
+
+    def test_written_words_without_a_frame_allows_one_hook_and_cta(self):
+        state = self._state(revised_body=self._words("b", 100))
+        self.assertEqual(script_writing._written_words(state), 350)
+
+    def test_written_words_is_zero_without_a_body(self):
+        state = self._state(script_frame={"opening": self._words("o", 10)})
+        self.assertEqual(script_writing._written_words(state), 0)
+
+    def test_growth_over_twelve_percent_is_trimmed_to_the_written_length(self):
+        grown = self._words("g", 130)          # written = 100, 1.3 ×
+        tight = self._words("t", 95)
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            return tight if "TRIM this complete script" in user else grown
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print") as printed:
+            out = script_writing.script_refinement(self._state(
+                script_frame={"opening": self._words("o", 10), "disclaimer": "", "closing": ""},
+                revised_body=self._words("b", 90)))
+
+        trim = [c for c in calls if "TRIM this complete script" in c]
+        self.assertEqual(len(trim), 1)
+        self.assertIn("Aim for about 100 spoken words", trim[0])
+        self.assertEqual(out["refined_script"], tight)
+        text = " ".join(str(c.args[0]) for c in printed.call_args_list)
+        self.assertIn("polishing grew it 130 vs written 100", text)
+
+    def test_growth_within_twelve_percent_is_kept(self):
+        script = self._words("g", 110)         # written = 100, 1.1 ×
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            return script
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        out = script_writing.script_refinement(self._state(
+            script_frame={"opening": self._words("o", 10), "disclaimer": "", "closing": ""},
+            revised_body=self._words("b", 90)))
+        self.assertEqual([c for c in calls if "TRIM this complete script" in c], [])
+        self.assertEqual(out["refined_script"], script)
+
+    def test_without_a_frame_the_trim_target_is_body_plus_250(self):
+        grown = self._words("g", 400)          # written = 100 + 250 = 350, 1.14 ×
+        tight = self._words("t", 360)
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            return tight if "TRIM this complete script" in user else grown
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            out = script_writing.script_refinement(self._state(revised_body=self._words("b", 100)))
+
+        trim = [c for c in calls if "TRIM this complete script" in c]
+        self.assertEqual(len(trim), 1)
+        self.assertIn("Aim for about 350 spoken words", trim[0])
+        self.assertEqual(out["refined_script"], tight)
+
+    def test_strict_mode_is_unchanged(self):
+        grown = self._words("g", 130)          # would trigger the soft check
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            return grown
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print") as printed:
+            out = script_writing.script_refinement(self._state(
+                target_minutes=10,
+                script_frame={"opening": self._words("o", 10), "disclaimer": "", "closing": ""},
+                revised_body=self._words("b", 90)))
+
+        self.assertEqual([c for c in calls if "TRIM this complete script" in c], [])
+        text = " ".join(str(c.args[0]) for c in printed.call_args_list)
+        self.assertNotIn("polishing grew it", text)
+        self.assertEqual(out["refined_script"], grown)

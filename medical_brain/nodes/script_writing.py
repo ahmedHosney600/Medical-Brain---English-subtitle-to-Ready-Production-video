@@ -172,6 +172,9 @@ TIGHTEN_ABOVE = 1.1
 # Without a user-given duration the length is only a guide: a script is trimmed only when
 # it runs far over its own plan (real padding), never squeezed toward the number.
 SOFT_TIGHTEN_ABOVE = 1.35
+# Polishing steps (dialect/refinement) may grow the writers' script by at most this much
+# before the extra words count as padding and are trimmed back to the written length.
+WRITTEN_GROWTH_MAX = 1.12
 
 
 def duration_fixed(state: PipelineState) -> bool:
@@ -181,6 +184,23 @@ def duration_fixed(state: PipelineState) -> bool:
         return int(float((state or {}).get("target_minutes") or 0)) > 0
     except (TypeError, ValueError):
         return False
+
+
+def _written_words(state: PipelineState) -> int:
+    """Spoken words the writers actually produced for a single-chapter script.
+
+    With a frame (the chosen opening/disclaimer/closing) it is their sum plus the
+    written body. Without one the raw hook and CTA are only approximated: one hook and
+    one CTA, allowed 250 spoken words. 0 when no body was written."""
+    body = str(state.get("revised_body", "") or "")
+    if not body.strip():
+        return 0
+    frame = state.get("script_frame") or {}
+    opening = str(frame.get("opening", "") or "").strip() if isinstance(frame, dict) else ""
+    if opening:
+        parts = [frame.get("opening", ""), frame.get("disclaimer", ""), body, frame.get("closing", "")]
+        return chapters.spoken_words("\n\n".join(str(x) for x in parts if x and str(x).strip()))
+    return chapters.spoken_words(body) + 250
 
 
 def _soft_tighten_chapter(cid: str, title: str, target: int, text: str, memory: dict) -> tuple:
@@ -1038,6 +1058,15 @@ AUDIT / CRITIQUE REPORT:
 
     strict = duration_fixed(state)
     response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=9000)
+    if not strict:
+        # Content-sized length is what the writers produced: growth added by the later
+        # polishing steps is padding. Trim back if this pass grew the script > 12%.
+        written = _written_words(state)
+        before = chapters.spoken_words(response)
+        if written > 0 and before > written * WRITTEN_GROWTH_MAX:
+            print(f"  ✂️ whole script: polishing grew it {before} vs written {written} — "
+                  "trimming padding")
+            response = _soft_tighten_whole_script(response, written)
     response = _tighten_whole_script(blueprint, response, strict=strict)
     _warn_if_refined_too_long(blueprint, response, strict=strict)
     return {"refined_script": response}
