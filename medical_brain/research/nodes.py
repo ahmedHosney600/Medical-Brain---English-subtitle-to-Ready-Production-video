@@ -80,6 +80,8 @@ def _source_block(state: dict, sid: str, limit: int = 3500, borrowed: bool = Fal
            f"{evidence.LEVELS.get(s.get('level', 6), '')}"
     if borrowed:
         head += " (from another section)"
+    if s.get("fulltext") is True and limit == 3500:   # an enriched source carries a much longer text
+        limit = 9000
     return head + "\n" + (s.get("text") or "")[:limit]
 
 
@@ -439,11 +441,32 @@ Plan the research. Output ONLY the JSON object."""
             "focus": ids, "work": ids, "screen_round": 0, "verify_round": 0, "coverage_round": 0}
 
 
-def _collect_queries(job, per_query: int, years: int) -> list:
+def _collect_queries(job, per_query: int, years: int, fallback_years: int = None,
+                     older_per_query: int = 2) -> list:
+    """Search one section's queries. Every literature query also runs a relevance search
+    restricted to papers *older* than the normal window (``[now-fallback_years TO
+    now-years-1]``): long-established safety evidence (e.g. the 1990s reports against
+    sublingual nifedipine) is older than the normal window, so a query's recent hits can
+    be only loosely related. The older results are appended to that query's own results,
+    deduped by key. Public queries are never widened, and a failing older search is
+    ignored (logged like run_query does)."""
     _, queries = job
     found = []
     for kind, q in queries:
-        found.extend(src.run_query(kind, q, per_query, years))
+        results = src.run_query(kind, q, per_query, years)
+        if kind == "literature" and fallback_years and older_per_query:
+            try:
+                older = src.europepmc.search_older(q, max_results=older_per_query, years=years,
+                                                   oldest_years=fallback_years)
+            except Exception as e:        # a parser surprise must not stop the research
+                src.http.log.append(("Europe PMC", q, f"{type(e).__name__}: {e}"))
+                older = []
+            seen = {s.get("key") for s in results}
+            for s in older:
+                if s.get("key") not in seen:
+                    seen.add(s.get("key"))
+                    results.append(s)
+        found.extend(results)
     return found
 
 
@@ -795,6 +818,8 @@ def _expert_seed_queries(state: dict) -> bool:
 def source_collector(state: dict) -> dict:
     settings = state.get("settings", {})
     per_query, years = settings.get("sources_per_query", 6), settings.get("research_years", 10)
+    fallback_years = settings.get("research_years_fallback", 40)
+    older_per_query = settings.get("older_per_query", 2)
     _expert_seed_queries(state)
     outline = [dict(s) for s in state.get("outline", [])]
     sources = {k: dict(v) for k, v in state.get("sources", {}).items()}
@@ -818,7 +843,8 @@ def source_collector(state: dict) -> dict:
         jobs.append((sec, queries))
     # 2. Search each section's queries concurrently (network-bound), then
     # 3. merge in outline order so source ids stay deterministic.
-    results = _parallel(lambda job: _collect_queries(job, per_query, years), jobs,
+    results = _parallel(lambda job: _collect_queries(job, per_query, years, fallback_years,
+                                                    older_per_query), jobs,
                         settings.get("parallel_calls", 4))
     # 3b. LLM-assisted Google research, while pending still holds this round's public queries.
     web_sections = [sec for sec in outline if sec["id"] in focus
@@ -967,9 +993,96 @@ def _classic_for_section(state: dict, sec: dict) -> list:
     return list(dict.fromkeys(first + rest))
 
 
+_FULLTEXT_ORIGINS = ("Europe PMC", "PubMed")
+_FULLTEXT_SHORT = 3000          # a source at least this long already has real text
+
+
+def _fulltext_paragraphs(text: str) -> list:
+    """Plain full text → its non-empty paragraphs (blank-line separated)."""
+    return [p.strip() for p in re.split(r"\n\s*\n", text or "") if p.strip()]
+
+
+def _best_fulltext_excerpts(paragraphs: list, qwords: set, cap: int) -> list:
+    """The paragraphs overlapping the section's words best, in document order, total ≤ cap.
+
+    Each paragraph is scored by how many 4+ letter words it shares with the section's
+    title and questions; paragraphs with no overlap are never included."""
+    ranked = sorted(((i, len(qwords & _word_set(p)), p) for i, p in enumerate(paragraphs)),
+                    key=lambda t: (-t[1], t[0]))
+    chosen, used = [], 0
+    for i, score, paragraph in ranked:
+        if score <= 0 or used + len(paragraph) > cap:
+            continue
+        chosen.append((i, paragraph))
+        used += len(paragraph)
+    chosen.sort()
+    return [p for _, p in chosen]
+
+
+def _enrich_fulltext(sources: dict, sections: list, settings: dict) -> tuple:
+    """Append open-access full-text excerpts to short Europe PMC/PubMed sources.
+
+    Only sources a section kept, still lacking a text long enough to extract from and with
+    no "fulltext" marker are considered, at most ``fulltext_max_per_round`` per call. The
+    lookups/fetches run through ``_parallel``; any failure just marks the source "none" so
+    it is not retried. Returns (enriched, kept): sources actually extended and the number
+    of distinct kept sources seen."""
+    settings = settings or {}
+    cap = int(settings.get("fulltext_max_per_round", 8) or 0)
+    char_cap = int(settings.get("fulltext_chars", 6000) or 0)
+    seen, candidates, kept = set(), [], 0
+    for sec in sections:
+        for sid in sec.get("source_ids", []):
+            if sid in seen or sid not in sources:
+                continue
+            seen.add(sid)
+            kept += 1
+            source = sources[sid]
+            if "fulltext" in source:                      # already handled in an earlier round
+                continue
+            if len(source.get("text") or "") >= _FULLTEXT_SHORT:
+                continue
+            if source.get("origin") not in _FULLTEXT_ORIGINS:
+                continue
+            candidates.append((sec, sid))
+    candidates = candidates[:cap] if cap > 0 else []
+
+    def enrich(candidate):
+        sec, sid = candidate
+        source = sources[sid]
+        pmcid = str(source.get("pmcid") or "").strip()
+        open_access = bool(source.get("open_access"))
+        if not pmcid and source.get("pmid"):              # PubMed has no pmcid of its own
+            pmcid, open_access = src.europepmc.lookup_pmcid(str(source["pmid"]).strip())
+        if not pmcid or not open_access:
+            return sid, None
+        body = src.europepmc.fulltext(pmcid)
+        if not body:
+            return sid, None
+        qwords = _word_set(str(sec.get("title", "")) + " " + " ".join(sec.get("questions", [])))
+        return sid, _best_fulltext_excerpts(_fulltext_paragraphs(body), qwords, char_cap)
+
+    results = _parallel(enrich, candidates, settings.get("parallel_calls", 4))
+    enriched = 0
+    for sid, excerpts in results:
+        if excerpts:
+            source = sources[sid]
+            source["text"] = ((source.get("text") or "")
+                              + "\n\nFULL TEXT EXCERPTS:\n" + "\n\n".join(excerpts))
+            source["fulltext"] = True
+            enriched += 1
+        else:
+            sources[sid]["fulltext"] = "none"
+    return enriched, kept
+
+
 def fact_extractor(state: dict) -> dict:
     settings = state.get("settings", {})
     system_prompt = load_prompt("research/fact_extractor")
+    # Work on copies of the sources so the full-text excerpts can be returned in the
+    # state update (a source may be shared by several sections).
+    sources = {k: dict(v) for k, v in state.get("sources", {}).items()}
+    state = {**state, "sources": sources}
     facts = [f for f in state.get("facts", []) if f.get("status") != "fix"]
     # Facts sent back for fixing are replaced by this extraction; if they don't come
     # back corrected they stay visible in the dossier's "not included" list.
@@ -986,10 +1099,16 @@ def fact_extractor(state: dict) -> dict:
     budget = settings.get("max_facts_per_section", 12)
     outline = [dict(s) for s in state.get("outline", [])]
     classic_map = _classic_canonical(state)          # canonical check names only
+    sections_to_extract = _sections({"outline": outline}, state.get("to_extract"))
+    # 0. Enrich the kept sources of these sections with open-access full-text excerpts
+    #    before any prompt is built, so the extractor sees the recommendations a bare
+    #    abstract only hints at. Best-effort: failures are ignored and marked.
+    enriched, kept = _enrich_fulltext(sources, sections_to_extract, settings)
+    _log(f"full text: {enriched} of {kept} kept sources enriched")
     # 1. Build each section's prompt up front (cheap); sections with no work are
     #    logged and skipped exactly as before.
     jobs = []
-    for sec in _sections({"outline": outline}, state.get("to_extract")):
+    for sec in sections_to_extract:
         fixing = redo.get(sec["id"]) or []
         extracted = list(sec.get("extracted", []))
         if fixing:
@@ -1092,7 +1211,8 @@ Output ONLY the JSON object."""
     kept = {_norm(f["claim"]) for f in facts}
     rejected = [r for r in rejected if not (r.get("note", "").endswith("(sent back for correction)")
                                             and (r.get("id") in fixed_ids or _norm(r["claim"]) in kept))]
-    return {"facts": facts, "next_fact": next_fact, "rejected": rejected, "outline": outline}
+    return {"facts": facts, "next_fact": next_fact, "rejected": rejected, "outline": outline,
+            "sources": sources}
 
 
 def fact_verifier(state: dict) -> dict:

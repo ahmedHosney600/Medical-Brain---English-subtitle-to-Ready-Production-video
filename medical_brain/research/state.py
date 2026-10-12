@@ -70,6 +70,10 @@ DEFAULT_SETTINGS = {
     "sources_per_section": 8,
     "cross_section_sources": 4,       # sources borrowed from other sections, per section
     "research_years": 10,
+    "research_years_fallback": 40,    # how far back the older-evidence search goes
+    "older_per_query": 2,             # older-evidence results appended per literature query
+    "fulltext_chars": 6000,           # characters of open-access full text added to a source
+    "fulltext_max_per_round": 8,      # sources enriched with full text per extractor round
     "parallel_calls": 4,              # sections to search/extract/verify at once (1 = sequential)
     "web_search": "sites",            # "sites" | "sites+google" | "google" (your Chrome) | "off" — Google search flags the network
     "web_pages_per_section": 3,       # Google results the LLM may open per section per round

@@ -488,6 +488,8 @@ class CliResumeTest(unittest.TestCase):
             state["workflow"] = "research"
             state["session"] = "20260101_000000"
             with mock.patch("medical_brain.research.sources.run_query", side_effect=fake_sources), \
+                    mock.patch("medical_brain.research.sources.europepmc.search_older",
+                               return_value=[]), \
                     mock.patch.object(cli, "_convert"), \
                     contextlib.redirect_stdout(io.StringIO()):
                 with self.assertRaises(SystemExit):
@@ -508,6 +510,8 @@ class CliResumeTest(unittest.TestCase):
                 return r2
 
             with mock.patch("medical_brain.research.sources.run_query", side_effect=fake_sources), \
+                    mock.patch("medical_brain.research.sources.europepmc.search_older",
+                               return_value=[]), \
                     mock.patch.object(cli, "_convert"), \
                     contextlib.redirect_stdout(io.StringIO()):
                 cli.resume_run(factory, session_dir)

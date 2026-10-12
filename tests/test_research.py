@@ -1,4 +1,5 @@
 """The topic → research workflow, offline: fake sources and a scripted fake model."""
+import datetime
 import json
 import os
 import re
@@ -62,6 +63,46 @@ class SourceParsersTest(unittest.TestCase):
         self.assertEqual((s["level"], s["cited_by"], s["text"]), (1, 300, "Atrial fibrillation increases the risk of stroke about fivefold."))
         [m] = medlineplus.parse_results(MEDLINE)
         self.assertEqual(m["text"], "Atrial fibrillation (AFib) is the most common type of arrhythmia.")
+
+    def test_europepmc_records_pmcid_and_open_access(self):
+        data = {"resultList": {"result": [
+            {"id": "1", "source": "MED", "pmid": "1", "pubYear": "2020", "title": "Open one",
+             "abstractText": "a", "pmcid": "PMC1", "isOpenAccess": "Y",
+             "journalInfo": {"journal": {"title": "J"}}},
+            {"id": "2", "source": "MED", "pmid": "2", "pubYear": "2020", "title": "Closed one",
+             "abstractText": "b", "pmcid": "PMC2", "isOpenAccess": "N",
+             "journalInfo": {"journal": {"title": "J"}}}]}}
+        opened, closed = europepmc.parse_results(data)
+        self.assertEqual(opened["pmcid"], "PMC1")
+        self.assertTrue(opened["open_access"])
+        self.assertEqual(closed["pmcid"], "PMC2")
+        self.assertFalse(closed["open_access"])
+
+    def test_fulltext_strips_xml_and_keeps_paragraphs(self):
+        xml = ("<article><body><sec><title>Heading</title>"
+               "<p>Sublingual nifedipine is <italic>dangerous</italic>.</p>"
+               "<p>Stop it at once.</p></sec></body></article>")
+        with mock.patch("medical_brain.research.sources.http.get", return_value=xml):
+            text = europepmc.fulltext("PMC1")
+        self.assertNotIn("<", text)
+        self.assertIn("Heading", text)
+        self.assertIn("dangerous", text)
+        self.assertIn("Stop it at once.", text)
+        self.assertIn("\n\n", text)                         # paragraphs stay separated
+        with mock.patch("medical_brain.research.sources.http.get", return_value=None):
+            self.assertEqual(europepmc.fulltext("PMC1"), "")
+        self.assertEqual(europepmc.fulltext(""), "")
+
+    def test_lookup_pmcid_uses_the_search_endpoint(self):
+        data = {"resultList": {"result": [{"pmcid": "PMC9", "isOpenAccess": "Y"}]}}
+        with mock.patch("medical_brain.research.sources.http.get_json", return_value=data) as get_json:
+            self.assertEqual(europepmc.lookup_pmcid("123"), ("PMC9", True))
+            params = get_json.call_args.kwargs["params"]
+            self.assertEqual(params["query"], "EXT_ID:123 AND SRC:MED")
+            self.assertEqual(params["resultType"], "core")
+        with mock.patch("medical_brain.research.sources.http.get_json", return_value=None):
+            self.assertEqual(europepmc.lookup_pmcid("123"), ("", False))
+        self.assertEqual(europepmc.lookup_pmcid(""), ("", False))
 
     def test_web_only_trusted_sites(self):
         self.assertTrue(web.is_trusted("https://www.nhs.uk/conditions/atrial-fibrillation/"))
@@ -147,6 +188,71 @@ class StatPearlsTest(unittest.TestCase):
             self.assertEqual(statpearls.search("nothing"), [])
 
 
+class OlderEvidenceFallbackTest(unittest.TestCase):
+    """Every literature query also gets a relevance search over papers older than the
+    normal window (long-established safety evidence); public queries are never widened."""
+
+    def collect(self, queries, calls, older_calls, results, older=None):
+        def fake_run(kind, query, per_source, years):
+            calls.append((kind, query, years))
+            return list(results.get((query, years), []))
+
+        def fake_older(query, max_results, years, oldest_years):
+            older_calls.append((query, max_results, years, oldest_years))
+            return list((older or {}).get((query, years), []))
+
+        with mock.patch("medical_brain.research.sources.run_query", side_effect=fake_run), \
+                mock.patch("medical_brain.research.sources.europepmc.search_older",
+                           side_effect=fake_older):
+            return nodes._collect_queries(({"id": "A"}, queries), 6, 10, 40, 2)
+
+    def test_older_results_are_always_appended_for_literature(self):
+        calls, older_calls = [], []
+        found = self.collect([("literature", "sublingual nifedipine")], calls, older_calls,
+                             {("sublingual nifedipine", 10): [dict(SOURCE_A)]},
+                             {("sublingual nifedipine", 10): [dict(SOURCE_A, key="doi:classic")]})
+        self.assertEqual([c[2] for c in calls], [10])                  # normal window only
+        self.assertEqual(older_calls, [("sublingual nifedipine", 2, 10, 40)])
+        self.assertEqual([s["key"] for s in found], ["doi:10.1/a", "doi:classic"])
+
+    def test_older_results_are_deduped_against_the_query_results(self):
+        calls, older_calls = [], []
+        found = self.collect([("literature", "q")], calls, older_calls,
+                             {("q", 10): [dict(SOURCE_A)]},
+                             {("q", 10): [dict(SOURCE_A), dict(SOURCE_A, key="doi:two")]})
+        self.assertEqual([s["key"] for s in found], ["doi:10.1/a", "doi:two"])   # no duplicate key
+
+    def test_public_queries_are_never_widened(self):
+        calls, older_calls = [], []
+        found = self.collect([("public", "q")], calls, older_calls,
+                             {("q", 10): [dict(SOURCE_B)]})
+        self.assertEqual([c[2] for c in calls], [10])
+        self.assertEqual(older_calls, [])
+        self.assertEqual(len(found), 1)
+
+    def test_older_search_failure_is_ignored(self):
+        log = []
+        with mock.patch("medical_brain.research.sources.run_query",
+                        return_value=[dict(SOURCE_A)]), \
+                mock.patch("medical_brain.research.sources.europepmc.search_older",
+                           side_effect=RuntimeError("boom")), \
+                mock.patch("medical_brain.research.sources.http.log", log):
+            found = nodes._collect_queries(({"id": "A"}, [("literature", "q")]), 6, 10, 40, 2)
+        self.assertEqual([s["key"] for s in found], ["doi:10.1/a"])    # normal results survive
+        self.assertEqual(len(log), 1)                                  # failure was logged
+        self.assertIn("RuntimeError: boom", log[0][2])
+
+    def test_search_older_uses_the_window_before_the_normal_one(self):
+        now = datetime.date.today().year
+        with mock.patch("medical_brain.research.sources.http.get_json", return_value={}) as get_json:
+            europepmc.search_older("sublingual nifedipine", max_results=5, years=10, oldest_years=40)
+        params = get_json.call_args.kwargs["params"]
+        self.assertEqual(params["query"],
+                         f"(sublingual nifedipine) AND PUB_YEAR:[{now - 40} TO {now - 11}] "
+                         f"AND HAS_ABSTRACT:y")
+        self.assertEqual(params["pageSize"], 5)
+
+
 class Scripted:
     """Answers each research step with canned JSON, recording the prompts."""
 
@@ -229,6 +335,9 @@ class ResearchGraphTest(unittest.TestCase):
         llm.set_router(self.router)
         self.addCleanup(llm.set_router, None)
         patcher = mock.patch("medical_brain.research.sources.run_query", side_effect=fake_sources)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = mock.patch("medical_brain.research.sources.europepmc.search_older", return_value=[])
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -1252,6 +1361,117 @@ class ExtractorLoopTest(unittest.TestCase):
         self.assertEqual(out["facts"][0]["check"], "quinine")
 
 
+class FullTextEnrichmentTest(unittest.TestCase):
+    """fact_extractor enriches short open-access Europe PMC/PubMed sources with full text."""
+
+    def enrich(self, sec, sources, body=None, settings=None):
+        fake = FakeLlmJson({"facts": []})
+        st = state_of([sec], sources=sources, to_extract=["A"], settings=settings or {})
+        calls = []
+
+        def fulltext(pmcid):
+            calls.append(pmcid)
+            return body if body is not None else ""
+
+        with mock.patch("medical_brain.research.sources.europepmc.fulltext", side_effect=fulltext), \
+                mock.patch("medical_brain.research.sources.europepmc.lookup_pmcid",
+                           side_effect=lambda pmid: (str(pmid), True)), \
+                mock.patch.object(nodes, "call_llm_json", fake), \
+                mock.patch("builtins.print") as printed:
+            out = nodes.fact_extractor(st)
+        return out, printed, calls
+
+    def source(self, **kw):
+        source = {"key": "pmid:1", "origin": "Europe PMC", "title": "Review", "text": "Short abstract.",
+                  "level": 1, "year": 2020, "pmcid": "PMC1", "open_access": True, "pmid": "1"}
+        source.update(kw)
+        return source
+
+    def test_appends_only_relevant_paragraphs_within_cap(self):
+        sec = section("A", title="Stopping nifedipine",
+                      questions=["Can I stop sublingual nifedipine?"], source_ids=["S1"])
+        body = ("Sublingual nifedipine should never be used for hypertension.\n\n"
+                "An unrelated paragraph about the weather and holidays.\n\n"
+                "Stop sublingual nifedipine: it can cause severe harm and stroke.")
+        out, printed, _ = self.enrich(sec, {"S1": self.source()}, body=body,
+                                      settings={"fulltext_chars": 200})
+        text = out["sources"]["S1"]["text"]
+        self.assertIn("FULL TEXT EXCERPTS:", text)
+        self.assertIn("never be used for hypertension", text)
+        self.assertIn("severe harm and stroke", text)
+        self.assertNotIn("weather and holidays", text)          # unrelated paragraph dropped
+        self.assertTrue(out["sources"]["S1"]["fulltext"])
+        appended = text.split("FULL TEXT EXCERPTS:\n", 1)[1]
+        self.assertLessEqual(len(appended), 200)
+        self.assertIn("full text: 1 of 1 kept sources enriched",
+                      " ".join(str(c) for c in printed.call_args_list))
+
+    def test_char_cap_drops_paragraphs_that_do_not_fit(self):
+        sec = section("A", title="Nifedipine", questions=["sublingual nifedipine?"], source_ids=["S1"])
+        long_para = "nifedipine " + "x" * 500
+        body = long_para + "\n\nshort nifedipine note."
+        out, _, _ = self.enrich(sec, {"S1": self.source()}, body=body,
+                                settings={"fulltext_chars": 100})
+        appended = out["sources"]["S1"]["text"].split("FULL TEXT EXCERPTS:\n", 1)[1]
+        self.assertLessEqual(len(appended), 100)
+        self.assertIn("short nifedipine note.", appended)
+        self.assertNotIn("xxxx", appended)
+
+    def test_skips_long_non_oa_and_marked_sources(self):
+        sec = section("A", source_ids=["S1", "S2", "S3", "S4"])
+        sources = {
+            "S1": self.source(text="y" * 3000, open_access=True, pmcid="PMC1"),
+            "S2": self.source(text="short", open_access=False, pmcid="PMC2"),
+            "S3": self.source(text="short", fulltext=True, open_access=True, pmcid="PMC3"),
+            "S4": self.source(origin="MedlinePlus", text="short", pmcid="", open_access=False),
+        }
+        out, _, calls = self.enrich(sec, sources)
+        self.assertEqual(calls, [])                             # nothing was fetched
+        self.assertNotIn("fulltext", out["sources"]["S1"])      # too long to bother
+        self.assertEqual(out["sources"]["S2"]["fulltext"], "none")
+        self.assertTrue(out["sources"]["S3"]["fulltext"])       # marker kept
+        self.assertNotIn("fulltext", out["sources"]["S4"])      # not a literature source
+
+    def test_caps_sources_enriched_per_round(self):
+        sec = section("A", title="nifedipine sublingual", questions=["sublingual nifedipine?"],
+                      source_ids=["S1", "S2", "S3"])
+        sources = {sid: self.source(pmcid="PMC" + sid) for sid in ("S1", "S2", "S3")}
+        out, _, calls = self.enrich(sec, sources, body="sublingual nifedipine is harmful.",
+                                    settings={"fulltext_max_per_round": 2})
+        self.assertEqual(len(calls), 2)
+        self.assertIn("fulltext", out["sources"]["S1"])
+        self.assertIn("fulltext", out["sources"]["S2"])
+        self.assertNotIn("fulltext", out["sources"]["S3"])
+
+    def test_pubmed_source_looks_up_its_pmcid(self):
+        sec = section("A", title="nifedipine sublingual", questions=["sublingual nifedipine?"],
+                      source_ids=["S1"])
+        source = {"key": "pmid:9", "origin": "PubMed", "title": "Study", "text": "Short abstract.",
+                  "level": 2, "year": 1996, "pmid": "9"}       # no pmcid/open_access on the source
+        with mock.patch("medical_brain.research.sources.europepmc.lookup_pmcid",
+                        return_value=("PMC9", True)) as lookup, \
+                mock.patch("medical_brain.research.sources.europepmc.fulltext",
+                           return_value="sublingual nifedipine is harmful.") as fulltext, \
+                mock.patch.object(nodes, "call_llm_json", FakeLlmJson({"facts": []})), \
+                mock.patch("builtins.print"):
+            out = nodes.fact_extractor(state_of([sec], sources={"S1": source}, to_extract=["A"]))
+        lookup.assert_called_once_with("9")
+        fulltext.assert_called_once_with("PMC9")
+        self.assertTrue(out["sources"]["S1"]["fulltext"])
+
+    def test_source_block_uses_a_bigger_limit_for_enriched_sources(self):
+        long_text = "word " * 1200                              # 6000 chars
+        base = {"title": "t", "journal": "j", "year": 2020, "level": 2, "text": long_text}
+        plain = {"sources": {"S1": dict(base)}}
+        enriched = {"sources": {"S1": dict(base, fulltext=True)}}
+        self.assertLessEqual(len(nodes._source_block(plain, "S1")), 3600)
+        block = nodes._source_block(enriched, "S1")
+        self.assertGreater(len(block), 3500)
+        self.assertLessEqual(len(block), 9200)
+        # A small, explicit limit (the screener) must not be widened.
+        self.assertLessEqual(len(nodes._source_block(enriched, "S1", limit=700)), 800)
+
+
 class DossierCiteTest(unittest.TestCase):
     def link(self, text, source_ids):
         facts = {f"F{i}": {"source_ids": ids} for i, ids in enumerate(source_ids, 1)}
@@ -1312,7 +1532,9 @@ class ParallelCallsTest(unittest.TestCase):
                 time.sleep(0.2)
                 return [dict(SOURCE_A, key=f"doi:{query}")]
 
-            with mock.patch("medical_brain.research.sources.run_query", side_effect=fake):
+            with mock.patch("medical_brain.research.sources.run_query", side_effect=fake), \
+                    mock.patch("medical_brain.research.sources.europepmc.search_older",
+                               return_value=[]):
                 return nodes.source_collector(st)
 
         start = time.monotonic()
@@ -1377,6 +1599,8 @@ class WebResearchTest(unittest.TestCase):
         self.site_searches = []
         google.reset_run()
         for target, new in (("medical_brain.research.sources.run_query", mock.Mock(return_value=[])),
+                            ("medical_brain.research.sources.europepmc.search_older",
+                             mock.Mock(return_value=[])),
                             ("medical_brain.research.sources.browser.available", mock.Mock(return_value=True))):
             patcher = mock.patch(target, new)
             patcher.start()
@@ -1637,7 +1861,8 @@ class WebResearchTest(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         with mock.patch("medical_brain.research.sources.run_query",
-                        side_effect=lambda kind, q, per, years: [dict(SOURCE_A)]):
+                        side_effect=lambda kind, q, per, years: [dict(SOURCE_A)]), \
+                mock.patch("medical_brain.research.sources.europepmc.search_older", return_value=[]):
             out = nodes.source_collector(st)                 # must not raise
         self.assertIn("S1", out["sources"])                  # local source still merged
         self.assertEqual(out["sources"]["S1"]["origin"], "PubMed")
