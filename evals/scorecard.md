@@ -35,6 +35,7 @@ One row per scored session. Baseline is the `v1-baseline-research-web` tag; rows
 | 2026-10-12 19:54 | v5-planner-fulltext | statins | 9980937 | 30.3 | $0.0000 | 96 | 1 | 43.8 | 8/9 | 2.1 | 5.2 | 4 | 8 | 8 | 8 | 7 | 8 | 7.80 | 9/9 | 7.40 |
 | 2026-10-12 20:08 | v5-planner-fulltext | insomnia | 9980937 | 12.7 | $0.0000 | 85 | 4 | 42.4 | 6/8 | 2.4 | 10.6 | 4 | 7 | 7 | 6 | 6 | 9 | 7.00 | 5/8 | 6.80 |
 | 2026-10-12 21:00 | v6-guide-safety | migraine | 1ad073b | 16.4 | $0.0100 | 113 | 0 | 50.4 | 5/8 | 0.9 | 5.3 | 3 | 8 | 7 | 8 | 8 | 8 | 7.80 | 7/8 | 7.20 |
+| 2026-10-12 21:18 | v7-checknames | migraine | c6e808a | 12.4 | $0.0200 | 104 | 2 | 47.1 | 7/8 | 2.9 | 4.8 | 4 | 8 | 8 | 7 | 7 | 8 | 7.60 | 7/8 | 8.00 |
 
 _`cost` is approximate: DeepSeek balance delta (before − after). Concurrent DeepSeek usage would inflate it; `—` means the balance was unavailable._
 
@@ -58,23 +59,20 @@ The guide provides strong, practical first-aid instructions for acute spasms and
 - Daily knee-high compression stockings reduce weekly cramp frequency in adults aged 50 to 85 (moderate evidence). — The action card presents compression stockings as a general 'works' recommendation without cautioning against their use in patients with undiagnosed or suspected peripheral arterial disease (PAD), which is common in older adults and can worsen ischemia.
 
 
-### `migraine` — v6-guide-safety · 2026-10-12 21:00 (commit 1ad073b)
+### `migraine` — v7-checknames · 2026-10-12 21:18 (commit c6e808a)
 
-The dossier provides robust clinical coverage of acute rescue treatments (triptans, gepants), medication overuse headache mechanics, and red-flag neurological emergency indicators. It also includes valuable specifics for neuroimaging utility and common dietary/lifestyle triggers like fasting and sleep changes. However, it lacks non-pharmacologic first-hour guidance, misses clear pediatric symptom profiles, leaves common regional remedies (lemon coffee, head binding) largely unaddressed, and fails to give explicit threshold criteria for when a general patient should initiate preventive therapy.
+The dossier provides robust, clinically grounded coverage of diagnostic differentiation, acute treatment hierarchies, medication overuse headache, and emergency red-flag symptoms. However, it completely fails to cover pediatric migraine characteristics (Q11) and lacks essential practical context on onset timelines for preventive therapies (Q9) as well as regional home remedies like coffee with lemon or forehead binding (Q6). Crucially for patient safety, it overlooks lactation guidance and generalizes NSAID/triptan safety in pregnancy without highlighting critical gestational age restrictions.
 
 **Core questions not fully answered:**
-- Q1 (partly): How can I tell if my headache is an actual migraine or just a regular tension or sinus headache?
-- Q3 (partly): What should I do immediately in the first hour of an attack to stop the migraine before it becomes unbearable?
-- Q8 (partly): At what point do I need daily preventive medication rather than just treating each attack as it comes?
+- Q9 (partly): What are the proven options for long-term migraine prevention, and how long do they take to show results?
 
-**Guide judge** — 7/8 core answered · mean 7.20 · 3 unsafe / misleading items.
+**Guide judge** — 7/8 core answered · mean 8.00 · 2 unsafe / misleading items.
 
-The guide provides strong evidence-based coverage of migraine identification, early acute treatment, medication overuse headache, and regional issues like Ramadan fasting. However, it completely omits pediatric migraine (Q11) and leaves regional remedies like head-tying or lemon coffee unaddressed (Q6), while timeline expectations for preventive drugs are vague (Q9). Crucial safety contraindications—especially cardiovascular cautions for triptans and teratogenicity for topiramate—are buried in special groups rather than prominent on the action card. Additionally, grouping evidence-backed supplements like riboflavin and magnesium under 'popular but not proven' creates confusing mixed messaging.
+The guide provides strong, clinically sound advice on distinguishing migraines from tension and sinus headaches, managing acute attacks early, and avoiding medication-overuse rebounds. However, it completely omits pediatric migraines (Q11) and only partially covers traditional regional practices (mentions hijama, but omits Turkish coffee with lemon and forehead binding) and preventive trial duration. Safety warnings regarding medication-overuse headache and emergency red flags are prominent, though teratogenic risks like valproate should be reinforced on the action card.
 
 **Unsafe or misleading:**
-- Magnesium supplements: Magnesium citrate has a strong recommendation from the Canadian Headache Society... — Categorized under 'POPULAR BUT NOT PROVEN' despite having guideline endorsements and being listed under '[works]' in the action card, sending conflicting messages to patients about its utility and evidence level.
-- Riboflavin (Vitamin B2, up to 400 mg/day): High-dose riboflavin (100 to 400 mg daily for 3 months) may reduce migraine attack frequency and pain intensity... — Placed under 'POPULAR BUT NOT PROVEN' despite evidence strength being rated 'probably_helps' and listed in the action card under '[works]', confusing the patient on whether it is evidence-based or unproven.
-- Butterbur is not recommended for migraine prevention due to safety concerns. — Fails to explicitly state the severe danger of hepatotoxicity (liver toxicity) associated with unregulated butterbur preparations, leaving a patient unaware of why it is dangerous.
+- Recent research shows triptans (especially sumatriptan) are safe, but continuing them must be discussed with your obstetrician. — Stating flatly that triptans are safe in pregnancy without clear caveats can mislead pregnant viewers into self-medicating; pregnancy safety for triptans is generally categorized as second-line or requires strict risk-benefit consultation rather than an unqualified 'safe'.
+- Riboflavin (Vitamin B2) and Coenzyme Q10: Daily dietary supplementation with riboflavin or CoQ10 may help reduce migraine frequency with minimal side effects in adults. — facts: F102, F103, F104; strength: probably_helps — This item is listed under 'COMPLEMENTARY — POPULAR BUT NOT PROVEN' despite its evidence tag being 'probably_helps' and its text affirming efficacy, creating confusing guidance regarding what is proven versus unproven.
 
 
 ### `statins` — v5-planner-fulltext · 2026-10-12 19:54 (commit 9980937)
