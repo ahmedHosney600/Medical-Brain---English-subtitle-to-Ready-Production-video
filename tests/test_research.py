@@ -8,6 +8,7 @@ import unittest
 from unittest import mock
 
 from medical_brain import llm
+from medical_brain.llm.errors import StepFailed
 from medical_brain.llm.progress import _Progress, quiet
 from medical_brain.prompts import load_prompt
 from medical_brain.research import dossier as rd
@@ -551,6 +552,112 @@ class PlannerFieldsTest(unittest.TestCase):
         self.assertIn("K1 [high] Quinine is not recommended.", user)
         self.assertIn("Key guidelines: Cochrane 2015", user)
         self.assertIn("Misconceptions: Myth A", user)
+
+
+SECTION_REPLY = {"sections": [{"title": "Medicines", "questions": ["q?"],
+                              "literature_queries": ["l"], "public_queries": ["p"]}]}
+
+
+class PlannerScript:
+    """Stands in for nodes.call_llm_json for the planner retry: each item is a
+    (data, raw) tuple to return or an Exception to raise. Records the calls."""
+
+    def __init__(self, answers):
+        self.answers = list(answers)
+        self.calls = []
+
+    def __call__(self, system, user, temperature=None, max_tokens=None, required=()):
+        self.calls.append({"system": system, "user": user, "temperature": temperature,
+                           "max_tokens": max_tokens, "required": list(required)})
+        item = self.answers[len(self.calls) - 1]
+        if isinstance(item, Exception):
+            raise item
+        return item
+
+
+class PlannerRetryTest(unittest.TestCase):
+    """The planner retries once, saves the raw answers, and never falls back to one section."""
+
+    def _state(self, session):
+        st = new_state("hypertension")
+        st["session"] = session
+        return st
+
+    def _raw(self, session, n=1):
+        path = os.path.join(session, "research", f"unreadable_topic_planner_{n}.txt")
+        self.assertTrue(os.path.exists(path), path)
+        with open(path, encoding="utf-8") as f:
+            return f.read()
+
+    def test_unreadable_first_answer_retries_and_uses_the_second(self):
+        script = PlannerScript([UnreadableAnswer("bad json", "RAW ONE"),
+                                (SECTION_REPLY, json.dumps(SECTION_REPLY))])
+        with tempfile.TemporaryDirectory() as tmp:
+            session = os.path.join(tmp, "20260101_000000")
+            os.makedirs(session)
+            with mock.patch.object(nodes, "call_llm_json", script), mock.patch("builtins.print"):
+                out = nodes.topic_planner(self._state(session))
+            self.assertEqual(len(script.calls), 2)
+            self.assertEqual(script.calls[0]["temperature"], 0.4)
+            self.assertEqual(script.calls[1]["temperature"], 0.2)
+            self.assertEqual(script.calls[0]["max_tokens"], 8000)
+            self.assertEqual(script.calls[1]["max_tokens"], 8000)
+            self.assertEqual(out["outline"][0]["title"], "Medicines")
+            self.assertEqual(self._raw(session, 1), "RAW ONE")
+            self.assertFalse(os.path.exists(
+                os.path.join(session, "research", "unreadable_topic_planner_2.txt")))
+
+    def test_two_unreadable_answers_raise_step_failed_and_save_both(self):
+        script = PlannerScript([UnreadableAnswer("bad one", "RAW 1"),
+                                UnreadableAnswer("bad two", "RAW 2")])
+        with tempfile.TemporaryDirectory() as tmp:
+            session = os.path.join(tmp, "20260101_000000")
+            os.makedirs(session)
+            with mock.patch.object(nodes, "call_llm_json", script), mock.patch("builtins.print"):
+                with self.assertRaises(StepFailed) as caught:
+                    nodes.topic_planner(self._state(session))
+            self.assertEqual(len(script.calls), 2)
+            self.assertEqual(self._raw(session, 1), "RAW 1")
+            self.assertEqual(self._raw(session, 2), "RAW 2")
+            self.assertIn("topic_planner", str(caught.exception))
+
+    def test_empty_sections_is_a_failure_and_retries(self):
+        empty = {"sections": []}
+        script = PlannerScript([(empty, json.dumps(empty)),
+                                (SECTION_REPLY, json.dumps(SECTION_REPLY))])
+        with tempfile.TemporaryDirectory() as tmp:
+            session = os.path.join(tmp, "20260101_000000")
+            os.makedirs(session)
+            with mock.patch.object(nodes, "call_llm_json", script), mock.patch("builtins.print"):
+                out = nodes.topic_planner(self._state(session))
+            self.assertEqual(len(script.calls), 2)
+            self.assertEqual(script.calls[1]["temperature"], 0.2)
+            self.assertEqual(out["outline"][0]["title"], "Medicines")
+            self.assertEqual(self._raw(session, 1), json.dumps(empty))
+
+    def test_empty_sections_on_both_attempts_raises(self):
+        empty = {"sections": []}
+        script = PlannerScript([(empty, "EMPTY A"), (empty, "EMPTY B")])
+        with tempfile.TemporaryDirectory() as tmp:
+            session = os.path.join(tmp, "20260101_000000")
+            os.makedirs(session)
+            with mock.patch.object(nodes, "call_llm_json", script), mock.patch("builtins.print"):
+                with self.assertRaises(StepFailed):
+                    nodes.topic_planner(self._state(session))
+            self.assertEqual(len(script.calls), 2)
+            self.assertEqual(self._raw(session, 1), "EMPTY A")
+            self.assertEqual(self._raw(session, 2), "EMPTY B")
+
+    def test_normal_path_uses_a_single_call(self):
+        script = PlannerScript([(SECTION_REPLY, json.dumps(SECTION_REPLY))])
+        with tempfile.TemporaryDirectory() as tmp:
+            session = os.path.join(tmp, "20260101_000000")
+            os.makedirs(session)
+            with mock.patch.object(nodes, "call_llm_json", script), mock.patch("builtins.print"):
+                nodes.topic_planner(self._state(session))
+            self.assertEqual(len(script.calls), 1)
+            self.assertEqual(script.calls[0]["temperature"], 0.4)
+            self.assertFalse(os.path.exists(os.path.join(session, "research")))
 
 
 class ExpertBriefTest(unittest.TestCase):

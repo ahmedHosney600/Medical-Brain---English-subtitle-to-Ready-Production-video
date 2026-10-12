@@ -4,12 +4,15 @@ same steps for the sections the user asked to add or change.
 
 System prompts live in prompts/research/<step>.md."""
 import contextvars
+import os
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from ..llm import call_llm_json
+from ..llm.errors import StepFailed
 from ..llm.progress import quiet
+from ..paths import PROJECT_ROOT
 from ..prompts import load_prompt
 from ..utils.llm_json import UnreadableAnswer, pick
 from . import sources as src
@@ -322,6 +325,39 @@ Write the expert brief. Output ONLY the JSON object."""
     return {"expert_brief": brief}
 
 
+def _research_folder(state: dict) -> str:
+    """The session's research/ folder for side files (raw answers) — from state["session"].
+
+    A fresh run stores the session id (its folder is output/<id>/research); a path that
+    already names an existing session folder is used as is."""
+    session = str(state.get("session") or "").strip()
+    if not session:
+        return ""
+    if os.path.isdir(session) or os.path.isabs(session) or os.sep in session or "/" in session:
+        session_dir = session
+    else:
+        session_dir = os.path.join(PROJECT_ROOT, "output", session)
+    return os.path.join(session_dir, "research")
+
+
+def _save_planner_raw(state: dict, attempt: int, raw: str) -> str:
+    """Writes an unreadable/incomplete planner answer to the research folder.
+
+    Returns the path written ('' when there is no folder or it cannot be written)."""
+    folder = _research_folder(state)
+    if not folder:
+        return ""
+    try:
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, f"unreadable_topic_planner_{attempt}.txt")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(raw or "")
+        return path
+    except OSError as exc:
+        _log(f"planner: could not save the raw answer ({type(exc).__name__}: {exc})")
+        return ""
+
+
 def topic_planner(state: dict) -> dict:
     system_prompt = load_prompt("research/topic_planner")
     user_prompt = f"""TOPIC: {state.get("topic", "")}
@@ -331,16 +367,32 @@ CREATOR'S NOTES: {state.get("user_notes") or "(none)"}
 {_expert_brief_block(state)}
 
 Plan the research. Output ONLY the JSON object."""
-    try:
-        data, _ = call_llm_json(system_prompt, user_prompt, temperature=0.4, max_tokens=5000,
-                                required=["sections"])
-    except UnreadableAnswer:
-        data = {}
-    raw_sections = [s for s in (pick(data, "sections", default=[]) or []) if isinstance(s, dict)]
-    if not raw_sections:      # never leave the research without a plan
-        t = state.get("topic", "")
-        raw_sections = [{"title": t, "questions": [f"What does current evidence say about {t}?"],
-                         "literature_queries": [t], "public_queries": [t]}]
+    data, raw_sections, saved = None, [], []
+    # Two attempts: the first full-temperature call, then one fresh call with the same
+    # prompts but a cooler temperature. The raw answer of a failed attempt is saved so a
+    # stopped run can be diagnosed. No plan → StepFailed (never a one-section fallback).
+    for attempt, temperature in ((1, 0.4), (2, 0.2)):
+        try:
+            data, raw = call_llm_json(system_prompt, user_prompt, temperature=temperature,
+                                      max_tokens=8000, required=["sections"])
+        except UnreadableAnswer as e:
+            path = _save_planner_raw(state, attempt, e.raw)
+            if path:
+                saved.append(path)
+            _log(f"planner: attempt {attempt} unreadable — raw answer saved to {path or '(nowhere)'}")
+            data, raw_sections = None, []
+            continue
+        raw_sections = [s for s in (pick(data, "sections", default=[]) or []) if isinstance(s, dict)]
+        if raw_sections:
+            break
+        path = _save_planner_raw(state, attempt, raw)
+        if path:
+            saved.append(path)
+        _log(f"planner: attempt {attempt} had no sections — raw answer saved to {path or '(nowhere)'}")
+    if not raw_sections:
+        where = ", ".join(saved) if saved else "an unwritable session folder"
+        raise StepFailed("topic_planner: the research plan could not be read after 2 attempts "
+                         f"(raw answers saved to {where}); resume to try again")
     outline = [_new_section(state, i, s) for i, s in enumerate(raw_sections)]
     for sec in outline:                      # the planner may repeat a question in-answer
         sec["questions"] = add_questions([], sec["questions"])
