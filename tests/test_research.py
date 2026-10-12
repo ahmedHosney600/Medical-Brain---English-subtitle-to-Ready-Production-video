@@ -2099,6 +2099,36 @@ class GuideValidationTest(unittest.TestCase):
         self.assertEqual(clean["complementary"]["options"], [])
         self.assertEqual([i["item"] for i in clean["complementary"]["not_proven"]], ["Riboflavin"])
 
+    def test_combined_helpful_complementary_option_stays_an_option(self):
+        # The model wrote two helpful remedies as one entry. The combined name matches no
+        # single row, but every part does: the entry must stay an option, not move.
+        facts = [_mk_fact("F1", "Riboflavin 400 mg", "probably_helps"),
+                 _mk_fact("F2", "Coenzyme Q10 200 mg", "proven")]
+        checks = [{"item": "Riboflavin 400 mg", "section": "A"},
+                  {"item": "Coenzyme Q10 200 mg", "section": "A"}]
+        guide = empty_guide(complementary={"options": [
+            {"item": "Riboflavin (Vitamin B2) and Coenzyme Q10",
+             "text": "Both may help prevent attacks.", "facts": ["F1", "F2"]}], "not_proven": []})
+        clean, report = nodes.validate_guide(guide, self.state(facts, classic_checks=checks))
+        self.assertEqual([i["item"] for i in clean["complementary"]["options"]],
+                         ["Riboflavin (Vitamin B2) and Coenzyme Q10"])
+        self.assertEqual(clean["complementary"]["not_proven"], [])
+        self.assertEqual(report["moved_to_not_proven"], [])
+
+    def test_combined_complementary_option_with_one_unhelpful_part_moves(self):
+        facts = [_mk_fact("F1", "Riboflavin 400 mg", "probably_helps"),
+                 _mk_fact("F2", "Coenzyme Q10 200 mg", "untested")]
+        checks = [{"item": "Riboflavin 400 mg", "section": "A"},
+                  {"item": "Coenzyme Q10 200 mg", "section": "A"}]
+        guide = empty_guide(complementary={"options": [
+            {"item": "Riboflavin (Vitamin B2) and Coenzyme Q10",
+             "text": "People try both.", "facts": ["F1", "F2"]}], "not_proven": []})
+        clean, report = nodes.validate_guide(guide, self.state(facts, classic_checks=checks))
+        self.assertEqual(clean["complementary"]["options"], [])
+        self.assertEqual([i["item"] for i in clean["complementary"]["not_proven"]],
+                         ["Riboflavin (Vitamin B2) and Coenzyme Q10"])
+        self.assertEqual(report["dropped"], 0)                     # moved, never dropped
+
     def test_strength_is_the_weakest_cited_label(self):
         facts = [_mk_fact("F1", "magnesium", "proven"), _mk_fact("F2", "magnesium", "weak_or_disputed"),
                  _mk_fact("F3", "magnesium", "untested"), _mk_fact("F4", "magnesium", "n/a"),
@@ -2186,6 +2216,39 @@ class GuideValidationTest(unittest.TestCase):
         clean, report = nodes.validate_guide(guide, self.state(facts))
         self.assertEqual([i["text"] for i in clean["action_card"]["do_now"]],
                          ["Magnesium is safe during pregnancy."])
+        self.assertNotIn("unsupported_pregnancy_safety", report["by_reason"])
+
+    def test_safe_with_obstetrician_without_matching_fact_is_dropped(self):
+        # "safe" is not followed by "in/for pregnancy" here, so the narrow regex missed it;
+        # the mention of an obstetrician plus the standalone "safe" makes it a claim.
+        facts = [_mk_fact("F1", "triptans", "proven")]
+        guide = empty_guide(action_card=empty_action(do_now=[
+            {"text": "Recent research shows triptans (especially sumatriptan) are safe, but "
+                     "continuing them must be discussed with your obstetrician.", "facts": ["F1"]},
+            {"text": "Rest the muscle.", "facts": ["F1"]}]))
+        clean, report = nodes.validate_guide(guide, self.state(facts))
+        self.assertEqual([i["text"] for i in clean["action_card"]["do_now"]], ["Rest the muscle."])
+        self.assertEqual(report["by_reason"].get("unsupported_pregnancy_safety"), 1)
+
+    def test_safe_with_obstetrician_kept_when_cited_fact_says_safe(self):
+        facts = [{"id": "F1", "section": "A", "kind": "fact",
+                  "claim": "Sumatriptan is considered safe during pregnancy.",
+                  "quote": "safe during pregnancy", "source_ids": ["S1"], "level": 2,
+                  "status": "verified", "strength": "proven"}]
+        guide = empty_guide(action_card=empty_action(do_now=[
+            {"text": "Recent research shows triptans (especially sumatriptan) are safe, but "
+                     "continuing them must be discussed with your obstetrician.", "facts": ["F1"]}]))
+        clean, report = nodes.validate_guide(guide, self.state(facts))
+        self.assertEqual(len(clean["action_card"]["do_now"]), 1)
+        self.assertNotIn("unsupported_pregnancy_safety", report["by_reason"])
+
+    def test_not_safe_with_obstetrician_warning_is_kept(self):
+        facts = [_mk_fact("F1", "triptans", "harmful")]
+        guide = empty_guide(action_card=empty_action(doesnt_work_or_risky=[
+            {"text": "Sumatriptan is not safe while breastfeeding; ask your obstetrician.",
+             "facts": ["F1"]}]))
+        clean, report = nodes.validate_guide(guide, self.state(facts))
+        self.assertEqual(len(clean["action_card"]["doesnt_work_or_risky"]), 1)
         self.assertNotIn("unsupported_pregnancy_safety", report["by_reason"])
 
 

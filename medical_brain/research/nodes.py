@@ -1697,6 +1697,49 @@ def _facts_say_pregnancy_safe(claims) -> bool:
     return False
 
 
+# A straight "safe"/"safely" anywhere in an item that also talks about pregnancy /
+# breastfeeding / an obstetrician is a safety claim too, even without the narrow
+# "safe in pregnancy" word order. A negated "not safe ..." is a warning, not a claim.
+_PREGNANCY_TOPIC_RE = re.compile(r"pregnan|breastfeed|nursing|obstetrician", re.IGNORECASE)
+_STANDALONE_SAFE_RE = re.compile(r"\b(?:safe|safely)\b", re.IGNORECASE)
+_NEGATED_SAFE_RE = re.compile(
+    r"\b(?:not|never|isn't|aren't|unsafe|no longer)\b[^.\n]{0,20}$", re.IGNORECASE)
+
+
+def _negated_safe_before(text: str, pos: int) -> bool:
+    return bool(_NEGATED_SAFE_RE.search(text[:pos] + " "))
+
+
+def _pregnancy_safety_claim(text: str) -> bool:
+    """True when an item claims something is safe in/for pregnancy or breastfeeding.
+
+    Two shapes count: the narrow "safe ... in/during/for pregnancy" regex, and any
+    standalone "safe"/"safely" (not negated within the 20 characters before it) in text
+    that also mentions pregnancy, breastfeeding, nursing or an obstetrician. A warning
+    such as "not safe in pregnancy" is negation and never counts."""
+    text = text or ""
+    match = _PREGNANCY_SAFE_RE.search(text)
+    if match and not _negated_safe_before(text, match.start()):
+        return True
+    if not _PREGNANCY_TOPIC_RE.search(text):
+        return False
+    return any(not _negated_safe_before(text, m.start())
+               for m in _STANDALONE_SAFE_RE.finditer(text))
+
+
+# A complementary option the model wrote as one combined entry ("A and B", "A / B").
+_COMBINED_OPTION_SPLIT_RE = re.compile(r"\s*(?:/|,|\band\b|&)\s*", re.IGNORECASE)
+
+
+def _combined_option_parts(name: str) -> list:
+    """The parts of a combined complementary name, parenthetical text dropped first.
+
+    "Riboflavin (Vitamin B2) and Coenzyme Q10" becomes ["Riboflavin", "Coenzyme Q10"];
+    a name with no separator yields a single part."""
+    bare = re.sub(r"\([^)]*\)", " ", str(name or ""))
+    return [p for p in (x.strip(" \t.,;:") for x in _COMBINED_OPTION_SPLIT_RE.split(bare)) if p]
+
+
 _PROMISE_OVERCLAIM = re.compile(
     r"\b(within (a few )?(seconds|minutes)|in (\d+ )?seconds|instantly|immediately|cures?|guarantee[sd]?|"
     r"the only (way|solution)|forever)\b", re.IGNORECASE)
@@ -1765,11 +1808,7 @@ def validate_guide(guide: dict, state: dict) -> tuple:
             drop(kind, text or "(empty)", "no valid verified fact id", "no_valid_fact_id")
             return None
         # A warning ("not safe in pregnancy", "unsafe while breastfeeding") is never dropped.
-        safe_claim = _PREGNANCY_SAFE_RE.search(text)
-        if safe_claim and re.search(r"\b(?:not|never|isn't|aren't|unsafe|no longer)\b[^.\n]{0,20}$",
-                                    text[:safe_claim.start()] + " ", re.IGNORECASE):
-            safe_claim = None
-        if safe_claim and \
+        if _pregnancy_safety_claim(text) and \
                 not _facts_say_pregnancy_safe(by_id[fid].get("claim", "") for fid in ids):
             drop(kind, text, "safety claim for pregnancy/breastfeeding not in the cited facts",
                  "unsupported_pregnancy_safety")
@@ -1840,11 +1879,26 @@ def validate_guide(guide: dict, state: dict) -> tuple:
             return exact
         return next((r for r in table if same_check(name, str(r.get("item", "")))), None)
 
+    def helpful_row(row) -> bool:
+        return bool(row and row.get("verdict") in _EVIDENCE_OPTION_VERDICTS
+                    and not row.get("harmful"))
+
+    def option_is_helpful(name: str) -> bool:
+        """A single option's row, or a combined "A and B" entry whose every part is helpful.
+
+        The model sometimes writes two remedies as one entry ("Riboflavin (Vitamin B2) and
+        Coenzyme Q10"). The combined name matches no single row, so each part is looked up
+        and the entry only counts when all of them are helpful."""
+        row = find_row(name)
+        if row is not None:
+            return helpful_row(row)
+        parts = _combined_option_parts(name)
+        return len(parts) >= 2 and all(helpful_row(find_row(p)) for p in parts)
+
     options, moved = [], []
     for it in comp.get("options") or []:
         name = str(it.get("item", "")).strip() if isinstance(it, dict) else ""
-        row = find_row(name)
-        if row and row.get("verdict") in _EVIDENCE_OPTION_VERDICTS and not row.get("harmful"):
+        if option_is_helpful(name):
             options.append(it)
         else:
             moved.append(it)
