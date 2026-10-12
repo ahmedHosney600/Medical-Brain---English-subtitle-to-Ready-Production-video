@@ -30,39 +30,79 @@ One row per scored session. Baseline is the `v1-baseline-research-web` tag; rows
 | 2026-10-10 23:34 | v1-baseline-agy | muscle-cramps | c1f89e4 | 12.5 | $0.0000 | 107 | 1 | 31.8 | 4/9 | 5.6 | 17.8 | 5 | 6 | 7 | 5 | 6 | 7 | 6.20 | — | — |
 | 2026-10-10 23:48 | v1-baseline-agy | migraine | c1f89e4 | 13.1 | $0.0000 | 149 | 3 | 36.2 | 4/8 | 3.4 | 14.8 | 4 | 6 | 6 | 7 | 5 | 8 | 6.40 | — | — |
 | 2026-10-10 23:59 | v1-baseline-agy | statins | c1f89e4 | 9.6 | $0.0000 | 118 | 0 | 31.4 | 6/9 | 7.6 | 18.6 | 5 | 6 | 6 | 5 | 5 | 7 | 5.80 | — | — |
+| 2026-10-12 19:09 | v5-planner-fulltext | muscle-cramps | 9980937 | 11.3 | $0.0000 | 86 | 1 | 43.0 | 6/9 | 2.3 | 2.3 | 3 | 7 | 7 | 8 | 5 | 8 | 7.00 | 8/9 | 7.20 |
+| 2026-10-12 19:22 | v5-planner-fulltext | migraine | 9980937 | 11.1 | $0.0000 | 93 | 0 | 41.9 | 5/8 | 0.0 | 3.2 | 4 | 8 | 7 | 8 | 8 | 8 | 7.80 | 7/8 | 7.60 |
+| 2026-10-12 19:54 | v5-planner-fulltext | statins | 9980937 | 30.3 | $0.0000 | 96 | 1 | 43.8 | 8/9 | 2.1 | 5.2 | 4 | 8 | 8 | 8 | 7 | 8 | 7.80 | 9/9 | 7.40 |
+| 2026-10-12 20:08 | v5-planner-fulltext | insomnia | 9980937 | 12.7 | $0.0000 | 85 | 4 | 42.4 | 6/8 | 2.4 | 10.6 | 4 | 7 | 7 | 6 | 6 | 9 | 7.00 | 5/8 | 6.80 |
 
 _`cost` is approximate: DeepSeek balance delta (before − after). Concurrent DeepSeek usage would inflate it; `—` means the balance was unavailable._
 
 ## Latest per topic
 
-### `muscle-cramps` — v1-baseline-agy · 2026-10-10 23:34 (commit c1f89e4)
+### `muscle-cramps` — v5-planner-fulltext · 2026-10-12 19:09 (commit 9980937)
 
-The dossier provides clear, practical first-aid instructions for acute muscle cramps (stretching, weight-bearing, heat/ice) and busts the myth that cramps are solely caused by dehydration or low magnesium. However, there is extensive verbatim duplication across sections and excessive academic jargon on electromyography and diabetic neuropathy that clutters patient communication. Critical patient safety gaps remain, particularly regarding red flags for deep vein thrombosis vs ordinary cramps, red flags in children, and clear guidance on medical workup.
+The dossier provides solid, evidence-based guidance on acute physical maneuvers (dorsiflexion, stretching), red flags for deep vein thrombosis, and rigorous debunking of routine magnesium supplementation in non-pregnant adults. However, it suffers from heavy redundancy, with numerous clinical trial endpoints and advice points duplicated verbatim across sections. Crucial gaps remain for common Arab-world public queries, including popular topical remedies (olive oil, black seed oil), food staples (bananas, dates), pediatric cramps, and detailed clinical workup steps.
 
 **Core questions not fully answered:**
-- Q2 (partly): Is a sudden muscle cramp dangerous, or could it be a sign of something serious like a blood clot or nerve problem?
 - Q3 (partly): Why do cramps often happen at night or wake me up from sleep?
-- Q7 (partly): Do magnesium, potassium, calcium, or vitamin D supplements actually work for cramps, and what does the evidence say?
+- Q5 (partly): What causes muscle cramps — dehydration, low salt, magnesium, calcium, potassium, or something else?
 - Q10 (partly): Which medicines or health conditions — like diuretics, statins, diabetes, kidney disease, or thyroid problems — can cause muscle cramps?
-- Q13 (partly): When should I see a doctor or go to the emergency department for a muscle cramp?
+
+**Guide judge** — 8/9 core answered · mean 7.20 · 2 unsafe / misleading items.
+
+The guide provides strong, practical first-aid instructions for acute spasms and debunks widespread mineral and supplement myths with good evidence alignment. However, important patient questions are only partially covered, omitting statins, diabetes, thyroid disorders, and pediatric considerations. Key red flags for deep vein thrombosis and arterial claudication are detailed in the text but missing from the immediate action card, and recommending salty pickle juice to cirrhosis patients without a sodium warning presents a clinical risk.
+
+**Unsafe or misleading:**
+- In patients with cirrhosis, taking small sips of pickle juice at cramp onset reduced cramp pain severity, though it did not alter overall sleep quality. — Pickle juice is very high in sodium; endorsing its intake in patients with liver cirrhosis without strong cautionary warnings poses a clinical risk of fluid retention, ascites, or worsening portal hypertension.
+- Daily knee-high compression stockings reduce weekly cramp frequency in adults aged 50 to 85 (moderate evidence). — The action card presents compression stockings as a general 'works' recommendation without cautioning against their use in patients with undiagnosed or suspected peripheral arterial disease (PAD), which is common in older adults and can worsen ischemia.
 
 
-### `migraine` — v1-baseline-agy · 2026-10-10 23:48 (commit c1f89e4)
+### `migraine` — v5-planner-fulltext · 2026-10-12 19:22 (commit 9980937)
 
-The dossier provides strong, evidence-backed coverage for acute attack management, recognizing aura, everyday lifestyle triggers (including Ramadan fasting), and red-flag emergency symptoms requiring urgent care. However, it completely fails to address popular regional remedies (Q6) and safe management during pregnancy and breastfeeding (Q10), while offering weak criteria for when to initiate preventives or how long they take to work. Additionally, a large portion of the dossier is bogged down by highly technical pathophysiological mechanisms, hospital-level diagnostic workups (lumbar puncture, angiograms), and local healthcare-system survey data that provide zero actionable value to a patient audience.
+The dossier provides strong, evidence-backed coverage of medication-overuse headaches, emergency red flags (SNOOP criteria), acute pharmacotherapy, and preventive tiers. However, it lacks key patient distinctions between tension-type headaches and migraines, overlooks non-drug measures for acute attacks, and completely ignores common regional home remedies like Turkish coffee with lemon or head binding. Additionally, while pediatric treatment and cupping data are mentioned, the dossier fails to describe how pediatric migraine presentation differs from adults.
 
 **Core questions not fully answered:**
 - Q1 (partly): How can I tell if my headache is an actual migraine or just a regular tension or sinus headache?
-- Q4 (partly): Which over-the-counter painkillers actually work, and why does taking them too often make my headaches worse?
+- Q3 (partly): What should I do immediately in the first hour of an attack to stop the migraine before it becomes unbearable?
 - Q8 (partly): At what point do I need daily preventive medication rather than just treating each attack as it comes?
-- Q9 (partly): What are the proven options for long-term migraine prevention, and how long do they take to show results?
+
+**Guide judge** — 7/8 core answered · mean 7.60 · 2 unsafe / misleading items.
+
+The guide provides strong, clinically relevant information for acute management, red flags, medication overuse headache, and standard preventives. However, it completely omits pediatric migraines (Q11) and leaves tension headache comparisons and specific folk remedies like Turkish coffee with lemon unaddressed. Crucial safety warnings—specifically teratogenicity of valproate/topiramate and NSAID risks after 19 weeks of pregnancy—are absent from the Action Card. Additionally, labeling Botox and triptans as unqualified safe options in pregnancy overstates clinical safety.
+
+**Unsafe or misleading:**
+- Triptans, greater occipital nerve blocks, and onabotulinumtoxinA are safe options during pregnancy and breastfeeding. — Stating that OnabotulinumtoxinA (Botox) and triptans are flatly 'safe options' in pregnancy overstates safety certainty; Botox is not standardly considered proven safe in pregnancy and triptans carry specific clinical caveats.
+- Cognitive behavioral therapy and biofeedback to reduce attack frequency and pain (proven). — The text labels this as '(proven)' in the action card despite citing evidence strength 'probably_helps', overstating the strength of evidence.
 
 
-### `statins` — v1-baseline-agy · 2026-10-10 23:59 (commit c1f89e4)
+### `statins` — v5-planner-fulltext · 2026-10-12 19:54 (commit 9980937)
 
-The dossier provides strong, high-level evidence regarding cardiovascular risk reduction, guideline criteria, drug interactions (notably with simvastatin and grapefruit), and the nocebo effect underlying muscle aches. However, it completely fails to address crucial questions regarding popular Arab herbal remedies (Q9) and whether treatment must be lifelong (Q11). There are also critical clinical safety omissions, notably the absolute contraindication in pregnancy, clear liver/kidney baseline testing protocols, and practical symptom discrimination between generalized fatigue and drug-induced myopathy.
+The dossier provides robust, evidence-backed coverage of indications, cardiovascular event reduction, realistic muscle symptom risks, management of intolerance, and rhabdomyolysis red flags. However, it completely overlooks CoQ10 (a major patient question) and omits common interactions with routine blood pressure medications like calcium channel blockers. It also includes exact duplicate facts across sections and spends excess detail on macrolide antibiotic pharmacokinetics and off-topic weight-loss remedies rather than everyday patient concerns in the region.
 
 **Core questions not fully answered:**
-- Q3 (partly): Is statin-related muscle pain common and dangerous, and how do I tell it apart from everyday fatigue or joint aches?
 - Q6 (partly): Will statins harm my liver or kidneys, and what routine blood tests do I need while taking them?
-- Q11 (no): Do I have to take statins for the rest of my life, or can I stop them once my cholesterol numbers go back to normal?
+
+**Guide judge** — 9/9 core answered · mean 7.40 · 2 unsafe / misleading items.
+
+The patient guide provides strong, clinically sound guidance regarding core statin indications, muscle symptom differentiation, emergency red flags, and long-term adherence. However, it completely overlooks CoQ10 (Q10) and omits major regional remedies like garlic, artichoke, and olive oil, addressing only apple cider vinegar and black seed. Certain pharmacology concepts (hydrophilic vs. lipophilic, dechallenge/rechallenge) contain technical jargon unsuitable for a general public video without simpler phrasing. Overall safety is good with appropriate rhabdomyolysis warnings, though classifying apple cider vinegar as an evidence-based option in a lipid guide risks confusion.
+
+**Unsafe or misleading:**
+- Trying a lower statin dose, switching between hydrophilic statins (like pravastatin or rosuvastatin) and lipophilic statins (like atorvastatin or simvastatin), or alternate-day dosing resolves muscle aches for most people (proven). — The item claims this is 'proven' while citing an evidence strength of 'probably_helps', overstating clinical certainty and risking patient self-adjustment without physician supervision.
+- Apple cider vinegar: Daily apple cider vinegar intake has limited evidence showing modest reductions in body weight and BMI as a short-term weight management aid, but it does not replace statins or clear arteries. — Placing apple cider vinegar under 'EVIDENCE-BASED OPTIONS' in a statin and cardiovascular patient guide is misleading, as it has no proven efficacy for dyslipidemia or cardiovascular outcomes.
+
+
+### `insomnia` — v5-planner-fulltext · 2026-10-12 20:08 (commit 9980937)
+
+The dossier provides robust clinical definitions of chronic insomnia, strong evidence-based coverage of CBT-I components (stimulus control and sleep restriction), and detailed warnings regarding the risks and tapering of prescription hypnotics and antihistamines. However, it completely fails to explain the physical and systemic consequences of long-term sleep loss (Q3) and omits common regional herbal drinks beyond chamomile. Additionally, it contains extensive verbatim duplicate facts and overly technical academic statistics that distract from clear, patient-facing education.
+
+**Core questions not fully answered:**
+- Q3 (no): What serious physical and mental health damage happens to my body if I go weeks or months without proper sleep?
+- Q13 (partly): At what point is chronic insomnia an emergency or a sign I must see a doctor immediately, especially if combined with hallucinations or suicidal thoughts?
+
+**Guide judge** — 5/8 core answered · mean 6.80 · 2 unsafe / misleading items.
+
+The guide provides strong evidence-based coverage of CBT-I techniques, diagnostic definitions, and the hazards of hypnotics and antihistamines. However, it completely fails to answer Q3 (physical/mental consequences of untreated insomnia) and Q10 (managing insomnia alongside chronic medical conditions like diabetes, GERD, and hypertension), while only vaguely addressing popular Arab herbs beyond chamomile. Several technical terms and neuropsychological details add unnecessary cognitive burden for a general public video audience. Crucial safety warnings regarding pregnancy, fall risks in the elderly, and sleep apnea contraindications should be promoted directly into the action card.
+
+**Unsafe or misleading:**
+- For discontinuing Z-drugs, tapering with intermediate- or long-acting benzodiazepines is recommended, whereas immediate-release melatonin is not recommended for this purpose. — Recommending switching to benzodiazepines to taper off Z-drugs directly to a patient audience in a video without extreme physician supervision warnings risks patients self-managing cross-tapers or seeking benzodiazepines, which carry severe addiction and dependency risks.
+- Strategically timed melatonin helps specific circadian rhythm sleep disorders and mildly shortens time to fall asleep. — Listed under '[works]' on the action card without specifying timing, dosing, or that it is primarily for circadian phase shifts rather than general chronic insomnia, potentially leading viewers to rely on it incorrectly.

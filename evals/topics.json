@@ -240,7 +240,74 @@
     {
       "slug": "insomnia",
       "type": "mental_health",
-      "topic": "chronic insomnia: why it happens and what treatments actually work"
+      "topic": "chronic insomnia: why it happens and what treatments actually work",
+      "questions": [
+        {
+          "id": "Q1",
+          "q": "How do I know if my trouble sleeping has turned into chronic insomnia, and when does it stop being just temporary stress?",
+          "importance": "core"
+        },
+        {
+          "id": "Q2",
+          "q": "What are the real root causes of chronic insomnia—is it purely psychological anxiety and depression, or could it be a hidden physical illness?",
+          "importance": "core"
+        },
+        {
+          "id": "Q3",
+          "q": "What serious physical and mental health damage happens to my body if I go weeks or months without proper sleep?",
+          "importance": "core"
+        },
+        {
+          "id": "Q4",
+          "q": "What medical tests or sleep clinic studies (like polysomnography) are actually needed to diagnose the cause of insomnia?",
+          "importance": "useful"
+        },
+        {
+          "id": "Q5",
+          "q": "Why is Cognitive Behavioral Therapy for Insomnia (CBT-I) considered the most effective long-term treatment, and how does it work?",
+          "importance": "core"
+        },
+        {
+          "id": "Q6",
+          "q": "What sleep hygiene habits actually make a proven difference in bedtime routine, and what commonly shared tips are useless?",
+          "importance": "useful"
+        },
+        {
+          "id": "Q7",
+          "q": "Are sleeping pills and sedatives safe to take, or will they cause severe addiction and rebound insomnia when I stop them?",
+          "importance": "core"
+        },
+        {
+          "id": "Q8",
+          "q": "Do popular herbal drinks used in the Arab world—like anise (yansoon), chamomile (babonig), warm milk, or mint—actually cure chronic insomnia?",
+          "importance": "useful"
+        },
+        {
+          "id": "Q9",
+          "q": "Is over-the-counter melatonin or antihistamine allergy syrup effective and safe for long-term use?",
+          "importance": "core"
+        },
+        {
+          "id": "Q10",
+          "q": "How can people with chronic medical conditions like diabetes, hypertension, acid reflux, or chronic pain manage insomnia safely?",
+          "importance": "useful"
+        },
+        {
+          "id": "Q11",
+          "q": "How should pregnant women or elderly individuals deal with persistent sleeplessness without risking medication harm?",
+          "importance": "useful"
+        },
+        {
+          "id": "Q12",
+          "q": "What should I do tonight if I'm lying awake in bed in the middle of the night unable to sleep?",
+          "importance": "core"
+        },
+        {
+          "id": "Q13",
+          "q": "At what point is chronic insomnia an emergency or a sign I must see a doctor immediately, especially if combined with hallucinations or suicidal thoughts?",
+          "importance": "core"
+        }
+      ]
     }
   ]
 }
