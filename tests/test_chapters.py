@@ -1004,7 +1004,7 @@ class LengthGuideSoftModeTest(unittest.TestCase):
         bp = dict(ONE_CHAPTER, target_minutes=10, words_per_minute=135)
         script_writing.script_refinement(base_state(blueprint=bp, dialect_warmth_output="D"))
         prompt = fake.calls[0]["user"]
-        self.assertIn("LENGTH GUIDE: about 1350 spoken words planned for the body", prompt)
+        self.assertIn("LENGTH GUIDE: about 1350 spoken words planned for the whole video", prompt)
         self.assertNotIn("TARGET LENGTH", prompt)
 
 

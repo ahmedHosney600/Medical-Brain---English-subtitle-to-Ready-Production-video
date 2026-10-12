@@ -886,7 +886,7 @@ def _total_length_line(blueprint: dict, strict: bool = True) -> str:
         return ""
     total = int(minutes * wpm)
     if not strict:
-        return (f"\n\nLENGTH GUIDE: about {total} spoken words planned for the body — use the room "
+        return (f"\n\nLENGTH GUIDE: about {total} spoken words planned for the whole video — use the room "
                 "the content needs; do not pad, do not compress real points.")
     return (f"\n\nTARGET LENGTH: about {total} spoken words for the WHOLE video (hook + body + CTA), "
             f"never more than {int(total * 1.1)}. Use ONE hook and ONE CTA, each short (hook ≤ 120 words, "
