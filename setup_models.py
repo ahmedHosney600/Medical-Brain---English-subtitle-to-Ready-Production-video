@@ -1,4 +1,5 @@
-"""Check providers and choose the models: python3 setup_models.py [--check]
+"""Check providers and choose the models:
+    python3 setup_models.py [--check] [--templates] [--template NAME]
 (The code lives in medical_brain/setup_models.py.)"""
 from medical_brain.setup_models import main
 

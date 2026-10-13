@@ -121,6 +121,73 @@ DEFAULT_HYBRID_ROUTES = {
 }
 
 
+# Every ready-made template must route these ten hybrid judge steps.
+JUDGE_ROUTES = ("medical_truth_verifier", "fidelity_auditor", "self_critique",
+                "packaging_honesty_ctr_auditor", "production_quality_critique",
+                "source_screener", "fact_verifier", "coverage_critic", "eval_judge", "expert_brief")
+
+
+def _all_routes(model: str) -> dict:
+    return {node: model for node in JUDGE_ROUTES}
+
+
+# Ready-made model setups offered by setup_models.py. Gemini 3.8 Flash writes the
+# best Egyptian Arabic, so it writes in every template; the templates differ in who
+# judges. Judges from another family catch what the writer misses (see warn_same_model).
+MODEL_TEMPLATES = {
+    "gemini": {
+        "label": "Gemini only",
+        "description": "Free Google quota; Gemini writes and judges its own work, which is lenient.",
+        "main_model": "agy:gemini-3.8-flash-medium",
+        "single_model": "agy:gemini-3.8-flash-high",
+        "backup_model": "agy:gemini-3.8-flash-low",
+        "hybrid_routes": _all_routes("agy:gemini-3.8-flash-high"),
+    },
+    "gemini-deepseek": {
+        "label": "Gemini writes + DeepSeek judges",
+        "description": "Recommended: sharpest judge, light-touch corrections, cheap API key.",
+        "main_model": "agy:gemini-3.8-flash-medium",
+        "single_model": "deepseek:deepseek-flash",
+        "backup_model": "agy:gemini-3.8-flash-low",
+        "hybrid_routes": _all_routes("deepseek:deepseek-flash"),
+    },
+    "gemini-claude": {
+        "label": "Gemini writes + Claude judges",
+        "description": "Strictest judges on the Claude subscription; slower (3-5 min per judge call).",
+        "main_model": "agy:gemini-3.8-flash-medium",
+        "single_model": "claude:claude-sonnet-5-5",
+        "backup_model": "agy:gemini-3.8-flash-low",
+        "hybrid_routes": {
+            **{n: "claude:claude-sonnet-5-5" for n in
+               ("medical_truth_verifier", "fidelity_auditor", "fact_verifier", "eval_judge", "expert_brief")},
+            **{n: "claude:claude-haiku-5-5" for n in
+               ("self_critique", "packaging_honesty_ctr_auditor", "production_quality_critique",
+                "source_screener", "coverage_critic")},
+        },
+    },
+}
+
+
+RECOMMENDED_TEMPLATE = "gemini-deepseek"
+
+
+def apply_template(config: dict, name: str) -> dict:
+    """Return a copy of `config` with the named template applied (provider "hybrid").
+    "providers" and any other keys are kept. Raises ValueError for an unknown name."""
+    template = MODEL_TEMPLATES.get(name)
+    if template is None:
+        raise ValueError(f"unknown template {name!r}; choose one of: {', '.join(MODEL_TEMPLATES)}")
+    out = dict(config)
+    out.update({
+        "provider": "hybrid",
+        "main_model": template["main_model"],
+        "single_model": template["single_model"],
+        "backup_model": template["backup_model"],
+        "hybrid_routes": dict(template["hybrid_routes"]),
+    })
+    return out
+
+
 CLAUDE_SUBSCRIPTION_MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5", "claude-fable-5-1"]
 
 

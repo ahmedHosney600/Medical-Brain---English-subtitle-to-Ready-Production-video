@@ -2,8 +2,15 @@
 Choose the models for the workflow. Run this before main.py whenever you want
 to change models or check your subscriptions:
 
-    python3 setup_models.py          # check providers, pick models, test them, save
-    python3 setup_models.py --check  # only show which providers are active
+    python3 setup_models.py                  # check providers, pick models, test them, save
+    python3 setup_models.py --check          # only show which providers are active
+    python3 setup_models.py --templates      # list the ready-made templates
+    python3 setup_models.py --template NAME  # apply a template, test its models, save
+
+Ready-made templates (pick one in the menu, or with --template NAME):
+    gemini           Gemini only — free Google quota; Gemini judges its own work (lenient).
+    gemini-deepseek  RECOMMENDED — Gemini writes, DeepSeek judges (sharp, cheap API).
+    gemini-claude    Gemini writes, Claude judges (strictest; slower, subscription tokens).
 
 Providers: Gemini Canvas proxy, Claude (subscription or API key), DeepSeek API,
 OpenCode Go. API keys are saved in llm_keys.env (kept out of git); model
@@ -16,6 +23,7 @@ import subprocess
 import sys
 
 from . import llm as lp
+from .llm.config import MODEL_TEMPLATES, RECOMMENDED_TEMPLATE, apply_template
 
 ICON = {"active": "✅", "off": "⚪", "error": "❌"}
 ROLE_HELP = {
@@ -203,28 +211,31 @@ def pick(label: str, current: str, specs: list, allow_none: bool = False) -> str
         print("   Please type a number from the list, or provider:model.")
 
 
-def choose_and_test(config: dict, specs: list):
-    print("\nChoose a model for each role (Enter keeps the current one).\n")
-    for role in ("main_model", "single_model"):
-        config[role] = pick(ROLE_HELP[role], config[role], specs)
-    config["backup_model"] = pick(ROLE_HELP["backup_model"], config.get("backup_model", ""), specs, allow_none=True)
-    if config["backup_model"] == config["main_model"]:
-        print("   (Same as the main model, so it can't help when the main model fails. Consider another provider.)")
-    print("\nHYBRID judges (option 3 in main.py): each of these steps runs on its own model:")
-    for node, spec in list(config["hybrid_routes"].items()):
-        config["hybrid_routes"][node] = pick(f" • {node}", spec, specs)
+def distinct_models(config: dict) -> list:
+    """Every distinct provider:model the config uses (writer, single, backup, judges)."""
+    specs = {config["main_model"], config["single_model"], *config["hybrid_routes"].values()}
+    if config.get("backup_model"):
+        specs.add(config["backup_model"])
+    return sorted(specs)
 
+
+def test_models(config: dict) -> list:
+    """One tiny real call per distinct model; print ✅/❌ and return the failed specs."""
+    print("\nTesting each chosen model with a one-word call...")
+    failed = []
+    for spec in distinct_models(config):
+        ok, detail = lp.test_model(spec, config["providers"])
+        print(f"  {'✅' if ok else '❌'} {spec}: {detail}")
+        if not ok:
+            failed.append(spec)
+    return failed
+
+
+def test_and_repick(config: dict, specs: list):
+    """Test every chosen model, then let the user re-pick any that failed."""
     warn_same_model(config)
     while True:
-        chosen = sorted({config["main_model"], config["single_model"], *config["hybrid_routes"].values(),
-                         *([config["backup_model"]] if config.get("backup_model") else [])})
-        print("\nTesting each chosen model with a one-word call...")
-        failed = []
-        for spec in chosen:
-            ok, detail = lp.test_model(spec, config["providers"])
-            print(f"  {'✅' if ok else '❌'} {spec}: {detail}")
-            if not ok:
-                failed.append(spec)
+        failed = test_models(config)
         if not failed:
             return
         print("\nModels marked ❌ will be skipped at run time (their steps run on the main model).")
@@ -240,7 +251,69 @@ def choose_and_test(config: dict, specs: list):
                 config["hybrid_routes"][node] = pick(f" • {node}", spec, specs)
 
 
+def choose_and_test(config: dict, specs: list):
+    print("\nChoose a model for each role (Enter keeps the current one).\n")
+    for role in ("main_model", "single_model"):
+        config[role] = pick(ROLE_HELP[role], config[role], specs)
+    config["backup_model"] = pick(ROLE_HELP["backup_model"], config.get("backup_model", ""), specs, allow_none=True)
+    if config["backup_model"] == config["main_model"]:
+        print("   (Same as the main model, so it can't help when the main model fails. Consider another provider.)")
+    print("\nHYBRID judges (option 3 in main.py): each of these steps runs on its own model:")
+    for node, spec in list(config["hybrid_routes"].items()):
+        config["hybrid_routes"][node] = pick(f" • {node}", spec, specs)
+
+    test_and_repick(config, specs)
+
+
+# The three ready-made templates, keyed by the number typed at the prompt.
+TEMPLATE_CHOICES = {"1": "gemini", "2": "gemini-deepseek", "3": "gemini-claude"}
+
+
+def select_template():
+    """Ask which ready-made template to use. Returns its name, or None for the custom flow."""
+    choice = ask("\nUse a ready template? 1) Gemini only  2) Gemini writes + DeepSeek judges (recommended)  "
+                 "3) Gemini writes + Claude judges  4) Custom choice [2]: ", "2")
+    return TEMPLATE_CHOICES.get(choice)
+
+
+def list_templates():
+    print("\nReady-made model templates")
+    print("--------------------------")
+    for name, template in MODEL_TEMPLATES.items():
+        mark = "  (recommended)" if name == RECOMMENDED_TEMPLATE else ""
+        print(f"  {name}{mark}")
+        print(f"      {template['label']} — {template['description']}")
+    print("\nApply one with: python3 setup_models.py --template NAME")
+
+
+def run_template(name: str):
+    """Non-interactive: apply the named template, test its models, save and exit."""
+    if name not in MODEL_TEMPLATES:
+        print(f"\nUnknown template: {name or '(none given)'}")
+        print("Valid templates: " + ", ".join(MODEL_TEMPLATES))
+        raise SystemExit(2)
+    config = apply_template(lp.load_llm_config(), name)
+    print(f"\nApplying the '{name}' template: {MODEL_TEMPLATES[name]['label']} — {MODEL_TEMPLATES[name]['description']}")
+    print(f"  main:   {config['main_model']}")
+    print(f"  single: {config['single_model']}")
+    print(f"  backup: {config['backup_model']}")
+    failed = test_models(config)
+    if failed:
+        print(f"\n⚠️  These models failed and will be skipped at run time: {', '.join(failed)}")
+    lp.save_llm_config(config)
+    print(f"\nSaved to {lp.CONFIG_PATH}. Now run: python3 main.py <script.txt>")
+
+
 def main():
+    args = sys.argv[1:]
+    if "--templates" in args:
+        list_templates()
+        return
+    if "--template" in args:
+        i = args.index("--template")
+        run_template(args[i + 1] if i + 1 < len(args) else "")
+        return
+
     check_packages()
     config = lp.load_llm_config()
     status = show_status(config)
@@ -251,7 +324,17 @@ def main():
 
     specs = collect_models(config, status)
     print_models(specs, config)
-    choose_and_test(config, specs)
+
+    template = select_template()
+    if template:
+        config = apply_template(config, template)
+        print(f"\nApplied the '{template}' template: {MODEL_TEMPLATES[template]['description']}")
+        for spec in distinct_models(config):
+            if spec not in specs:
+                specs.append(spec)
+        test_and_repick(config, specs)
+    else:
+        choose_and_test(config, specs)
 
     mode = ask("\nDefault option when main.py can't show its menu: 1) main  2) single  3) hybrid  [3]: ", "3")
     config["provider"] = {"1": "main", "2": "single"}.get(mode, "hybrid")
