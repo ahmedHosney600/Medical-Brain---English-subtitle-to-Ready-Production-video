@@ -121,6 +121,8 @@ Models are written `provider:model`:
 | `claude` | `claude:claude-opus-5-5` | Claude Code installed and logged in (subscription). Or set `"transport": "anthropic_api"` and `ANTHROPIC_API_KEY` |
 | `deepseek` | `deepseek:deepseek-v4-pro` | `DEEPSEEK_API_KEY` (api.deepseek.com) |
 | `opencode` | `opencode:glm-5.3` | `OPENCODE_API_KEY` (OpenCode Go, opencode.ai/zen/go/v1) |
+| `geminiweb` | `geminiweb:gemini-3.8-flash` | the gemini-web2api proxy on `localhost:4981` (free, uses your Google account) |
+| `freegemini` | `freegemini:gemini-3.8-flash` | the free-gemini-api proxy on `127.0.0.1:8001` (free, uses your Google account) |
 
 **OpenCode Go uses three different APIs** ([docs](https://opencode.ai/docs/go/)). The workflow picks the right one per model:
 

@@ -2,6 +2,7 @@
 its sources — written by code from the verified facts, so nothing unverified can slip
 in. Also the review file the creator edits, and the source text the video workflow
 is built from."""
+import hashlib
 import json
 import os
 import re
@@ -716,6 +717,66 @@ def video_source(state: dict) -> str:
         out.append("")
     out += ["SOURCES:"] + reference_lines(state)
     return "\n".join(out)
+
+
+VIDEO_SOURCE_FILE = "video_source.md"
+
+
+def write_video_source(state: dict, folder: str) -> str:
+    """Write rd.video_source(state) to folder/video_source.md so the creator can edit
+    the text the video script is built from. Stores the sha256 of the exact written
+    text in state["video_source_sha256"] and returns the path."""
+    text = video_source(state)
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, VIDEO_SOURCE_FILE)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+    state["video_source_sha256"] = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return path
+
+
+def read_video_source(state: dict, folder: str) -> tuple:
+    """The source text the video is built from: (text, edited).
+
+    Returns the creator's edited video_source.md (and True) when it exists and differs
+    from the copy this code wrote (state["video_source_sha256"]); otherwise the text
+    generated from the research state (and False). An empty/whitespace-only edit falls
+    back to the generated text."""
+    path = os.path.join(folder, VIDEO_SOURCE_FILE)
+    try:
+        with open(path, encoding="utf-8") as f:
+            file_text = f.read()
+    except OSError:
+        return video_source(state), False
+    if not file_text.strip():
+        return video_source(state), False
+    digest = hashlib.sha256(file_text.encode("utf-8")).hexdigest()
+    if digest != state.get("video_source_sha256"):
+        return file_text, True
+    return video_source(state), False
+
+
+def uncited_lines(text: str) -> list:
+    """The bullet lines of a video source that have no [S#] citation, so the truth
+    check can warn about them. The trailing SOURCES: block and placeholder lines
+    such as "- (none)" are ignored, and so are generated "- MYTH: ..." lines (their
+    citation sits on the TRUTH line that follows)."""
+    lines = (text or "").splitlines()
+    cut = len(lines)
+    for i, line in enumerate(lines):
+        if line.strip() == "SOURCES:":
+            cut = i
+            break
+    out = []
+    for line in lines[:cut]:
+        stripped = line.strip()
+        if not stripped.startswith("- ") or stripped.startswith("- ("):
+            continue
+        if stripped.startswith("- MYTH:"):
+            continue
+        if not re.search(r"\[S\d+\]", stripped):
+            out.append(stripped)
+    return out
 
 
 def key_sources(state: dict, n: int = 6) -> list:

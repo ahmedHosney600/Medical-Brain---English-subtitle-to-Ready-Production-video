@@ -39,7 +39,25 @@ DEFAULT_PROVIDERS = {
     # per-request time-out like the Canvas proxy; answers are capped at ~12k characters
     # (~20k for the -thinking model), which the chapter-mode script writing respects.
     "geminiweb": {"type": "openai", "label": "Gemini Web (gemini-web2api)", "base_url": "http://localhost:4981/v1",
-                  "free": True, "max_concurrency": 1, "timeout_seconds": 600},
+                  "free": True, "max_concurrency": 1, "timeout_seconds": 600,
+                  # The web app sometimes answers with a short canned refusal instead of an
+                  # error; treat those as a failed call so the router retries/falls back.
+                  "canned_replies": ["i'm having a hard time fulfilling your request",
+                                     "i'm a text-based ai and can't help with that",
+                                     "i'm just a language model, so i can't help you with that",
+                                     "i can't help with that right now"]},
+    # free-gemini-api (github.com/kodelyx/free-gemini-api; local, free, OpenAI-compatible):
+    # Gemini's web app through your own Google account cookies. /v1/models lists
+    # gemini-3.8-flash(-thinking-*), gemini-4-argon(-thinking-*), gemini-3.1-pro(-thinking-*).
+    "freegemini": {"type": "openai", "label": "Free Gemini API (free-gemini-api)",
+                   "base_url": "http://127.0.0.1:8001/v1", "free": True,
+                   # Its streaming endpoint returns an empty stream; call it without streaming.
+                   "stream": False,
+                   "max_concurrency": 2, "timeout_seconds": 900,
+                   "canned_replies": ["i'm having a hard time fulfilling your request",
+                                      "i'm a text-based ai and can't help with that",
+                                      "i'm just a language model, so i can't help you with that",
+                                      "i can't help with that right now"]},
     "claude": {"type": "claude", "label": "Claude", "transport": "claude_code", "effort": "high",
                "efforts": {}, "timeout_seconds": 900},
     # Google Antigravity's `agy` CLI as a plain text model. Uses the Google account

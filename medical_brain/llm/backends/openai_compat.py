@@ -3,7 +3,8 @@ import re
 from typing import Optional
 
 from ..config import KEYS_PATH, provider_headers, provider_key, thinking_mode
-from ..errors import ProviderUnavailable, _LimitTooHigh, _limit_refused, _thinking_refused, api_failure
+from ..errors import (ProviderUnavailable, StepFailed, _LimitTooHigh, _limit_refused,
+                      _thinking_refused, api_failure)
 from ..progress import _Progress, _client_timeout, _step_timeout, current_node
 from .base import _OutputLimits
 
@@ -96,8 +97,22 @@ class OpenAICompatibleBackend(_OutputLimits):
     def _once(self, system_prompt, user_prompt, temperature, limit) -> tuple:
         """Streams the answer so progress can be shown and a too-slow call stopped."""
         params = self._params(system_prompt, user_prompt, temperature, limit)
-        params["stream"] = True
         progress = _Progress(self.model, _step_timeout(self.cfg))
+        if not self.cfg.get("stream", True):
+            # Some OpenAI-compatible proxies (free-gemini-api) return an empty event
+            # stream when "stream": true but answer correctly without streaming.
+            def once():
+                try:
+                    resp = self._create(params)
+                finally:
+                    progress.done()
+                return self._text(resp), resp.choices[0].finish_reason == "length"
+            text, cut = self._map_errors(once)
+            self._reject_canned(text)
+            if not (text or "").strip():
+                raise StepFailed(f"{self.provider}:{self.model} returned an empty answer")
+            return text, cut
+        params["stream"] = True
 
         def run():
             stream = self._create(params)
@@ -123,4 +138,21 @@ class OpenAICompatibleBackend(_OutputLimits):
                     pass
                 progress.done()
             return "".join(parts), finish == "length"
-        return self._map_errors(run)
+        text, cut = self._map_errors(run)
+        self._reject_canned(text)
+        return text, cut
+
+    def _reject_canned(self, text: str) -> None:
+        """Gemini's web app (behind the freegemini / geminiweb proxies) sometimes answers
+        with a short canned refusal instead of erroring. Raise StepFailed so the router
+        retries and falls back like it would for any other failed call. The raise happens
+        after _map_errors, so it is never converted into something else."""
+        phrases = self.cfg.get("canned_replies")
+        if not phrases:
+            return
+        stripped = (text or "").strip()
+        if len(stripped) >= 400:
+            return
+        lowered = stripped.replace("\u2019", "'").lower()
+        if any(phrase.lower() in lowered for phrase in phrases):
+            raise StepFailed(f"{self.provider}:{self.model} returned a canned non-answer: {text[:80]!r}")

@@ -263,5 +263,46 @@ class TruthVerifierWrittenLengthGuardTest(unittest.TestCase):
         self.assertEqual(out["refined_script"], script)
 
 
+class OverclaimFixDossierTextTest(unittest.TestCase):
+    """The overclaim fix pass must receive the research source text. In a research-video
+    run research_dossier is the bool flag True, so the pass must use original_script, not
+    send the model "RESEARCH DOSSIER:\\ntrue"."""
+
+    ORIGINAL = "RESEARCH SOURCE: the evidence says relief is not instant."
+
+    def _two_calls(self):
+        fake = FakeJSON(lambda system, user: (
+            ({"edits": []}, "raw") if len(fake.calls) > 1 else (verifier_answer(SCRIPT), "raw")))
+        return fake
+
+    def test_bool_flag_uses_original_script(self):
+        fake = self._two_calls()
+        use(self, fake)
+        with mock.patch("builtins.print"):
+            quality.medical_truth_verifier(state(research_dossier=True, original_script=self.ORIGINAL))
+        self.assertEqual(len(fake.calls), 2)
+        self.assertIn(self.ORIGINAL, fake.calls[1]["user"])
+        self.assertNotIn("RESEARCH DOSSIER:\ntrue", fake.calls[1]["user"])
+
+    def test_non_empty_string_dossier_is_still_used(self):
+        fake = self._two_calls()
+        use(self, fake)
+        with mock.patch("builtins.print"):
+            quality.medical_truth_verifier(state(research_dossier="DOSSIER TEXT",
+                                                 original_script=self.ORIGINAL))
+        self.assertIn("DOSSIER TEXT", fake.calls[1]["user"])
+        self.assertNotIn(self.ORIGINAL, fake.calls[1]["user"])
+
+    def test_empty_dossier_uses_original_script(self):
+        fake = FakeJSON(lambda system, user: ({"edits": []}, "raw"))
+        use(self, fake)
+        with mock.patch("builtins.print"):
+            quality._overclaim_fix_pass(state(research_dossier="", original_script=self.ORIGINAL),
+                                        SCRIPT, "report")
+        self.assertEqual(len(fake.calls), 1)
+        self.assertIn(self.ORIGINAL, fake.calls[0]["user"])
+        self.assertNotIn("RESEARCH DOSSIER:\ntrue", fake.calls[0]["user"])
+
+
 if __name__ == "__main__":
     unittest.main()

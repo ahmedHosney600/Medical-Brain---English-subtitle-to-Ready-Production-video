@@ -428,6 +428,8 @@ def _finish_research(session_dir: str, state: dict) -> dict:
     from .research import dossier as rd
     folder = os.path.join(session_dir, "research")
     state["review"] = {}
+    # Write the editable source before rd.save so its sha256 is in the saved state.
+    video_source_path = rd.write_video_source(state, folder)
     paths = rd.save(state, folder)
     review_path = os.path.join(folder, "review.md")
     has_guide = bool(state.get("patient_guide"))
@@ -443,6 +445,7 @@ def _finish_research(session_dir: str, state: dict) -> dict:
     print(f"📄 Evidence Library (dossier): {paths['md']}  ({len(facts)} verified facts, "
           f"{len(rd.used_sources(state))} sources, {len(state.get('rejected', []))} left out)")
     _convert(paths["md"], "research dossier")
+    print(f"📝 Video source (edit it to change what the script is written from): {video_source_path}")
     print(f"✍️  Review it, then edit {review_path}")
     print(f"   → python3 main.py --continue {os.path.relpath(session_dir, PROJECT_ROOT)}")
     print("     (APPROVED: yes to finish" + (" and build the video)" if state.get("workflow") == "research-video" else ")"))
@@ -491,6 +494,15 @@ def continue_research(router_factory, arg: str) -> None:
     folder = os.path.join(session_dir, "research")
     with open(os.path.join(folder, "research_state.json"), encoding="utf-8") as f:
         state = json.load(f)
+    # Older sessions have no editable video source: write one (and record its hash in
+    # the saved state) so the creator can change what the script is built from.
+    video_source_path = os.path.join(folder, rd.VIDEO_SOURCE_FILE)
+    if not os.path.exists(video_source_path):
+        rd.write_video_source(state, folder)
+        with open(os.path.join(folder, "research_state.json"), "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+        print(f"📝 Wrote {os.path.relpath(video_source_path, PROJECT_ROOT)} — edit it if you want "
+              "to change what the video is built from.")
     review_path = os.path.join(folder, "review.md")
     review_text = ""
     if os.path.exists(review_path):
@@ -507,12 +519,27 @@ def continue_research(router_factory, arg: str) -> None:
                   f"{os.path.relpath(session_dir, PROJECT_ROOT)} --workflow research-video")
             return
         router = router_factory()
-        run_video(router, rd.video_source(state), output_dir=session_dir, research=state, extra_state={
+        source, edited = rd.read_video_source(state, folder)
+        if edited:
+            print("📝 Using your edited video_source.md")
+            # Only warn about uncited lines the creator ADDED: generated sources
+            # legitimately contain uncited lines (e.g. "- MYTH: ...", whose citation
+            # is on the next TRUTH line) that shouldn't be flagged.
+            generated = {l.strip() for l in rd.video_source(state).splitlines()}
+            uncited = [l for l in rd.uncited_lines(source) if l not in generated]
+            if uncited:
+                print(f"⚠️  {len(uncited)} line(s) have no source id [S#] — the truth check will "
+                      "treat them as unverified and may drop them:")
+                for line in uncited[:5]:
+                    print(f"   {line[:120]}")
+        run_video(router, source, output_dir=session_dir, research=state, extra_state={
             "source_format": "Research dossier (verified facts with citations)", "research_dossier": True})
         return
     if not rd.has_requests(review):
         print(f"review.md has no requests and isn't approved yet. Edit {review_path} "
-              "(write your changes, or APPROVED: yes) and run --continue again.")
+              "(write your changes, or APPROVED: yes) and run --continue again. "
+              f"You can also edit {os.path.relpath(video_source_path, PROJECT_ROOT)} to change "
+              "what the video is built from before approving.")
         return
     router = router_factory()
     state["review"] = review

@@ -38,6 +38,10 @@
         "geminiweb": {
             "base_url": "http://localhost:4981/v1",
             "max_concurrency": 2
+        },
+        "freegemini": {
+            "base_url": "http://127.0.0.1:8001/v1",
+            "max_concurrency": 2
         }
     }
 }

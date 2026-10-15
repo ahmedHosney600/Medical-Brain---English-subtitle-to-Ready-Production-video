@@ -12,6 +12,7 @@ import unittest
 os.environ["NO_PROXY"] = os.environ["no_proxy"] = "127.0.0.1,localhost"
 
 from medical_brain import llm  # noqa: E402
+from medical_brain.llm.errors import StepFailed  # noqa: E402
 
 FAKES = os.path.join(os.path.dirname(__file__), "fakes")
 
@@ -157,6 +158,153 @@ class RouterLogicTest(unittest.TestCase):
         self.assertEqual(run_step(router, "writer_step"), "w:writer")
         self.assertEqual(run_step(router, "judge_step"), "w:writer")       # limit → main model
         self.assertIn("j", router.report()["unavailable"])
+
+
+class FreeGeminiProviderTest(unittest.TestCase):
+    """The local free-gemini-api proxy is a normal OpenAI-compatible provider."""
+
+    def test_defaults(self):
+        cfg = llm.DEFAULT_PROVIDERS["freegemini"]
+        self.assertEqual(cfg["type"], "openai")
+        self.assertEqual(cfg["base_url"], "http://127.0.0.1:8001/v1")
+        self.assertFalse(cfg["stream"])      # its streaming endpoint returns an empty stream
+
+    def test_model_spec_resolves_to_the_provider(self):
+        provider, model = llm.parse_spec("freegemini:gemini-3.8-flash")
+        self.assertEqual(provider, "freegemini")
+        self.assertEqual(model, "gemini-3.8-flash")
+        self.assertIn(provider, llm.DEFAULT_PROVIDERS)
+
+
+class NonStreamingProviderTest(unittest.TestCase):
+    """free-gemini-api returns an empty event stream when "stream": true, so its
+    provider is called without streaming; an empty non-streaming answer is a failure."""
+
+    def _backend(self, text="ANSWER", finish_reason="stop", **over):
+        cfg = dict(llm.DEFAULT_PROVIDERS["freegemini"], api_key="k", **over)
+        backend = llm.OpenAICompatibleBackend("freegemini", cfg, "gemini-3.8-flash")
+        calls = []
+
+        class _Message:
+            def __init__(self, content):
+                self.content = content
+
+        class _Choice:
+            def __init__(self, content, finish_reason):
+                self.message = _Message(content)
+                self.finish_reason = finish_reason
+
+        class _Response:
+            def __init__(self, content, finish_reason):
+                self.choices = [_Choice(content, finish_reason)]
+
+        def fake_create(params):
+            calls.append(params)
+            return _Response(text, finish_reason)
+
+        backend._create = fake_create
+        backend._calls = calls
+        return backend
+
+    def test_stream_false_does_a_plain_call_without_stream(self):
+        backend = self._backend(text="the answer")
+        self.assertEqual(backend.call("s", "u", 0.2, 100), "the answer")
+        self.assertEqual(len(backend._calls), 1)
+        self.assertNotIn("stream", backend._calls[0])
+
+    def test_empty_answer_raises_step_failed(self):
+        backend = self._backend(text="")
+        with self.assertRaises(StepFailed) as caught:
+            backend.call("s", "u", 0.2, 100)
+        self.assertIn("returned an empty answer", str(caught.exception))
+
+    def test_cfg_without_stream_key_still_streams(self):
+        cfg = {"type": "openai", "base_url": "http://127.0.0.1:1/v1", "api_key": "k"}
+        backend = llm.OpenAICompatibleBackend("x", cfg, "m")
+        seen = {}
+
+        class _Delta:
+            def __init__(self, content):
+                self.content = content
+                self.reasoning_content = None
+                self.reasoning = None
+
+        class _Choice:
+            def __init__(self, content, finish_reason=None):
+                self.delta = _Delta(content)
+                self.finish_reason = finish_reason
+
+        class _Chunk:
+            def __init__(self, content, finish_reason=None):
+                self.choices = [_Choice(content, finish_reason)]
+
+        def fake_create(params):
+            seen.update(params)
+            return [_Chunk("hello"), _Chunk("", "stop")]
+
+        backend._create = fake_create
+        self.assertEqual(backend.call("s", "u", 0.2, 100), "hello")
+        self.assertTrue(seen.get("stream"))
+
+
+class CannedReplyTest(unittest.TestCase):
+    """A short canned non-answer from Gemini's web app fails the call so the router
+    retries and falls back."""
+
+    CANNED = ("I'm having a hard time fulfilling your request. "
+              "Can I help you with something else instead?")
+
+    def backend(self, text, **over):
+        # geminiweb still streams by default (freegemini is called without streaming;
+        # its non-streaming path is covered by NonStreamingProviderTest).
+        cfg = dict(llm.DEFAULT_PROVIDERS["geminiweb"], api_key="k", **over)
+        backend = llm.OpenAICompatibleBackend("geminiweb", cfg, "gemini-3.8-flash")
+
+        class _Delta:
+            def __init__(self, content):
+                self.content = content
+                self.reasoning_content = None
+                self.reasoning = None
+
+        class _Choice:
+            def __init__(self, content, finish_reason=None):
+                self.delta = _Delta(content)
+                self.finish_reason = finish_reason
+
+        class _Chunk:
+            def __init__(self, content, finish_reason=None):
+                self.choices = [_Choice(content, finish_reason)]
+
+        chunks = [_Chunk(text), _Chunk("", "stop")]
+        backend._create = lambda params: chunks
+        return backend
+
+    def test_canned_reply_raises_step_failed(self):
+        backend = self.backend(self.CANNED)
+        with self.assertRaises(StepFailed) as caught:
+            backend.call("s", "u", 0.2, 100)
+        self.assertIn("canned non-answer", str(caught.exception))
+
+    def test_canned_reply_without_the_flag_is_returned(self):
+        backend = self.backend(self.CANNED, canned_replies=None)
+        self.assertEqual(backend.call("s", "u", 0.2, 100).strip(), self.CANNED)
+
+    def test_long_answer_containing_the_phrase_is_not_flagged(self):
+        long_text = self.CANNED + " " + ("word " * 300)
+        backend = self.backend(long_text)
+        self.assertEqual(backend.call("s", "u", 0.2, 100).strip(), long_text.strip())
+
+    def test_curly_apostrophe_is_normalised(self):
+        canned = "I\u2019m having a hard time fulfilling your request."
+        backend = self.backend(canned)
+        with self.assertRaises(StepFailed):
+            backend.call("s", "u", 0.2, 100)
+
+    def test_both_web_providers_have_the_phrases(self):
+        for name in ("freegemini", "geminiweb"):
+            phrases = llm.DEFAULT_PROVIDERS[name]["canned_replies"]
+            self.assertIn("i'm having a hard time fulfilling your request", phrases)
+            self.assertIn("i can't help with that right now", phrases)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,6 @@
 
 System prompts live in prompts/<step>.md; the user prompts below insert the video's data."""
 
-import json
 import re
 
 from ..llm import call_llm_json
@@ -232,8 +231,11 @@ def _overclaim_fix_pass(state: PipelineState, script: str, report: str) -> tuple
     found = find_overclaims(script)
     if not found:
         return script, report
+    # research_dossier is the bool flag set when the video is built from a research
+    # dossier; the actual research source text is original_script. Use a real dossier
+    # string when a caller passed one (backwards compatibility).
     dossier = state.get("research_dossier")
-    dossier_text = dossier if isinstance(dossier, str) else json.dumps(dossier, ensure_ascii=False)
+    dossier_text = dossier if isinstance(dossier, str) and dossier else (state.get("original_script") or "")
     user_prompt = ("FLAGGED SENTENCES:\n"
                    + "\n".join(f"- «{sentence}» [{phrase}]" for sentence, phrase in found)
                    + f"\n\nRESEARCH DOSSIER:\n{dossier_text}"
