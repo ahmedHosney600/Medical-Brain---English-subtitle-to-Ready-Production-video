@@ -7,7 +7,7 @@ import threading
 from typing import Optional
 
 from .backends import make_backend
-from .checks import test_model
+from .checks import leak_check, test_model
 from .config import MODE_ALIASES, MODES, parse_spec
 from .errors import AnswerCutOff, ProviderUnavailable, StepFailed, _short
 from .progress import _node_state, current_node
@@ -195,6 +195,22 @@ class LLMRouter:
             print(f"🔀 [LLM] {msg}")
             self.events.append(msg)
 
+    def _leak_check(self, spec: str) -> tuple:
+        """(ok, detail) for a spec whose provider asked for the memory/leak check: run it
+        after the ping. A provider that remembers earlier requests is taken out of the
+        run, exactly like a model that failed its ping (the run falls back)."""
+        provider, model = parse_spec(spec)
+        cfg = (self.config.get("providers") or {}).get(provider) or {}
+        if not cfg.get("leak_check"):
+            return True, ""
+        leaked, message = leak_check(provider, cfg, model)
+        if leaked is True:
+            self._log(f"❌ {spec}: remembers earlier requests — not used this run")
+            return False, message
+        if leaked is None:
+            self._log(f"⚠️ {spec}: {message}")
+        return True, ""
+
     def select(self, ask=None):
         """Quick check of every model this run will use. Never blocks: a model
         that fails here is simply skipped and its steps run on the main model."""
@@ -203,6 +219,10 @@ class LLMRouter:
             if self._is_down(spec):
                 continue
             ok, detail = test_model(spec, self.config["providers"])
+            if ok:
+                # The ping answered; a provider that must start a fresh conversation
+                # is checked for memory before it is trusted with the whole run.
+                ok, detail = self._leak_check(spec)
             if ok:
                 self._log(f"✅ {spec}")
             elif spec == self.main:

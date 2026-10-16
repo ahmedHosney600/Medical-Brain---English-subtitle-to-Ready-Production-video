@@ -2,16 +2,19 @@
 streaming on all three API types, step time-out → backup, cut-off answer → backup,
 Qwen thinking switched off, OpenCode session header, provider fallbacks."""
 import os
+import re
 import socket
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 
 os.environ["NO_PROXY"] = os.environ["no_proxy"] = "127.0.0.1,localhost"
 
 from medical_brain import llm  # noqa: E402
+from medical_brain.llm import checks  # noqa: E402
 from medical_brain.llm.errors import StepFailed  # noqa: E402
 
 FAKES = os.path.join(os.path.dirname(__file__), "fakes")
@@ -168,6 +171,28 @@ class FreeGeminiProviderTest(unittest.TestCase):
         self.assertEqual(cfg["type"], "openai")
         self.assertEqual(cfg["base_url"], "http://127.0.0.1:8001/v1")
         self.assertFalse(cfg["stream"])      # its streaming endpoint returns an empty stream
+        # Every request must start a fresh Gemini conversation, and the proxy's
+        # memory between calls is checked at startup.
+        self.assertEqual(cfg["headers"], {"X-Fresh-Conversation": "1"})
+        self.assertIs(cfg["leak_check"], True)
+        self.assertEqual(llm.provider_headers(cfg), {"X-Fresh-Conversation": "1"})
+
+    def test_geminiweb_is_leak_checked_too(self):
+        self.assertIs(llm.DEFAULT_PROVIDERS["geminiweb"]["leak_check"], True)
+
+    def test_a_partial_override_keeps_default_keys_like_headers(self):
+        # A user's llm_variables.json may list only the provider's own settings; the
+        # default "headers" (and "leak_check") must survive the merge.
+        import json
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({"provider": "main", "main_model": "freegemini:gemini-4-argon",
+                       "providers": {"freegemini": {"base_url": "http://127.0.0.1:9001/v1"}}}, f)
+            path = f.name
+        self.addCleanup(os.remove, path)
+        cfg = llm.load_llm_config(path)["providers"]["freegemini"]
+        self.assertEqual(cfg["base_url"], "http://127.0.0.1:9001/v1")   # the override wins
+        self.assertEqual(cfg["headers"], {"X-Fresh-Conversation": "1"})  # the default survives
+        self.assertIs(cfg["leak_check"], True)
 
     def test_model_spec_resolves_to_the_provider(self):
         provider, model = llm.parse_spec("freegemini:gemini-3.8-flash")
@@ -305,6 +330,131 @@ class CannedReplyTest(unittest.TestCase):
             phrases = llm.DEFAULT_PROVIDERS[name]["canned_replies"]
             self.assertIn("i'm having a hard time fulfilling your request", phrases)
             self.assertIn("i can't help with that right now", phrases)
+
+
+class _LeakBackend:
+    """A backend that answers the ping, then either echoes the remembered code
+    (leaks) or answers NONE. `error=True` makes every call raise."""
+
+    def __init__(self, leak=False, error=False):
+        self.leak = leak
+        self.error = error
+        self.code = ""
+
+    def call(self, system, user, temperature=None, max_tokens=None):
+        if "Remember this code" in user:
+            if self.error:
+                raise RuntimeError("backend exploded")
+            match = re.search(r"MB-[0-9a-f]+", user)
+            self.code = match.group(0) if match else ""
+            return "OK"
+        if "What code did I ask" in user:
+            return self.code if self.leak else "NONE"
+        return "OK"
+
+
+class LeakCheckTest(unittest.TestCase):
+    """A web-backed provider is checked for memory between calls: a code sent in one
+    request must not come back in the next."""
+
+    MODELS = ["gemini-4-argon", "gemini-3.8-flash"]
+
+    def freegemini_cfg(self):
+        return dict(llm.DEFAULT_PROVIDERS["freegemini"], api_key="k")
+
+    def use_backend(self, **kw):
+        patcher = mock.patch.object(checks, "make_backend", lambda spec, providers: _LeakBackend(**kw))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_leak_check_true_when_the_code_comes_back(self):
+        self.use_backend(leak=True)
+        leaked, message = checks.leak_check("freegemini", self.freegemini_cfg(), "gemini-4-argon")
+        self.assertIs(leaked, True)
+        self.assertIn("remembers earlier requests", message)
+
+    def test_leak_check_false_when_it_answers_none(self):
+        self.use_backend()
+        leaked, message = checks.leak_check("freegemini", self.freegemini_cfg(), "gemini-4-argon")
+        self.assertIs(leaked, False)
+        self.assertEqual(message, "no memory between calls")
+
+    def test_leak_check_skipped_on_error(self):
+        self.use_backend(error=True)
+        leaked, message = checks.leak_check("freegemini", self.freegemini_cfg(), "gemini-4-argon")
+        self.assertIsNone(leaked)
+        self.assertTrue(message.startswith("leak check skipped"))
+
+    def _provider_status(self, **kw):
+        self.use_backend(**kw)
+        patcher = mock.patch.object(checks, "list_models", lambda provider, cfg: list(self.MODELS))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        return checks.provider_status("freegemini", self.freegemini_cfg())
+
+    def test_provider_status_errors_on_a_leaking_provider(self):
+        state, detail = self._provider_status(leak=True)
+        self.assertEqual(state, "error")
+        self.assertIn("earlier prompts leak", detail)
+
+    def test_provider_status_notes_no_memory(self):
+        state, detail = self._provider_status()
+        self.assertEqual(state, "active")
+        self.assertIn("no memory between calls", detail)
+
+    def test_provider_status_keeps_active_when_the_check_is_skipped(self):
+        state, detail = self._provider_status(error=True)
+        self.assertEqual(state, "active")
+        self.assertIn("leak check skipped", detail)
+
+    def test_provider_status_picks_gemini_4_argon(self):
+        seen = {}
+
+        def fake_leak(provider, cfg, model):
+            seen["model"] = model
+            return False, "no memory between calls"
+
+        patcher = mock.patch.object(checks, "list_models", lambda provider, cfg: list(self.MODELS))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        with mock.patch.object(checks, "leak_check", fake_leak):
+            checks.provider_status("freegemini", self.freegemini_cfg())
+        self.assertEqual(seen["model"], "gemini-4-argon")
+
+    def test_run_start_drops_a_leaking_model(self):
+        c = llm.load_llm_config()
+        c.update(main_model="w:writer", backup_model="",
+                 hybrid_routes={"judge": "freegemini:gemini-4-argon"})
+        c["providers"]["freegemini"] = self.freegemini_cfg()
+        router = llm.LLMRouter(c, provider="hybrid")
+        self.use_backend(leak=True)
+        router.select()
+        self.assertIn("freegemini:gemini-4-argon", router.down_specs)
+        self.assertFalse(router._is_down("w:writer"))
+        self.assertTrue(any("remembers earlier requests" in e for e in router.events))
+
+    def test_run_start_keeps_a_clean_provider(self):
+        c = llm.load_llm_config()
+        c.update(main_model="w:writer", backup_model="",
+                 hybrid_routes={"judge": "freegemini:gemini-4-argon"})
+        c["providers"]["freegemini"] = self.freegemini_cfg()
+        router = llm.LLMRouter(c, provider="hybrid")
+        self.use_backend()
+        router.select()
+        self.assertNotIn("freegemini:gemini-4-argon", router.down_specs)
+        self.assertTrue(any("✅ freegemini:gemini-4-argon" in e for e in router.events))
+
+    def test_run_start_warns_but_keeps_using_a_skipped_provider(self):
+        c = llm.load_llm_config()
+        c.update(main_model="w:writer", backup_model="",
+                 hybrid_routes={"judge": "freegemini:gemini-4-argon"})
+        c["providers"]["freegemini"] = self.freegemini_cfg()
+        router = llm.LLMRouter(c, provider="hybrid")
+        self.use_backend(error=True)
+        router.select()
+        self.assertNotIn("freegemini:gemini-4-argon", router.down_specs)
+        self.assertFalse(router._is_down("freegemini:gemini-4-argon"))
+        self.assertTrue(any("leak check skipped" in e for e in router.events))
 
 
 if __name__ == "__main__":

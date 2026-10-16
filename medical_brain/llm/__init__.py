@@ -18,7 +18,7 @@ from .backends import (AnthropicAPIBackend, AnthropicCompatibleBackend, CanvasPr
                        ClaudeCodeBackend, OpenAICompatibleBackend, OpenAIResponsesBackend, make_backend)
 from .backends.base import _OutputLimits
 from .backends.openai_compat import _WANTS_JSON
-from .checks import HTTPProblem, _http_json, list_models, provider_status, test_model
+from .checks import HTTPProblem, _http_json, leak_check, list_models, provider_status, test_model
 from .config import (CLAUDE_SUBSCRIPTION_MODELS, CONFIG_PATH, DEFAULT_BACKUP, DEFAULT_HYBRID_ROUTES,
                      DEFAULT_MAIN, DEFAULT_PROVIDERS, DEFAULT_SINGLE, KEYS_PATH, MODE_ALIASES, MODES,
                      OPENCODE_GO_DOC_MODELS, OPENCODE_SESSION_ID, _sanitize_no_proxy, load_keys,

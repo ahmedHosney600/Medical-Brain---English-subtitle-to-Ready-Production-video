@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import secrets
 import shutil
 import subprocess
 import time
@@ -126,6 +127,15 @@ def list_models(provider: str, cfg: dict) -> list:
     return sorted(i for i in ids if i)
 
 
+def _leak_model(models) -> str:
+    """Which listed model the leak check uses: gemini-4-argon when offered, else the
+    first model whose id contains "flash", else the first listed."""
+    if "gemini-4-argon" in models:
+        return "gemini-4-argon"
+    flash = next((m for m in models if "flash" in str(m).lower()), None)
+    return flash or models[0]
+
+
 def provider_status(provider: str, cfg: dict) -> tuple:
     """(state, detail) with state 'active', 'off' (not set up), 'warning' or 'error'."""
     if cfg.get("type") == "claude":
@@ -179,10 +189,23 @@ def provider_status(provider: str, cfg: dict) -> tuple:
             return "active", f"key works; model list from the docs (/models said: {listing_error})"
         return "error", f"{why} (/models said: {listing_error})"
     try:
-        n = len(list_models(provider, cfg))
-        return "active", (f"{n} models" + (f" · balance {detail}" if detail else ""))
+        models = list_models(provider, cfg)
     except Exception as e:
         return "error", _short(e)
+    summary = f"{len(models)} models" + (f" · balance {detail}" if detail else "")
+    if cfg.get("leak_check") and models:
+        # The provider's own answers are checked for memory between calls (a web proxy
+        # may continue one conversation). A leaking provider is not usable: earlier
+        # prompts would bleed into new answers.
+        leaked, message = leak_check(provider, cfg, _leak_model(models))
+        if leaked is True:
+            return "error", ("❗ " + message + " — earlier prompts leak into new answers; "
+                             "update the proxy (fresh conversations) before using it")
+        if leaked is None:
+            summary += f" ({message})"
+        else:
+            summary += " · no memory between calls"
+    return "active", summary
 
 
 def test_model(spec: str, providers: dict) -> tuple:
@@ -195,3 +218,27 @@ def test_model(spec: str, providers: dict) -> tuple:
         return (True, f"answers ({took:.1f} s)") if reply.strip() else (False, "empty reply")
     except Exception as e:
         return False, _short(e)
+
+
+def leak_check(provider: str, cfg: dict, model: str) -> tuple:
+    """Does this provider remember earlier requests? Two calls to the same backend: the
+    first asks it to keep a random code, the second asks for that code back. A proxy that
+    starts a fresh conversation answers NONE; one that reuses a conversation echoes the
+    code (earlier prompts would leak into later answers).
+
+    Returns (leaked, message): True = it remembered, False = no memory between calls,
+    None = the check could not run (its message explains why)."""
+    code = "MB-" + secrets.token_hex(4)
+    try:
+        backend = make_backend(f"{provider}:{model}", {provider: cfg})
+        backend.call("You are terse.",
+                     f"Remember this code for later: {code}. Reply only: OK", 0, 50)
+        answer = backend.call(
+            "You are terse.",
+            "What code did I ask you to remember earlier? Reply with the code only, "
+            "or NONE if you have no earlier message.", 0, 50)
+    except Exception as e:
+        return None, f"leak check skipped: {_short(e)}"
+    if code in (answer or ""):
+        return True, "remembers earlier requests: a code sent in one call came back in the next"
+    return False, "no memory between calls"

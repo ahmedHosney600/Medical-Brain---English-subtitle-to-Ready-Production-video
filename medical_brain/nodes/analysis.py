@@ -122,9 +122,89 @@ Produce the keyword plan. Output ONLY the JSON object."""
         }
 
 
+# A plan whose chapters add up to far less than its own duration would shrink the
+# video while later steps still demanded the full time (a real run: blueprint
+# target_minutes 12, one chapter of 330 words → a ~4-minute script). The planner
+# gets ONE retry with the shortfall spelled out; if it is still short, a run without
+# a user-pinned duration is sized down to what the plan actually covers.
+PLANNER_SHORT_FRACTION = 0.6
+PLANNER_DEFAULT_WPM = 138
+
+
+def _planner_wpm(blueprint) -> float:
+    """The blueprint's words_per_minute (138 when missing, unreadable or <= 0)."""
+    try:
+        wpm = float((blueprint or {}).get("words_per_minute", PLANNER_DEFAULT_WPM) or PLANNER_DEFAULT_WPM)
+    except (TypeError, ValueError):
+        wpm = float(PLANNER_DEFAULT_WPM)
+    return wpm if wpm > 0 else float(PLANNER_DEFAULT_WPM)
+
+
+def _planned_words(blueprint) -> int:
+    """The blueprint's chapters' total word budget (bad values are ignored)."""
+    total = 0
+    for chapter in (blueprint or {}).get("chapters") or []:
+        if not isinstance(chapter, dict):
+            continue
+        try:
+            words = int(float(chapter.get("words", 0) or 0))
+        except (TypeError, ValueError):
+            continue
+        if words > 0:
+            total += words
+    return total
+
+
+def _planner_target_minutes(blueprint, strict_minutes: int) -> float:
+    """The duration the sanity check measures against: the user's --minutes when set,
+    otherwise the blueprint's own target_minutes (0 when neither is set)."""
+    if strict_minutes > 0:
+        return float(strict_minutes)
+    try:
+        return float((blueprint or {}).get("target_minutes", 0) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _check_blueprint_size(system_prompt: str, user_prompt: str, response: str, blueprint, strict_minutes: int) -> tuple:
+    """Retry the planner ONCE when the blueprint's chapters fall far short of the
+    duration it claims; then size a non-strict run down to the content. Returns the
+    (possibly retried) (response, blueprint), with the corrected blueprint ready to
+    store in state (downstream reads state["blueprint"])."""
+
+    def measure(bp):
+        return _planned_words(bp), _planner_target_minutes(bp, strict_minutes) * _planner_wpm(bp)
+
+    planned, expected = measure(blueprint)
+    chapter_list = (blueprint or {}).get("chapters") or []
+    if expected > 0 and (planned < PLANNER_SHORT_FRACTION * expected or not chapter_list):
+        target = _planner_target_minutes(blueprint, strict_minutes)
+        wpm = _planner_wpm(blueprint)
+        correction = (
+            f"\n\nYOUR PREVIOUS BLUEPRINT WAS INCOMPLETE: its chapters add up to {planned} words, "
+            f"but {target:g} minutes × {wpm:g} words/minute ≈ {int(expected)} spoken words. "
+            "Return the COMPLETE plan and blueprint again: chapters covering the whole arc, "
+            f"adding up to about {int(expected)} words.")
+        retry = call_llm(system_prompt, user_prompt + correction, temperature=0.5, max_tokens=9000)
+        retried = chapters.parse_blueprint(retry)
+        # An unreadable retry must not throw away the first (short but valid) plan.
+        if chapters.valid_blueprint(retried) or not chapters.valid_blueprint(blueprint):
+            response, blueprint = retry, retried
+            planned, expected = measure(blueprint)
+
+    if expected > 0 and planned < PLANNER_SHORT_FRACTION * expected and chapters.valid_blueprint(blueprint):
+        if strict_minutes > 0:
+            print(f"⚠️ strategy_planner: the plan only covers {planned} words for the {strict_minutes} min "
+                  "target — keeping the requested length; later steps will ask for more")
+        else:
+            new_minutes = max(1, round(planned / _planner_wpm(blueprint), 1))
+            blueprint["target_minutes"] = new_minutes
+            print(f"⚠️ strategy_planner: the plan only covers {planned} words — video sized to {new_minutes} min")
+    return response, blueprint
+
+
 def strategy_planner(state: PipelineState) -> dict:
     system_prompt = load_prompt("strategy_planner")
-
     user_prompt = f"""Build the restructure strategy plan.
 
 SOURCE SCRIPT ANALYSIS (structural map + fact ledger + Editorial Intelligence Brief if available):
@@ -173,6 +253,10 @@ Produce the full Restructure Strategy Plan. Do not write any script content."""
     # The plan ends with the chapter blueprint; parse it now so the writers know
     # whether to work chapter by chapter. Invalid/absent ⇒ no chapter mode.
     blueprint = chapters.parse_blueprint(response)
+    # A blueprint far shorter than its own duration gets one retry, then (unless the
+    # user pinned the duration) its target_minutes is brought down to the content so
+    # every later step agrees with it.
+    response, blueprint = _check_blueprint_size(system_prompt, user_prompt, response, blueprint, target_minutes)
     if not chapters.valid_blueprint(blueprint):
         print("  🧭 strategy_planner: no valid script blueprint; script stays single-call")
         blueprint = {}

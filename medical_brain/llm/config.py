@@ -40,6 +40,9 @@ DEFAULT_PROVIDERS = {
     # (~20k for the -thinking model), which the chapter-mode script writing respects.
     "geminiweb": {"type": "openai", "label": "Gemini Web (gemini-web2api)", "base_url": "http://localhost:4981/v1",
                   "free": True, "max_concurrency": 1, "timeout_seconds": 600,
+                  # A web-app-backed proxy may reuse one Gemini conversation for every
+                  # request; check it at startup (see checks.leak_check).
+                  "leak_check": True,
                   # The web app sometimes answers with a short canned refusal instead of an
                   # error; treat those as a failed call so the router retries/falls back.
                   "canned_replies": ["i'm having a hard time fulfilling your request",
@@ -53,6 +56,11 @@ DEFAULT_PROVIDERS = {
                    "base_url": "http://127.0.0.1:8001/v1", "free": True,
                    # Its streaming endpoint returns an empty stream; call it without streaming.
                    "stream": False,
+                   # This proxy must NOT continue one Gemini conversation across requests:
+                   # earlier prompts leaked into later answers. Ask it to start a fresh
+                   # conversation on every call, and verify that it does at startup.
+                   "headers": {"X-Fresh-Conversation": "1"},
+                   "leak_check": True,
                    "max_concurrency": 2, "timeout_seconds": 900,
                    "canned_replies": ["i'm having a hard time fulfilling your request",
                                       "i'm a text-based ai and can't help with that",

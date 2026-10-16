@@ -62,6 +62,12 @@ def base_state(**over):
     return state
 
 
+def plan(bp):
+    """A strategy plan whose last fenced block is `bp` (as the planner returns it)."""
+    return ("## RESTRUCTURE STRATEGY PLAN\n\n### Script Blueprint (machine-readable)\n"
+            "```json\n" + json.dumps(bp, ensure_ascii=False) + "\n```\n")
+
+
 class BlueprintTest(unittest.TestCase):
     PLAN = ("## RESTRUCTURE STRATEGY PLAN\n\n### Script Blueprint (machine-readable)\n"
             "```json\n" + json.dumps(BP, ensure_ascii=False) + "\n```\n")
@@ -105,6 +111,47 @@ class BlueprintTest(unittest.TestCase):
         out = analysis.strategy_planner(base_state(target_minutes=0))
         self.assertEqual(out["blueprint"], {})
         self.assertEqual(out["strategy_plan"], "a plan with no blueprint")
+
+    SHORT = {"target_minutes": 12, "words_per_minute": 138,
+             "chapters": [{"id": "C1", "title": "One", "words": 330}]}
+    COMPLETE = {"target_minutes": 12, "words_per_minute": 138,
+                "chapters": [{"id": "C1", "title": "One", "words": 830},
+                             {"id": "C2", "title": "Two", "words": 830}]}
+
+    def test_planner_retries_once_when_the_blueprint_is_short(self):
+        answers = iter([plan(self.SHORT), plan(self.COMPLETE)])
+        fake = use(self, analysis, "call_llm", FakeLLM(lambda *a: next(answers)))
+        out = analysis.strategy_planner(base_state(target_minutes=12))
+        self.assertEqual(len(fake.calls), 2)
+        self.assertIn("YOUR PREVIOUS BLUEPRINT WAS INCOMPLETE", fake.calls[1]["user"])
+        self.assertIn("about 1656 words", fake.calls[1]["user"])
+        self.assertEqual([c["id"] for c in out["blueprint"]["chapters"]], ["C1", "C2"])
+
+    def test_planner_rescales_a_still_short_plan_without_a_pinned_length(self):
+        answers = iter([plan(self.SHORT), plan(self.SHORT)])
+        fake = use(self, analysis, "call_llm", FakeLLM(lambda *a: next(answers)))
+        with mock.patch("builtins.print") as printed:
+            out = analysis.strategy_planner(base_state(target_minutes=0))
+        self.assertEqual(len(fake.calls), 2)
+        self.assertEqual(out["blueprint"]["target_minutes"], 2.4)   # round(330/138, 1)
+        self.assertTrue(any("video sized to 2.4 min" in str(c.args) for c in printed.call_args_list))
+
+    def test_planner_keeps_a_pinned_length_but_warns(self):
+        fake = use(self, analysis, "call_llm", FakeLLM(lambda *a: plan(self.SHORT)))
+        with mock.patch("builtins.print") as printed:
+            out = analysis.strategy_planner(base_state(target_minutes=12))
+        self.assertEqual(len(fake.calls), 2)
+        self.assertEqual(out["blueprint"]["target_minutes"], 12)     # strict: unchanged
+        self.assertTrue(any("only covers 330 words" in str(c.args) for c in printed.call_args_list))
+
+    def test_planner_does_not_retry_a_complete_blueprint(self):
+        bp = {"target_minutes": 8, "words_per_minute": 138,
+              "chapters": [{"id": "C1", "title": "A", "words": 700},
+                           {"id": "C2", "title": "B", "words": 700}]}
+        fake = use(self, analysis, "call_llm", FakeLLM(lambda *a: plan(bp)))
+        out = analysis.strategy_planner(base_state(target_minutes=0))
+        self.assertEqual(len(fake.calls), 1)
+        self.assertEqual(out["blueprint"]["target_minutes"], 8)
 
 
 class MemoryTest(unittest.TestCase):
