@@ -175,9 +175,6 @@ SOFT_TIGHTEN_ABOVE = 1.35
 # A soft trim may remove padding only: a result below this × the floor target means real
 # content was cut, so the untrimmed text is kept instead.
 SOFT_ACCEPT_FLOOR = 0.9
-# Polishing steps (dialect/refinement) may grow the writers' script by at most this much
-# before the extra words count as padding and are trimmed back to the written length.
-WRITTEN_GROWTH_MAX = 1.12
 
 
 def duration_fixed(state: PipelineState) -> bool:
@@ -1029,6 +1026,34 @@ def _tighten_whole_script(blueprint: dict, script: str, strict: bool = True) -> 
     return current
 
 
+def _soft_trim_if_padded(state: PipelineState, blueprint: dict, script: str) -> str:
+    """ONE padding trim in soft mode (no user duration), used by the polishing and
+    verification passes.
+
+    A soft-mode pass may make the script grow while it assembles/verifies, but growth
+    alone is not padding: the reference length is the LARGER of the words the writers
+    actually produced and the blueprint plan (target_minutes × wpm), so a body writer
+    that under-delivered never gets cut below its own plan. Only a script past
+    SOFT_TIGHTEN_ABOVE (1.35×) of that reference is trimmed — real padding — aimed at
+    the reference. Called by script_refinement and medical_truth_verifier."""
+    written = _written_words(state)
+    minutes = _target_minutes(blueprint)
+    try:
+        wpm = float((blueprint or {}).get("words_per_minute", 135) or 135)
+    except (TypeError, ValueError):
+        wpm = 135
+    plan = int(minutes * wpm) if wpm > 0 else 0
+    reference = max(written, plan)
+    if reference <= 0:
+        return script
+    before = chapters.spoken_words(script)
+    if before <= reference * SOFT_TIGHTEN_ABOVE:
+        return script
+    print(f"  ✂️ whole script: {before} words vs {reference} (max of written {written} "
+          f"and plan {plan}) — trimming padding")
+    return _soft_tighten_whole_script(script, reference)
+
+
 def script_refinement(state: PipelineState) -> dict:
     system_prompt = load_prompt("script_refinement")
     blueprint = state.get("blueprint") or {}
@@ -1071,16 +1096,10 @@ AUDIT / CRITIQUE REPORT:
 
     strict = duration_fixed(state)
     response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=9000)
-    if not strict:
-        # Content-sized length is what the writers produced: growth added by the later
-        # polishing steps is padding. Trim back if this pass grew the script > 12%.
-        written = _written_words(state)
-        before = chapters.spoken_words(response)
-        if written > 0 and before > written * WRITTEN_GROWTH_MAX:
-            print(f"  ✂️ whole script: polishing grew it {before} vs written {written} — "
-                  "trimming padding")
-            response = _soft_tighten_whole_script(response, written)
-    response = _tighten_whole_script(blueprint, response, strict=strict)
+    if strict:
+        response = _tighten_whole_script(blueprint, response, strict=True)
+    else:
+        response = _soft_trim_if_padded(state, blueprint, response)
     _warn_if_refined_too_long(blueprint, response, strict=strict)
     return {"refined_script": response}
 

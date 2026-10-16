@@ -1239,38 +1239,64 @@ class MinWordsTest(unittest.TestCase):
 
 
 class SingleChapterWrittenLengthGuardTest(unittest.TestCase):
-    """In soft mode a polishing pass may not grow the writers' script by more than 12%;
-    the words past that are padding and are trimmed back to the written length."""
-
-    BP = {"target_minutes": 10, "words_per_minute": 135,
-          "chapters": [{"id": "C1", "title": "الفصل الوحيد", "job": "j", "words": 500,
-                        "covers": [], "opens_loops": [], "closes_loops": [],
-                        "depends_on_previous": False}]}
+    """In soft mode a polishing pass trims only real padding: the script is cut when it
+    runs past 1.35× the larger of the writers' written length and the blueprint plan
+    (target_minutes × wpm), and never below that reference."""
 
     def _words(self, prefix, n):
         return " ".join(f"{prefix}{i}" for i in range(n))
 
-    def _state(self, **over):
+    def _bp(self, minutes, wpm=135):
+        return {"target_minutes": minutes, "words_per_minute": wpm,
+                "chapters": [{"id": "C1", "title": "الفصل الوحيد", "job": "j", "words": 500,
+                              "covers": [], "opens_loops": [], "closes_loops": [],
+                              "depends_on_previous": False}]}
+
+    def _state(self, bp, **over):
         # target_minutes=0 on the state means the user gave no duration → soft mode.
         over.setdefault("target_minutes", 0)
-        return base_state(blueprint=self.BP, dialect_warmth_output="D", **over)
+        return base_state(blueprint=bp, dialect_warmth_output="D", **over)
+
+    def _written_100(self):
+        # A 10-word frame opening plus a 90-word body: the writers produced 100 words.
+        return dict(script_frame={"opening": self._words("o", 10), "disclaimer": "",
+                                  "closing": ""},
+                    revised_body=self._words("b", 90))
 
     def test_written_words_uses_the_frame(self):
-        state = self._state(script_frame={"opening": self._words("o", 10), "disclaimer": "",
-                                          "closing": self._words("c", 5)},
+        state = self._state(self._bp(0), script_frame={"opening": self._words("o", 10),
+                                                       "disclaimer": "",
+                                                       "closing": self._words("c", 5)},
                             revised_body=self._words("b", 90))
         self.assertEqual(script_writing._written_words(state), 105)
 
     def test_written_words_without_a_frame_allows_one_hook_and_cta(self):
-        state = self._state(revised_body=self._words("b", 100))
+        state = self._state(self._bp(0), revised_body=self._words("b", 100))
         self.assertEqual(script_writing._written_words(state), 350)
 
     def test_written_words_is_zero_without_a_body(self):
-        state = self._state(script_frame={"opening": self._words("o", 10)})
+        state = self._state(self._bp(0), script_frame={"opening": self._words("o", 10)})
         self.assertEqual(script_writing._written_words(state), 0)
 
-    def test_growth_over_twelve_percent_is_trimmed_to_the_written_length(self):
-        grown = self._words("g", 130)          # written = 100, 1.3 ×
+    def test_mild_growth_without_a_plan_is_kept(self):
+        # written 100, no plan: 130 ≤ 1.35 × 100 = 135, so it is content, not padding.
+        bp = self._bp(0)
+        script = self._words("g", 130)
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            return script
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        out = script_writing.script_refinement(self._state(bp, **self._written_100()))
+        self.assertEqual([c for c in calls if "TRIM this complete script" in c], [])
+        self.assertEqual(out["refined_script"], script)
+
+    def test_padding_without_a_plan_is_trimmed_to_the_written_length(self):
+        # written 100, no plan: 140 > 135 → trimmed, aiming at the 100-word reference.
+        bp = self._bp(0)
+        grown = self._words("g", 140)
         tight = self._words("t", 95)
         calls = []
 
@@ -1280,19 +1306,19 @@ class SingleChapterWrittenLengthGuardTest(unittest.TestCase):
 
         use(self, script_writing, "call_llm", FakeLLM(answer))
         with mock.patch("builtins.print") as printed:
-            out = script_writing.script_refinement(self._state(
-                script_frame={"opening": self._words("o", 10), "disclaimer": "", "closing": ""},
-                revised_body=self._words("b", 90)))
+            out = script_writing.script_refinement(self._state(bp, **self._written_100()))
 
         trim = [c for c in calls if "TRIM this complete script" in c]
         self.assertEqual(len(trim), 1)
         self.assertIn("Aim for about 100 spoken words", trim[0])
         self.assertEqual(out["refined_script"], tight)
         text = " ".join(str(c.args[0]) for c in printed.call_args_list)
-        self.assertIn("polishing grew it 130 vs written 100", text)
+        self.assertIn("max of written 100 and plan 0", text)
 
-    def test_growth_within_twelve_percent_is_kept(self):
-        script = self._words("g", 110)         # written = 100, 1.1 ×
+    def test_a_blueprint_plan_above_the_written_length_raises_the_reference(self):
+        # written 100, plan = 2 min × 150 wpm = 300: 380 ≤ 1.35 × 300 = 405 → kept.
+        bp = self._bp(2, wpm=150)
+        script = self._words("g", 380)
         calls = []
 
         def answer(system, user, temperature=None, max_tokens=None):
@@ -1300,15 +1326,36 @@ class SingleChapterWrittenLengthGuardTest(unittest.TestCase):
             return script
 
         use(self, script_writing, "call_llm", FakeLLM(answer))
-        out = script_writing.script_refinement(self._state(
-            script_frame={"opening": self._words("o", 10), "disclaimer": "", "closing": ""},
-            revised_body=self._words("b", 90)))
+        out = script_writing.script_refinement(self._state(bp, **self._written_100()))
         self.assertEqual([c for c in calls if "TRIM this complete script" in c], [])
         self.assertEqual(out["refined_script"], script)
 
-    def test_without_a_frame_the_trim_target_is_body_plus_250(self):
-        grown = self._words("g", 400)          # written = 100 + 250 = 350, 1.14 ×
-        tight = self._words("t", 360)
+    def test_padding_over_the_blueprint_plan_is_trimmed_to_the_plan(self):
+        # written 100, plan 300: 420 > 405 → trimmed, aiming at the 300-word plan.
+        bp = self._bp(2, wpm=150)
+        grown = self._words("g", 420)
+        tight = self._words("t", 290)
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            return tight if "TRIM this complete script" in user else grown
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print") as printed:
+            out = script_writing.script_refinement(self._state(bp, **self._written_100()))
+
+        trim = [c for c in calls if "TRIM this complete script" in c]
+        self.assertEqual(len(trim), 1)
+        self.assertIn("Aim for about 300 spoken words", trim[0])
+        self.assertEqual(out["refined_script"], tight)
+        text = " ".join(str(c.args[0]) for c in printed.call_args_list)
+        self.assertIn("max of written 100 and plan 300", text)
+
+    def test_without_a_frame_the_trim_reference_is_body_plus_250(self):
+        # A 100-word body with no frame: written = 350, no plan; 490 > 1.35 × 350 = 472.5.
+        grown = self._words("g", 490)
+        tight = self._words("t", 340)
         calls = []
 
         def answer(system, user, temperature=None, max_tokens=None):
@@ -1317,7 +1364,8 @@ class SingleChapterWrittenLengthGuardTest(unittest.TestCase):
 
         use(self, script_writing, "call_llm", FakeLLM(answer))
         with mock.patch("builtins.print"):
-            out = script_writing.script_refinement(self._state(revised_body=self._words("b", 100)))
+            out = script_writing.script_refinement(
+                self._state(self._bp(0), revised_body=self._words("b", 100)))
 
         trim = [c for c in calls if "TRIM this complete script" in c]
         self.assertEqual(len(trim), 1)
@@ -1335,11 +1383,9 @@ class SingleChapterWrittenLengthGuardTest(unittest.TestCase):
         use(self, script_writing, "call_llm", FakeLLM(answer))
         with mock.patch("builtins.print") as printed:
             out = script_writing.script_refinement(self._state(
-                target_minutes=10,
-                script_frame={"opening": self._words("o", 10), "disclaimer": "", "closing": ""},
-                revised_body=self._words("b", 90)))
+                self._bp(10), target_minutes=10, **self._written_100()))
 
         self.assertEqual([c for c in calls if "TRIM this complete script" in c], [])
         text = " ".join(str(c.args[0]) for c in printed.call_args_list)
-        self.assertNotIn("polishing grew it", text)
+        self.assertNotIn("trimming padding", text)
         self.assertEqual(out["refined_script"], grown)

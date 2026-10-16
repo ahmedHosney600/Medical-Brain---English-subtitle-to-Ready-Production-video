@@ -24,7 +24,8 @@ def export_broll_prompt_files(text: str, fallback_broll: str = "", output_dir: s
 
     # Sources, best first: the approved table from the production loop, the
     # document's B-roll section, then the storyboard's B-ROLL rows.
-    rows = broll_rows(fallback_broll) or broll_rows(ew.find_section(text, "AI B-ROLL GENERATION PROMPTS"))
+    rows = (broll_rows(ew.realign_broll_table(fallback_broll)[0])
+            or broll_rows(ew.realign_broll_table(ew.find_section(text, "AI B-ROLL GENERATION PROMPTS"))[0]))
     if not rows:
         for r in ew.parse_storyboard(text):
             if "B-ROLL" in r["layer"].upper():

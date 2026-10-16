@@ -444,11 +444,57 @@ def _cells(line: str) -> list:
     return [c.strip() for c in re.split(r"(?<!\\)\|", line.strip())[1:-1]]
 
 
+def realign_broll_table(table: str) -> tuple:
+    """Fixes B-roll table rows that lost a column: the model sometimes writes a header
+    with N columns but every data row with N-1, dropping one (e.g. Main Cue) so the long
+    generation prompt sits under the wrong header and the notes land in the prompt cell.
+
+    For each markdown table whose header has a PROMPT column, a data row with fewer cells
+    than the header is fixed when its longest cell is a long prompt (≥ 60 chars, ≥ 2× the
+    cell currently in the prompt column) sitting before the prompt column: empty cells are
+    inserted before it so it lands at the prompt column, and the row is padded/truncated to
+    the header's cell count. Rows already at the header's width, separator rows and
+    non-table lines are left byte-for-byte. Returns (table, fixed_row_count)."""
+    lines = (table or "").splitlines(keepends=True)
+    out = list(lines)
+    fixed = 0
+    prompt_col = ncols = None
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if not s.startswith("|"):
+            prompt_col = ncols = None
+            continue
+        cells = _cells(s)
+        if all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
+            head = [c.upper() for c in _cells(lines[i - 1].strip())] if i else []
+            at = next((k for k, h in enumerate(head) if "PROMPT" in h), None)
+            prompt_col, ncols = (at, len(head)) if at is not None else (None, None)
+            continue
+        if prompt_col is None or len(cells) >= ncols:
+            continue
+        longest = max(range(len(cells)), key=lambda k: len(cells[k])) if cells else -1
+        if longest < 0 or longest >= prompt_col:
+            continue
+        at_prompt = cells[prompt_col] if prompt_col < len(cells) else ""
+        if len(cells[longest]) < 60 or len(cells[longest]) < 2 * len(at_prompt):
+            continue
+        row = cells[:longest] + [""] * (prompt_col - longest) + cells[longest:]
+        row = (row + [""] * ncols)[:ncols]
+        out[i] = "| " + " | ".join(row) + " |" + ("\n" if line.endswith("\n") else "")
+        fixed += 1
+    return "".join(out), fixed
+
+
 def broll_rows(text: str) -> list:
     """Rows of the B-roll prompt table (the first table with a PROMPT column), as
-    [{num, time, start, end, kind ('image'/'video'/'drawing'/''), prompt}]."""
+    [{num, time, start, end, kind ('image'/'video'/'drawing'/''), prompt}].
+
+    Defensive read for tables an earlier run saved with a missing column (see
+    realign_broll_table): a row shorter than its header whose long prompt sits before
+    the PROMPT column uses that cell as the prompt, and the kind is detected from any
+    cell when the Type column is empty or missing."""
     lines = (text or "").splitlines()
-    out, cols = [], None
+    out, cols, n_head = [], None, 0
     for i, line in enumerate(lines):
         s = line.strip()
         if not s.startswith("|"):
@@ -464,6 +510,7 @@ def broll_rows(text: str) -> list:
                         return next((k for k, h in enumerate(head) if any(n in h for n in names)), None)
                     cols = {"num": col("#"), "time": col("TIMESTAMP", "TIME"), "start": col("START"),
                             "end": col("END"), "type": col("TYPE", "LAYER"), "prompt": col("PROMPT")}
+                    n_head = len(head)
             continue
         if not cols or i + 1 < len(lines) and re.fullmatch(r"\|?[\s:|-]+\|?", lines[i + 1].strip() or "x"):
             continue                         # a header row
@@ -471,7 +518,20 @@ def broll_rows(text: str) -> list:
         kind_cell = get("type")
         kind = ("drawing" if "DRAW" in kind_cell.upper() else "image" if ("🖼" in kind_cell or "IMAGE" in kind_cell.upper())
                 else "video" if ("🎬" in kind_cell or "VIDEO" in kind_cell.upper()) else "")
-        prompt = get("prompt") or max(cells, key=len, default="")
+        if not kind:
+            all_cells = " ".join(cells)
+            kind = ("image" if ("🖼" in all_cells or "IMAGE" in all_cells.upper())
+                    else "video" if ("🎬" in all_cells or "VIDEO" in all_cells.upper()) else "")
+        prompt = get("prompt")
+        if len(cells) < n_head:
+            p_idx = cols.get("prompt")
+            longest_idx = max(range(len(cells)), key=lambda k: len(cells[k])) if cells else -1
+            longest = cells[longest_idx] if longest_idx >= 0 else ""
+            if (len(longest) >= 60
+                    and (len(prompt) < 60 or (p_idx is not None and longest_idx < p_idx))
+                    and len(longest) >= 2 * len(prompt)):
+                prompt = longest
+        prompt = prompt or max(cells, key=len, default="")
         out.append({"num": re.sub(r"\D", "", get("num")), "time": get("time"), "start": get("start"),
                     "end": get("end"), "kind": kind, "prompt": prompt})
     return out

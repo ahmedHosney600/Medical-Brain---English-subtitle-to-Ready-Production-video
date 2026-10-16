@@ -581,6 +581,9 @@ def finalize_broll_table(state: PipelineState, table: str, after: int = 0) -> st
     timeline instead of the model's invented timestamps. `after` is the word position the
     table's first row starts at (0 for a whole-script table, the chapter's start word
     position for a single chapter's table)."""
+    table, realigned = ew.realign_broll_table(table)
+    if realigned:
+        print(f"  🔧 realigned {realigned} B-roll rows with a missing column")
     table, fixed = auto_repair_camera_moves(table)
     if fixed:
         print(f"  🔧 added a camera move to {fixed} video B-rolls")

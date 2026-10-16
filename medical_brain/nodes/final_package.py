@@ -435,7 +435,7 @@ def _part2_chapter_mode(state: PipelineState, system_prompt_2: str, filmed_scrip
     system_prompt_2 = system_prompt_2 + "\n\n" + load_prompt("production_chapter_mode")
     workers = int(state.get("chapter_workers", 4) or 4)
     broll_by_chapter = state.get("broll_by_chapter") or {}
-    all_broll_rows = ew.broll_rows(state.get("broll_prompts", ""))
+    all_broll_rows = ew.broll_rows(ew.realign_broll_table(state.get("broll_prompts", ""))[0])
 
     def build_prompt(i: int, correction: str) -> tuple:
         span = spans[i]
@@ -666,8 +666,9 @@ RULES:
 4. TRANSITION MAP, TEXT ANIMATION & OVERLAY GUIDE and AI B-ROLL GENERATION PROMPTS: write only each heading and its placeholder line — the approved versions are inserted by code."""
 
     # The B-roll table the production loop approved goes in whole: a retyped copy
-    # lost half its rows in one run (and the export files are built from it).
-    approved_broll = ew.approved_broll_table(state.get("broll_prompts", ""))
+    # lost half its rows in one run (and the export files are built from it). Rows
+    # saved with a missing column are realigned first so every cell sits under its header.
+    approved_broll = ew.approved_broll_table(ew.realign_broll_table(state.get("broll_prompts", ""))[0])
     approved_parts = [("TRANSITION MAP", ew.embedded_part(state.get("transition_design", ""))),
                       ("TEXT ANIMATION & OVERLAY GUIDE", ew.embedded_part(state.get("text_animation_overlay", ""))),
                       ("AI B-ROLL GENERATION PROMPTS", approved_broll)]

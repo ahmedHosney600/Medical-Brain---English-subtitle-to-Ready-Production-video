@@ -325,23 +325,17 @@ The ORIGINAL SOURCE above is a verified RESEARCH DOSSIER with citations [S#]. Ev
             final_script, report = _overclaim_fix_pass(state, final_script, report)
         # A single-chapter script can still grow past its whole-video budget while being
         # verified/overclaim-fixed; re-apply the whole-script tightening. Chapter mode is
-        # budgeted per chapter and is left untouched. In soft mode, first trim padding the
-        # verification/overclaim passes added on top of the writers' length.
+        # budgeted per chapter and is left untouched. In soft mode, trim only real padding
+        # past the larger of the writers' length and the blueprint plan (1.35×).
         blueprint = state.get("blueprint") or {}
         if not chapters.chapter_mode_on(blueprint):
             from .script_writing import (duration_fixed, _target_minutes, _tighten_whole_script,
-                                         _written_words, _soft_tighten_whole_script,
-                                         WRITTEN_GROWTH_MAX)
-            strict = duration_fixed(state)
-            if not strict:
-                written = _written_words(state)
-                before = chapters.spoken_words(final_script)
-                if written > 0 and before > written * WRITTEN_GROWTH_MAX:
-                    print(f"  ✂️ whole script: polishing grew it {before} vs written {written} — "
-                          "trimming padding")
-                    final_script = _soft_tighten_whole_script(final_script, written)
-            if _target_minutes(blueprint) > 0:
-                final_script = _tighten_whole_script(blueprint, final_script, strict=strict)
+                                         _soft_trim_if_padded)
+            if duration_fixed(state):
+                if _target_minutes(blueprint) > 0:
+                    final_script = _tighten_whole_script(blueprint, final_script, strict=True)
+            else:
+                final_script = _soft_trim_if_padded(state, blueprint, final_script)
 
         return {
             "truth_verification_report": report,

@@ -222,21 +222,22 @@ class TruthVerifierWholeTightenTest(unittest.TestCase):
 
 
 class TruthVerifierWrittenLengthGuardTest(unittest.TestCase):
-    """In soft mode the truth verifier's own passes may not grow the script > 12% over
-    the writers' length; the padding is trimmed back to the written length."""
+    """In soft mode the truth verifier trims only real padding: past 1.35× the larger of
+    the writers' written length and the blueprint plan, trimmed to that reference."""
 
     def _words(self, prefix, n):
         return " ".join(f"{prefix}{i}" for i in range(n))
 
-    def _state(self, **over):
+    def _state(self, plan_minutes=0, **over):
         over.setdefault("revised_body", self._words("b", 90))
         over.setdefault("script_frame", {"opening": self._words("o", 10), "disclaimer": "",
                                          "closing": ""})
-        return state(research_dossier="", blueprint={"target_minutes": 10, "chapters": [
+        return state(research_dossier="", blueprint={"target_minutes": plan_minutes, "chapters": [
             {"id": "1", "title": "الفصل", "words": 500}]}, **over)
 
-    def test_soft_growth_is_trimmed_to_the_written_length(self):
-        grown = self._words("g", 130)          # written = 100, 1.3 ×
+    def test_soft_padding_over_the_written_length_is_trimmed(self):
+        # written 100, no plan: 140 > 1.35 × 100 → trimmed to the 100-word reference.
+        grown = self._words("g", 140)
         tight = self._words("t", 95)
         fake = FakeJSON(lambda system, user: (verifier_answer(grown), "raw"))
         use(self, fake)
@@ -253,14 +254,33 @@ class TruthVerifierWrittenLengthGuardTest(unittest.TestCase):
         self.assertIn("Aim for about 100 spoken words", calls[0])
         self.assertEqual(out["refined_script"], tight)
 
-    def test_growth_within_twelve_percent_is_kept(self):
-        script = self._words("g", 110)         # written = 100, 1.1 ×
+    def test_soft_mild_growth_over_the_written_length_is_kept(self):
+        script = self._words("g", 130)         # written = 100, 130 ≤ 1.35 × 100
         fake = FakeJSON(lambda system, user: (verifier_answer(script), "raw"))
         use(self, fake)
         with mock.patch.object(script_writing, "call_llm",
                                lambda *a, **k: self.fail("mild growth must not be trimmed")):
             out = quality.medical_truth_verifier(self._state(refined_script="x"))
         self.assertEqual(out["refined_script"], script)
+
+    def test_soft_padding_over_a_blueprint_plan_is_trimmed_to_the_plan(self):
+        # written 100, plan = 2 min × 135 wpm = 270: 420 > 1.35 × 270 → aim at 270.
+        grown = self._words("g", 420)
+        tight = self._words("t", 250)
+        fake = FakeJSON(lambda system, user: (verifier_answer(grown), "raw"))
+        use(self, fake)
+        calls = []
+
+        def fake_llm(system, user, temperature=None, max_tokens=None, **kwargs):
+            calls.append(user)
+            return tight
+
+        with mock.patch.object(script_writing, "call_llm", fake_llm):
+            out = quality.medical_truth_verifier(self._state(2, refined_script="x"))
+
+        self.assertEqual(len(calls), 1)
+        self.assertIn("Aim for about 270 spoken words", calls[0])
+        self.assertEqual(out["refined_script"], tight)
 
 
 class OverclaimFixDossierTextTest(unittest.TestCase):
