@@ -46,21 +46,21 @@ def _http_json(url: str, key: Optional[str], timeout: int = 15, extra_headers: O
 
 _agy_models_cache: dict = {}
 
+# The model ids `agy models` normally prints. Google's server occasionally stalls
+# on the first request; when both tries fail we fall back to this list instead of
+# calling the provider broken. Each fallback is remembered (cli path -> failure
+# text) so provider_status can report a warning. It is NOT a cache: a later call
+# retries the CLI for real.
+AGY_KNOWN_MODELS = ["gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-3.8-flash-low",
+                    "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium"]
+AGY_MODELS_TIMEOUT = 30
+_agy_models_fallback: dict = {}
 
-def _list_agy_models(cfg: dict) -> list:
-    """Antigravity's model ids: `agy models` prints '<id>\\t<label>' lines after a
-    'Fetching available models...' notice. The list changes rarely, so it's cached."""
-    from .backends.agy import agy_path
-    cli = agy_path(cfg)
-    if not cli:
-        raise ProviderUnavailable("the `agy` command was not found (install Google Antigravity and log in)")
-    if cli in _agy_models_cache:
-        return list(_agy_models_cache[cli])
-    try:
-        proc = subprocess.run([cli, "models"], capture_output=True, text=True,
-                              encoding="utf-8", timeout=60)
-    except Exception as e:
-        raise ProviderUnavailable(f"`agy models` failed: {_short(e)}")
+
+def _run_agy_models(cli: str) -> tuple:
+    """One `agy models` call. Returns (models, proc); [] when the output has no rows."""
+    proc = subprocess.run([cli, "models"], capture_output=True, text=True, encoding="utf-8",
+                          timeout=AGY_MODELS_TIMEOUT, stdin=subprocess.DEVNULL)
     models = []
     for line in (proc.stdout or "").splitlines():
         if "\t" not in line:            # skip "Fetching available models..." and blanks
@@ -68,11 +68,38 @@ def _list_agy_models(cfg: dict) -> list:
         model = line.split("\t", 1)[0].strip()
         if model:
             models.append(model)
-    if not models:
+    return models, proc
+
+
+def _list_agy_models(cfg: dict) -> list:
+    """Antigravity's model ids: `agy models` prints '<id>\\t<label>' lines after a
+    'Fetching available models...' notice. The list changes rarely, so it's cached.
+    A single stall (timeout) or empty list is retried once; if it still fails the
+    known list is returned as a fallback rather than raising."""
+    from .backends.agy import agy_path
+    cli = agy_path(cfg)
+    if not cli:
+        raise ProviderUnavailable("the `agy` command was not found (install Google Antigravity and log in)")
+    if cli in _agy_models_cache:
+        return list(_agy_models_cache[cli])
+    failure = ""
+    for _ in range(2):                          # one retry: a first request can hang
+        try:
+            models, proc = _run_agy_models(cli)
+        except subprocess.TimeoutExpired:
+            failure = f"`agy models` timed out after {AGY_MODELS_TIMEOUT}s"
+            continue
+        except Exception as e:
+            # A real problem (not a stall): the CLI exists but can't be run.
+            raise ProviderUnavailable(f"`agy models` failed: {_short(e)}")
+        if models:
+            _agy_models_cache[cli] = models
+            _agy_models_fallback.pop(cli, None)
+            return list(models)
         detail = (proc.stderr or proc.stdout or "").strip()[:200]
-        raise RuntimeError(f"`agy models` returned no models: {detail}")
-    _agy_models_cache[cli] = models
-    return list(models)
+        failure = f"`agy models` returned no models: {detail}"
+    _agy_models_fallback[cli] = failure        # not cached: the next call retries for real
+    return list(AGY_KNOWN_MODELS)
 
 
 def list_models(provider: str, cfg: dict) -> list:
@@ -100,7 +127,7 @@ def list_models(provider: str, cfg: dict) -> list:
 
 
 def provider_status(provider: str, cfg: dict) -> tuple:
-    """(state, detail) with state 'active', 'off' (not set up) or 'error'."""
+    """(state, detail) with state 'active', 'off' (not set up), 'warning' or 'error'."""
     if cfg.get("type") == "claude":
         if cfg.get("transport") == "anthropic_api":
             if not (cfg.get("api_key") or os.environ.get("ANTHROPIC_API_KEY")):
@@ -111,12 +138,18 @@ def provider_status(provider: str, cfg: dict) -> tuple:
         return ("active", "subscription answers") if ok else ("error", detail)
     if cfg.get("type") == "agy":
         from .backends.agy import agy_path
-        if not agy_path(cfg):
+        cli = agy_path(cfg)
+        if not cli:
             return "off", "`agy` command not installed"
         try:
             models = _list_agy_models(cfg)
         except Exception as e:
             return "error", _short(e)
+        if cli in _agy_models_fallback:
+            # `agy models` stalled twice: keep the provider usable with the known
+            # list, but say so instead of failing the whole check.
+            return "warning", (f"`agy models` didn't answer (Google's server was slow) — "
+                               f"using the known model list: {len(models)} models")
         # A small, fast model for the ping; fall back to whatever is listed first.
         pick = next((m for m in models if m.startswith("gemini") and m.endswith("-flash-low")), None) or models[0]
         ok, detail = test_model(f"{provider}:{pick}", {provider: cfg})

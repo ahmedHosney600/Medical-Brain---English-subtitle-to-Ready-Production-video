@@ -137,10 +137,27 @@ class AgyBackendTest(unittest.TestCase):
             self.assertEqual(agy_path({}), "/fake/home/agy")
 
 
+class FlakyRun:
+    """subprocess.run fake that raises each given exception in turn before returning
+    the next CompletedProcess; records calls like FakeRun."""
+
+    def __init__(self, results):
+        self.results, self.calls = list(results), []
+
+    def __call__(self, cmd, **kwargs):
+        self.calls.append((cmd, kwargs))
+        nxt = self.results.pop(0)
+        if isinstance(nxt, Exception):
+            raise nxt
+        return nxt
+
+
 class AgyModelsTest(unittest.TestCase):
     def setUp(self):
         checks._agy_models_cache.clear()
+        checks._agy_models_fallback.clear()
         self.addCleanup(checks._agy_models_cache.clear)
+        self.addCleanup(checks._agy_models_fallback.clear)
 
     def cfg(self):
         return {"type": "agy", "cli_path": "/fake/agy"}
@@ -160,11 +177,67 @@ class AgyModelsTest(unittest.TestCase):
         self.assertEqual(len(fake.calls), 1)          # the second read came from the cache
         self.assertNotIn("Fetching available models...", models)
 
-    def test_no_models_raises(self):
+    def test_no_models_twice_falls_back_to_the_known_list(self):
         fake = FakeRun(completed(stdout="Fetching available models...\n"))
         with mock.patch("medical_brain.llm.checks.subprocess.run", fake):
-            with self.assertRaises(RuntimeError):
-                checks.list_models("agy", self.cfg())
+            models = checks.list_models("agy", self.cfg())
+        self.assertEqual(models, checks.AGY_KNOWN_MODELS)
+        self.assertEqual(len(fake.calls), 2)              # empty list was retried once
+        self.assertNotIn("/fake/agy", checks._agy_models_cache)   # the fallback is not cached
+
+    def test_timeout_then_success_returns_real_list_and_retries(self):
+        stdout = ("gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n"
+                  "claude-sonnet-4-6\tClaude Sonnet 4.6\n")
+        fake = FlakyRun([subprocess.TimeoutExpired("agy", 30), completed(stdout=stdout)])
+        with mock.patch("medical_brain.llm.checks.subprocess.run", fake):
+            models = checks.list_models("agy", self.cfg())
+        self.assertEqual(models, ["gemini-3.8-flash-low", "claude-sonnet-4-6"])
+        self.assertEqual(len(fake.calls), 2)              # one stall, then a retry
+        for _cmd, kwargs in fake.calls:
+            self.assertEqual(kwargs.get("timeout"), 30)
+            self.assertEqual(kwargs.get("stdin"), subprocess.DEVNULL)
+        self.assertEqual(checks._agy_models_fallback, {})  # a real list: no warning
+
+    def test_two_timeouts_fall_back_and_provider_status_warns(self):
+        timeouts = [subprocess.TimeoutExpired("agy", 30)] * 4
+        fake = FlakyRun(timeouts)
+        with mock.patch("medical_brain.llm.checks.subprocess.run", fake), \
+             mock.patch("medical_brain.llm.backends.agy.agy_path", return_value="/fake/agy"):
+            models = checks.list_models("agy", self.cfg())
+            state, detail = checks.provider_status("agy", self.cfg())
+        self.assertEqual(models, checks.AGY_KNOWN_MODELS)
+        self.assertNotIn("/fake/agy", checks._agy_models_cache)   # not cached
+        self.assertIn("/fake/agy", checks._agy_models_fallback)   # fallback remembered
+        self.assertEqual(state, "warning")
+        self.assertNotEqual(state, "error")
+        self.assertIn("didn't answer", detail)
+        self.assertIn(str(len(checks.AGY_KNOWN_MODELS)), detail)
+
+    def test_fallback_is_not_cached_so_the_next_call_retries(self):
+        fake = FlakyRun([subprocess.TimeoutExpired("agy", 30), subprocess.TimeoutExpired("agy", 30)])
+        with mock.patch("medical_brain.llm.checks.subprocess.run", fake):
+            self.assertEqual(checks.list_models("agy", self.cfg()), checks.AGY_KNOWN_MODELS)
+        self.assertEqual(len(fake.calls), 2)
+        # A later call tries again for real (a real list clears the fallback marker).
+        stdout = "gemini-3.8-flash-low\tGemini 3.8 Flash (Low)\n"
+        fake2 = FakeRun(completed(stdout=stdout))
+        with mock.patch("medical_brain.llm.checks.subprocess.run", fake2):
+            self.assertEqual(checks.list_models("agy", self.cfg()), ["gemini-3.8-flash-low"])
+        self.assertEqual(len(fake2.calls), 1)
+        self.assertNotIn("/fake/agy", checks._agy_models_fallback)
+        self.assertIn("/fake/agy", checks._agy_models_cache)
+
+    def test_warning_provider_stays_selectable(self):
+        from medical_brain import setup_models
+        config = {"providers": {"agy": self.cfg()},
+                  "main_model": "agy:gemini-3.8-flash-high",
+                  "single_model": "agy:gemini-3.8-flash-high",
+                  "hybrid_routes": {}, "backup_model": ""}
+        with mock.patch.object(setup_models.lp, "list_models",
+                               return_value=["gemini-3.8-flash-high", "gemini-3.8-flash-low"]):
+            specs = setup_models.collect_models(config, {"agy": "warning"})
+        self.assertIn("agy:gemini-3.8-flash-high", specs)
+        self.assertEqual(setup_models.ICON["warning"], "⚠️")
 
     def test_not_installed_raises_provider_unavailable(self):
         with mock.patch("medical_brain.llm.backends.agy.shutil.which", return_value=None), \

@@ -25,7 +25,7 @@ import sys
 from . import llm as lp
 from .llm.config import MODEL_TEMPLATES, RECOMMENDED_TEMPLATE, apply_template
 
-ICON = {"active": "✅", "off": "⚪", "error": "❌"}
+ICON = {"active": "✅", "off": "⚪", "warning": "⚠️", "error": "❌"}
 ROLE_HELP = {
     "main_model": "MAIN model: writes the script, and runs any step whose own model fails",
     "single_model": "ONE STRONG model: used for every step when you pick option 2 in main.py",
@@ -138,7 +138,7 @@ def collect_models(config: dict, status: dict) -> list:
     still shows what you use)."""
     specs = []
     for name, cfg in config["providers"].items():
-        if status.get(name) != "active":
+        if status.get(name) not in ("active", "warning"):
             continue
         try:
             specs += [f"{name}:{m}" for m in lp.list_models(name, cfg)]
