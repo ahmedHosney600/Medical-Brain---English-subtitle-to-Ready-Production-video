@@ -1,10 +1,15 @@
 """The Antigravity (agy CLI) backend and its model-list parsing.
 
-No real `agy` calls: subprocess.run is faked, so these run offline and make no
+No real `agy` calls: subprocess is faked, so these run offline and make no
 Google account calls."""
+import contextlib
+import io
 import json
 import os
+import signal
 import subprocess
+import threading
+import time
 import unittest
 from unittest import mock
 
@@ -15,12 +20,6 @@ from medical_brain.llm.errors import ProviderUnavailable, StepFailed, StepTimeou
 
 def completed(stdout="", stderr="", returncode=0):
     return subprocess.CompletedProcess(args=["agy"], returncode=returncode, stdout=stdout, stderr=stderr)
-
-
-def ok_response(text):
-    return completed(stdout=json.dumps({
-        "conversation_id": "c1", "status": "SUCCESS", "response": text,
-        "duration_seconds": 1.0, "num_turns": 1, "usage": {}}))
 
 
 class FakeRun:
@@ -36,21 +35,98 @@ class FakeRun:
         return self.result
 
 
+def result_json(text, status="SUCCESS"):
+    return json.dumps({
+        "conversation_id": "c1", "status": status, "response": text,
+        "duration_seconds": 1.0, "num_turns": 1, "usage": {}})
+
+
+class FakeProcess:
+    """A stand-in for subprocess.Popen: scripted stdout/stderr plus an exit state.
+
+    `exit=False` models agy printing the answer (or nothing) and then hanging;
+    `ignore_term` additionally models a process that ignores SIGTERM so the group
+    has to be force-killed."""
+
+    def __init__(self, stdout="", stderr="", returncode=0, exit=True, ignore_term=False):
+        self.pid = 4242
+        self.stdout = io.StringIO(stdout)
+        self.stderr = io.StringIO(stderr)
+        self.returncode = returncode if exit else None
+        self.ignore_term = ignore_term
+        self.signals = []
+        self._exited = threading.Event()
+        if exit:
+            self._exited.set()
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self, timeout=None):
+        if self.returncode is not None:
+            return self.returncode
+        if self._exited.wait(timeout):
+            return self.returncode
+        raise subprocess.TimeoutExpired("agy", timeout)
+
+    def terminate(self):
+        self.signals.append(signal.SIGTERM)
+        if not self.ignore_term:
+            self.returncode = -int(signal.SIGTERM)
+            self._exited.set()
+
+    def kill(self):
+        self.signals.append(signal.SIGKILL)
+        self.returncode = -int(signal.SIGKILL)
+        self._exited.set()
+
+
+class FakePopen:
+    """Stands in for subprocess.Popen; records each call and returns a FakeProcess."""
+
+    def __init__(self, process):
+        self.process = process
+        self.calls = []
+
+    def __call__(self, cmd, **kwargs):
+        self.calls.append((cmd, kwargs))
+        return self.process
+
+
+@contextlib.contextmanager
+def patched_backend(process, grace=0.0, kill_grace=0.0, overall_grace=0.0):
+    """Patch Popen / process-group killing / grace constants for one call.
+
+    Yields (popen_recorder, kill_list). The graces default to 0 so no test ever
+    waits in real time."""
+    popen = FakePopen(process)
+    kills = []
+
+    def fake_killpg(pid, sig):
+        kills.append((pid, sig))
+        (process.kill if sig == signal.SIGKILL else process.terminate)()
+
+    with mock.patch("medical_brain.llm.backends.agy.subprocess.Popen", popen), \
+         mock.patch("medical_brain.llm.backends.agy._killpg", fake_killpg), \
+         mock.patch("medical_brain.llm.backends.agy.EXIT_GRACE_SECONDS", grace), \
+         mock.patch("medical_brain.llm.backends.agy.KILL_GRACE_SECONDS", kill_grace), \
+         mock.patch("medical_brain.llm.backends.agy.PROCESS_GRACE_SECONDS", overall_grace):
+        yield popen, kills
+
+
 class AgyBackendTest(unittest.TestCase):
     def backend(self, cfg=None):
         cfg = cfg or {"cli_path": "/fake/agy", "timeout_seconds": 900}
         return AgyCLIBackend(cfg, "gemini-3.8-flash-medium")
 
-    def call(self, fake, backend=None, system="SYSTEM", user="USER"):
-        with mock.patch("medical_brain.llm.backends.agy.subprocess.run", fake):
-            return (backend or self.backend()).call(system, user, None, None)
-
     def test_success_returns_text_and_uses_safe_plan_mode(self):
-        fake = FakeRun(ok_response("hello world\n"))
-        text = self.call(fake)
+        backend = self.backend()
+        with patched_backend(FakeProcess(stdout=result_json("hello world\n"))) as (popen, kills):
+            text = backend.call("SYSTEM", "USER", None, None)
         self.assertEqual(text, "hello world\n")
+        self.assertEqual(kills, [])                  # a clean exit is never killed
 
-        cmd, kwargs = fake.calls[0]
+        cmd, kwargs = popen.calls[0]
         for flag in ("--mode", "plan", "--output-format", "json", "--disable-slash-commands",
                      "--print-timeout", "900s", "--model", "gemini-3.8-flash-medium"):
             self.assertIn(flag, cmd)
@@ -63,64 +139,82 @@ class AgyBackendTest(unittest.TestCase):
         self.assertIn("=== INPUT ===", prompt)
         self.assertIn("USER", prompt)
 
+        self.assertEqual(kwargs["stdout"], subprocess.PIPE)
+        self.assertEqual(kwargs["stderr"], subprocess.PIPE)
+        self.assertTrue(kwargs["start_new_session"])   # its own group, killable together
+        self.assertEqual(kwargs["encoding"], "utf-8")
+
         workdir = kwargs["cwd"]                      # a fresh temp dir, removed when done
         self.assertFalse(os.path.exists(workdir))
 
     def test_effort_flag_passed_through(self):
-        fake = FakeRun(ok_response("x"))
         backend = AgyCLIBackend({"cli_path": "/fake/agy",
                                  "efforts": {"gemini-3.8-flash-medium": "high"}}, "gemini-3.8-flash-medium")
-        self.call(fake, backend=backend)
-        cmd = fake.calls[0][0]
+        with patched_backend(FakeProcess(stdout=result_json("x"))) as (popen, _kills):
+            backend.call("S", "U", None, None)
+        cmd = popen.calls[0][0]
         self.assertEqual(cmd[cmd.index("--effort") + 1], "high")
 
     def test_error_status_raises_runtime_error(self):
-        fake = FakeRun(completed(stdout=json.dumps({"status": "ERROR", "response": "boom"})))
-        with self.assertRaises(RuntimeError):
-            self.call(fake)
+        backend = self.backend()
+        with patched_backend(FakeProcess(stdout=result_json("boom", status="ERROR"))) as (_popen, kills):
+            with self.assertRaises(RuntimeError):
+                backend.call("S", "U", None, None)
+        self.assertEqual(kills, [])                  # it exited on its own, nothing to kill
 
     def test_unavailable_status_raises_provider_unavailable(self):
-        fake = FakeRun(completed(stdout=json.dumps({"status": "ERROR", "response": "You are not logged in"})))
-        with self.assertRaises(ProviderUnavailable):
-            self.call(fake)
+        backend = self.backend()
+        with patched_backend(FakeProcess(stdout=result_json("You are not logged in", status="ERROR"))):
+            with self.assertRaises(ProviderUnavailable):
+                backend.call("S", "U", None, None)
 
     def test_non_json_stdout_raises_runtime_error_with_detail(self):
-        fake = FakeRun(completed(stdout="not json", stderr="some useful detail", returncode=1))
-        with self.assertRaises(RuntimeError) as ctx:
-            self.call(fake)
+        backend = self.backend()
+        process = FakeProcess(stdout="not json", stderr="some useful detail", returncode=1)
+        with patched_backend(process):
+            with self.assertRaises(RuntimeError) as ctx:
+                backend.call("S", "U", None, None)
         self.assertIn("some useful detail", str(ctx.exception))
 
     def test_empty_response_raises_step_failed(self):
-        fake = FakeRun(ok_response("   "))
-        with self.assertRaises(StepFailed):
-            self.call(fake)
+        backend = self.backend()
+        with patched_backend(FakeProcess(stdout=result_json("   "))):
+            with self.assertRaises(StepFailed):
+                backend.call("S", "U", None, None)
 
     def test_timeout_raises_step_timeout_and_cleans_up(self):
-        fake = FakeRun(exc=subprocess.TimeoutExpired("agy", 960))
-        with self.assertRaises(StepTimeout):
-            self.call(fake)
-        self.assertFalse(os.path.exists(fake.calls[0][1]["cwd"]))
+        backend = self.backend({"cli_path": "/fake/agy", "timeout_seconds": 0.2})
+        process = FakeProcess(exit=False)            # never prints, never exits
+        with patched_backend(process) as (popen, kills):
+            with self.assertRaises(StepTimeout):
+                backend.call("S", "U", None, None)
+        self.assertEqual(kills[0][1], signal.SIGTERM)  # the process group was torn down
+        self.assertFalse(os.path.exists(popen.calls[0][1]["cwd"]))
 
     def test_temp_dir_removed_even_when_the_call_errors(self):
-        fake = FakeRun(completed(stdout=json.dumps({"status": "ERROR", "response": "boom"})))
-        with self.assertRaises(RuntimeError):
-            self.call(fake)
-        self.assertFalse(os.path.exists(fake.calls[0][1]["cwd"]))
+        backend = self.backend()
+        with patched_backend(FakeProcess(stdout=result_json("boom", status="ERROR"))) as (popen, _kills):
+            with self.assertRaises(RuntimeError):
+                backend.call("S", "U", None, None)
+        self.assertFalse(os.path.exists(popen.calls[0][1]["cwd"]))
 
     def test_oversized_prompt_is_refused_before_running(self):
-        fake = FakeRun(ok_response("x"))
-        with self.assertRaises(StepFailed):
-            self.call(fake, user="x" * (MAX_PROMPT_BYTES + 1))
-        self.assertEqual(fake.calls, [])             # the CLI was never started
+        backend = self.backend()
+        with patched_backend(FakeProcess(stdout=result_json("x"))) as (popen, _kills):
+            with self.assertRaises(StepFailed):
+                backend.call("S", "x" * (MAX_PROMPT_BYTES + 1), None, None)
+            self.assertEqual(popen.calls, [])        # the CLI was never started
 
     def test_limit_counts_utf8_bytes_not_characters(self):
-        fake = FakeRun(ok_response("x"))
-        with self.assertRaises(StepFailed):          # Arabic: 2 bytes per letter
-            self.call(fake, user="ص" * (MAX_PROMPT_BYTES // 2 + 1))
-        self.assertEqual(fake.calls, [])
-        fake = FakeRun(ok_response("x"))
-        self.call(fake, user="ص" * 225_000)          # the 20-minute script step that used to fail
-        self.assertEqual(len(fake.calls), 1)
+        backend = self.backend()
+        with patched_backend(FakeProcess(stdout=result_json("x"))) as (popen, _kills):
+            with self.assertRaises(StepFailed):      # Arabic: 2 bytes per letter
+                backend.call("S", "ص" * (MAX_PROMPT_BYTES // 2 + 1), None, None)
+            self.assertEqual(popen.calls, [])
+
+        with patched_backend(FakeProcess(stdout=result_json("x"))) as (popen, _kills):
+            backend.call("S", "ص" * 225_000, None, None)   # the 20-minute script step that used to fail
+        self.assertEqual(len(popen.calls), 1)
 
     def test_not_installed_raises_provider_unavailable(self):
         with mock.patch("medical_brain.llm.backends.agy.shutil.which", return_value=None), \
@@ -135,6 +229,88 @@ class AgyBackendTest(unittest.TestCase):
              mock.patch("medical_brain.llm.backends.agy.DEFAULT_AGY_PATH", "/fake/home/agy"), \
              mock.patch("medical_brain.llm.backends.agy.os.path.exists", return_value=True):
             self.assertEqual(agy_path({}), "/fake/home/agy")
+
+
+class AgyLingeringProcessTest(unittest.TestCase):
+    """The bug: agy prints its final JSON, then lingers for minutes. The backend
+    must return the finished answer instead of waiting for the overall timeout."""
+
+    def backend(self, timeout=900):
+        return AgyCLIBackend({"cli_path": "/fake/agy", "timeout_seconds": timeout},
+                             "gemini-3.8-flash-medium")
+
+    def test_complete_answer_then_hang_returns_quickly_and_kills_the_group(self):
+        backend = self.backend()
+        process = FakeProcess(stdout=result_json("the finished answer"), exit=False)
+        started = time.monotonic()
+        with patched_backend(process) as (popen, kills):
+            text = backend.call("S", "U", None, None)
+        elapsed = time.monotonic() - started
+        self.assertEqual(text, "the finished answer")
+        self.assertLess(elapsed, 2.0)                # not the 900 s timeout + 60 s
+        self.assertEqual(process.signals, [signal.SIGTERM])
+        self.assertEqual([sig for _pid, sig in kills], [signal.SIGTERM])
+        self.assertFalse(os.path.exists(popen.calls[0][1]["cwd"]))
+
+    def test_group_is_force_killed_when_sigterm_is_ignored(self):
+        backend = self.backend()
+        process = FakeProcess(stdout=result_json("done"), exit=False, ignore_term=True)
+        with patched_backend(process) as (_popen, kills):
+            text = backend.call("S", "U", None, None)
+        self.assertEqual(text, "done")
+        self.assertEqual([sig for _pid, sig in kills], [signal.SIGTERM, signal.SIGKILL])
+
+    def test_complete_answer_with_a_normal_exit_is_not_killed(self):
+        backend = self.backend()
+        process = FakeProcess(stdout=result_json("clean"))
+        with patched_backend(process) as (_popen, kills):
+            text = backend.call("S", "U", None, None)
+        self.assertEqual(text, "clean")
+        self.assertEqual(process.signals, [])
+        self.assertEqual(kills, [])
+
+    def test_no_output_and_no_exit_times_out_without_hanging(self):
+        backend = self.backend(timeout=0.2)
+        process = FakeProcess(exit=False)
+        started = time.monotonic()
+        with patched_backend(process) as (_popen, kills):
+            with self.assertRaises(StepTimeout):
+                backend.call("S", "U", None, None)
+        self.assertLess(time.monotonic() - started, 3.0)
+        self.assertTrue(kills)
+
+    def test_json_split_across_chunks_is_parsed_only_when_complete(self):
+        backend = self.backend()
+        full = result_json("chunked ok")
+        stdout = "".join([full[:7], full[7:30], full[30:]])
+        seen = []
+        real_loads = json.loads
+
+        def spy_loads(text, *args, **kwargs):
+            seen.append(text)
+            return real_loads(text, *args, **kwargs)
+
+        process = FakeProcess(stdout=stdout)
+        with mock.patch("medical_brain.llm.backends.agy.json.loads", spy_loads):
+            with patched_backend(process) as (_popen, kills):
+                text = backend.call("S", "U", None, None)
+        self.assertEqual(text, "chunked ok")
+        self.assertEqual(kills, [])
+        # It only ever hands complete-looking buffers to json.loads, and only the
+        # full document parses into a result with a status.
+        self.assertTrue(seen)
+        successful = []
+        for candidate in seen:
+            self.assertTrue(candidate.startswith("{"))
+            self.assertTrue(candidate.endswith("}"))
+            try:
+                parsed = real_loads(candidate)
+            except ValueError:
+                continue                             # a partial chunk: correctly rejected
+            if isinstance(parsed, dict) and "status" in parsed:
+                successful.append(parsed)
+        self.assertEqual(len(successful), 1)
+        self.assertEqual(successful[0]["response"], "chunked ok")
 
 
 class FlakyRun:
