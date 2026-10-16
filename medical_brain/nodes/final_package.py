@@ -14,6 +14,145 @@ from . import chapters
 MAX_FINAL_PACKAGE_RETRIES = 2
 
 
+# --------------------------------------------------------------------------
+# honest numbers: the Word Count row and the whole QA RESULTS table are built by code
+# from the real judge results, so the workbook can never claim a grade nobody gave.
+# --------------------------------------------------------------------------
+_WORD_COUNT_ROW_RE = re.compile(r"(\|\s*Word Count\s*\|)[^|\n]*\|", re.IGNORECASE)
+_FINAL_GRADE_ROW_RE = re.compile(r"(\|\s*Final Grade\s*\|)[^|\n]*\|", re.IGNORECASE)
+_QA_HEADING_RE = re.compile(r"^#{1,6}[ \t]*QA RESULTS[ \t]*$", re.IGNORECASE | re.MULTILINE)
+
+
+def _status_from_grade(grade) -> str:
+    """Pass/Warn/Fail for a PASS/A/B/NEEDS_REVISION grade; a missing grade is Not run."""
+    text = str(grade or "").strip().upper()
+    if not text:
+        return "Not run"
+    if text.startswith("PASS") or text in ("A", "A+", "A-"):
+        return "Pass"
+    if text.startswith("B"):
+        return "Warn"
+    return "Fail"
+
+
+def _status_from_score(score, pass_at: int = 9) -> str:
+    """Pass/Warn/Fail for a 0–10 score (>= pass_at passes, 7–8 warns, lower fails);
+    a missing or unreadable score is Not run."""
+    if score is None or score == "":
+        return "Not run"
+    try:
+        value = int(float(score))
+    except (TypeError, ValueError):
+        return "Not run"
+    if value >= pass_at:
+        return "Pass"
+    if value >= 7:
+        return "Warn"
+    return "Fail"
+
+
+def _score_cell(value) -> str:
+    return "—" if value is None or value == "" else f"{value}/10"
+
+
+def _qa_rows(state: PipelineState, issue_count: int) -> list:
+    """[(criterion, score, status)] from the REAL judge results in state."""
+    fidelity = state.get("fidelity_score")
+    fidelity_status = _status_from_score(fidelity, pass_at=9)
+    if fidelity_status == "Pass" and not state.get("medical_accuracy_pass"):
+        fidelity_status = "Warn"           # the score passed but accuracy did not
+    truth = state.get("truth_score")
+    truth_status = _status_from_score(truth, pass_at=9)
+    if truth_status == "Pass" and not state.get("truth_pass"):
+        truth_status = "Warn"
+    rows = [
+        ("Script quality grade", str(state.get("quality_grade", "") or "") or "—",
+         _status_from_grade(state.get("quality_grade"))),
+        ("Dialect authenticity", _score_cell(state.get("dialect_score")),
+         _status_from_score(state.get("dialect_score"), pass_at=8)),
+        ("Warmth", _score_cell(state.get("warmth_score")),
+         _status_from_score(state.get("warmth_score"), pass_at=8)),
+        ("Medical fidelity", _score_cell(fidelity), fidelity_status),
+        ("Scientific truth", _score_cell(truth), truth_status),
+        ("Translation naturalness", _score_cell(state.get("naturalness_score")),
+         _status_from_score(state.get("naturalness_score"))),
+        ("Contextual alignment", _score_cell(state.get("contextual_alignment_score")),
+         _status_from_score(state.get("contextual_alignment_score"))),
+        ("Packaging", str(state.get("packaging_grade", "") or "") or "—",
+         _status_from_grade(state.get("packaging_grade"))),
+        ("Production", str(state.get("production_grade", "") or "") or "—",
+         _status_from_grade(state.get("production_grade"))),
+    ]
+    if state.get("shorts_quality_grade"):
+        rows.append(("Shorts", str(state.get("shorts_quality_grade")),
+                     _status_from_grade(state.get("shorts_quality_grade"))))
+    rows.append(("Final package issues", str(issue_count),
+                 "Pass" if issue_count == 0 else ("Warn" if issue_count <= 3 else "Fail")))
+    return rows
+
+
+def _critique_score_rows(text: str) -> list:
+    """Best-effort rows of the production critique's per-criterion score table, as
+    (criterion, score_cell, status). Only the FIRST table whose header names a criterion
+    column and a score column is read, by those columns: the report's other tables
+    (issue lists, B-roll pairs, timestamps) are never mistaken for scores."""
+    lines = (text or "").splitlines()
+    for i, line in enumerate(lines):
+        cells = [c.strip().strip("*").strip() for c in line.strip().strip("|").split("|")]
+        if not line.strip().startswith("|") or i + 1 >= len(lines):
+            continue
+        if not re.fullmatch(r"\|?[\s:|-]+\|?", lines[i + 1].strip() or "x"):
+            continue                              # not a header row
+        head = [c.upper() for c in cells]
+        name_col = next((k for k, h in enumerate(head) if "CRITERI" in h), None)
+        score_col = next((k for k, h in enumerate(head) if h.startswith("SCORE")), None)
+        if name_col is None or score_col is None:
+            continue
+        rows = []
+        for row in lines[i + 2:]:
+            if not row.strip().startswith("|"):
+                break
+            values = [c.strip().strip("*").strip() for c in row.strip().strip("|").split("|")]
+            if max(name_col, score_col) >= len(values):
+                continue
+            match = re.match(r"(\d{1,2})(?:\s*/\s*10)?\b", values[score_col])
+            if not match or not values[name_col] or int(match.group(1)) > 10:
+                continue
+            score = int(match.group(1))
+            rows.append((f"Production · {values[name_col]}", f"{score}/10", _status_from_score(score, pass_at=8)))
+        return rows
+    return []
+
+
+def _replace_qa_results(text: str, rows: list) -> str:
+    """Swap everything under the QA RESULTS heading for a code-built table."""
+    match = _QA_HEADING_RE.search(text or "")
+    if not match:
+        return text
+    table = ["| Criterion | Score | Status |", "|---|---|---|"]
+    table += [f"| {name} | {score} | {status} |" for name, score, status in rows]
+    start = match.end()
+    nxt = re.search(r"^(?:#{1,6}[ \t]|\s*-{3,}\s*$)", text[start:], re.MULTILINE)
+    end = start + nxt.start() if nxt else len(text)
+    return text[:start] + "\n\n" + "\n".join(table) + "\n\n" + text[end:].lstrip("\n")
+
+
+def _apply_real_numbers(state: PipelineState, package: str, verified_script: str,
+                        issue_count: int) -> str:
+    """The Word Count / Final Grade cells and the QA RESULTS table, from the real state."""
+    wpm = ew.blueprint_wpm(state.get("blueprint"))
+    words = chapters.spoken_words(verified_script)
+    minutes = words / wpm if wpm > 0 else 0.0
+    package = _WORD_COUNT_ROW_RE.sub(
+        lambda m: m.group(1) + f" {words:,} words (~{minutes:.1f} min at {wpm:g} wpm) |",
+        package, count=1)
+    package = _FINAL_GRADE_ROW_RE.sub(
+        lambda m: m.group(1) + f" {state.get('quality_grade', '') or '—'} |",
+        package, count=1)
+    rows = _qa_rows(state, issue_count) + _critique_score_rows(state.get("production_critique_output", ""))
+    return _replace_qa_results(package, rows)
+
+
 def _repair_cues(text: str, script: str, part: str) -> str:
     """Models often paraphrase cues; swap each bad cue for the script's own words
     before the audit, so a retry is only spent on cues code can't place."""
@@ -692,4 +831,7 @@ RULES:
     final_package = re.sub(r"^(#{1,6})\s+#{1,6}\s+", r"\1 ", final_package, flags=re.MULTILINE)
     # What the best attempts still got wrong, for the warning at the top of the workbook.
     left = [f"Part 1: {i}" for i in best_1[2]] + [f"Part 2: {i}" for i in best_2[2]]
+    # Honest numbers last: the Word Count, Final Grade and QA RESULTS come from code/state,
+    # not from the assembly model's prose.
+    final_package = _apply_real_numbers(state, final_package, verified_script, len(left))
     return {"final_package": final_package, "final_package_issues": left}

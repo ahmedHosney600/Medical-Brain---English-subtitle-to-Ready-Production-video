@@ -341,6 +341,11 @@ The ORIGINAL SOURCE above is a verified RESEARCH DOSSIER with citations [S#]. Ev
                     final_script = _tighten_whole_script(blueprint, final_script, strict=True)
             else:
                 final_script = _soft_trim_if_padded(state, blueprint, final_script)
+        # A verified script can still be missing a chapter the verifier dropped: repair
+        # by code, then keep only one closing, before it moves on to self_critique.
+        from .script_writing import repair_script
+        final_script = repair_script(state, final_script, state.get("refined_script", ""),
+                                     state.get("best_script", ""), state.get("revised_body", ""))
 
         return {
             "truth_verification_report": report,
@@ -401,6 +406,17 @@ Output ONLY the JSON object. Include the full revised script."""
                             f"{', '.join(missing)}. This is a CRITICAL failure (grade cannot be PASS); "
                             "the revised script must restore each missing chapter from the blueprint "
                             "and the source.")
+
+    # The code repair keeps one closing; when it still cannot (e.g. contiguous
+    # duplicates) name every good-bye and forbid a PASS.
+    _repaired, _ = chapters.dedupe_signoffs(state.get("refined_script", "") or "")
+    farewells = chapters.farewell_paragraphs(_repaired)
+    if len(farewells) > 1:
+        named = " | ".join(f"«{p}»" for p in farewells)
+        print(f"  ⚠️ the script has {len(farewells)} sign-off paragraphs")
+        user_prompt += (f"\n\nCODE CHECK — the script still has {len(farewells)} good-bye paragraphs "
+                        f"after the code removed the duplicates: {named}. The script must end with "
+                        "ONE sign-off (keep the last closing only, delete the others); grade cannot be PASS.")
 
     try:
         data, response = call_llm_json(system_prompt, user_prompt, temperature=0.6, max_tokens=12000,
@@ -463,6 +479,12 @@ def _critique_result(state: PipelineState, grade: str, data, raw: str) -> dict:
     # passes, that verified script is what moves on — not a fresh, unchecked rewrite.
     verified = state.get("refined_script", "")
     revised = (pick(data, "revised_script", default="", kind=str) or "").strip()
+    if revised:
+        # A critique rewrite can drop a chapter or stack sign-offs: repair it by code
+        # before it is returned (or kept as the best script).
+        from .script_writing import repair_script
+        revised = repair_script(state, revised, state.get("refined_script", ""),
+                                state.get("best_script", ""), state.get("revised_body", ""))
     round_no = state.get("quality_revision_count", 0) + 1
     scores = {"dialect_score": dialect or 0, "warmth_score": warmth or 0, "fidelity_score": fidelity,
               "medical_accuracy_pass": medical_pass, "truth_score": truth_score, "truth_pass": truth_pass}

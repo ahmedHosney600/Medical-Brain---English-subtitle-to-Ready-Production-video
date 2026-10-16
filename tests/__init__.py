@@ -3,6 +3,7 @@
 # simulate failures must not sleep through them.
 from medical_brain.llm.router import LLMRouter as _Router  # noqa: E402
 _Router.MAIN_RETRY_WAITS = (0, 0)
+_Router.ROUTED_RETRY_WAITS = (0,)
 
 # Chapter-mode tests use small sample blueprints; the real minimum body length
 # (CHAPTER_MODE_MIN_WORDS) is tested on its own in test_chapters.MinWordsTest.

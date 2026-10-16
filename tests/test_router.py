@@ -164,6 +164,44 @@ class RouterLogicTest(unittest.TestCase):
         self.assertIn("j", router.report()["unavailable"])
 
 
+class RoutedRetryTest(unittest.TestCase):
+    """A generic (transient) failure on a routed judge gets ONE retry before the step
+    falls back to the main model: a broken pipe must not make the writer judge itself."""
+
+    def _router(self, fail_times):
+        seen = {"routed": 0, "main": 0}
+
+        class Fake:
+            def __init__(self, spec):
+                self.spec = spec
+
+            def call(self, *a):
+                if self.spec == "j:judge":
+                    seen["routed"] += 1
+                    if seen["routed"] <= fail_times:
+                        raise RuntimeError("[Errno 32] Broken pipe")
+                    return "ROUTED"
+                seen["main"] += 1
+                return "MAIN"
+
+        c = config("w:writer", routes={"judge_step": "j:judge"})
+        router = llm.LLMRouter(c, provider="hybrid")
+        router._backends = {"w:writer": Fake("w:writer"), "j:judge": Fake("j:judge")}
+        return router, seen
+
+    def test_routed_failure_is_retried_once_then_succeeds(self):
+        router, seen = self._router(fail_times=1)
+        self.assertEqual(run_step(router, "judge_step"), "ROUTED")
+        self.assertEqual(seen, {"routed": 2, "main": 0})
+        self.assertTrue(any("trying again in 0s" in e for e in router.report()["events"]))
+
+    def test_routed_failure_twice_falls_back_to_main(self):
+        router, seen = self._router(fail_times=2)
+        self.assertEqual(run_step(router, "judge_step"), "MAIN")
+        self.assertEqual(seen, {"routed": 2, "main": 1})
+
+
+
 class FreeGeminiProviderTest(unittest.TestCase):
     """The local free-gemini-api proxy is a normal OpenAI-compatible provider."""
 

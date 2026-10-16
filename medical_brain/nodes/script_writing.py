@@ -582,15 +582,25 @@ def _call_script_frame(state: PipelineState, blueprint: dict, critique: str = ""
             "chosen_hook": str(pick(data, "chosen_hook", default="") or "").strip()}
 
 
-def _frame_segments(state: PipelineState, frame: dict, chapter_source: str) -> list:
-    """[opening (+ disclaimer), chapter 1 … chapter n, closing] from a frame."""
+def _frame_segments(state: PipelineState, frame: dict, chapter_source: str,
+                    old_frame_closing: str = "") -> list:
+    """[opening (+ disclaimer), chapter 1 … chapter n, closing] from a frame.
+
+    In a revision pass that re-picks the frame, the last chapter may still carry the OLD
+    closing inside its text; strip that tail (split_closing, hinted by the old frame's
+    closing) so the new CLOSING is not stacked on top of it."""
     segments = []
     head = "\n\n".join(x for x in (frame.get("opening", ""), frame.get("disclaimer", ""))
                        if x and x.strip())
     if head.strip():
         segments.append(("OPENING", head))
-    segments.extend((title, text) for title, text in chapters.split_by_chapters(chapter_source or "")
-                    if title)
+    chapter_parts = [(title, text) for title, text in
+                     chapters.split_by_chapters(chapter_source or "") if title]
+    if old_frame_closing and chapter_parts:
+        title, text = chapter_parts[-1]
+        body, _ = chapters.split_closing(text, old_frame_closing)
+        chapter_parts[-1] = (title, body)
+    segments.extend(chapter_parts)
     closing = frame.get("closing", "") or ""
     if closing.strip():
         segments.append(("CLOSING", closing))
@@ -605,9 +615,12 @@ def _dialect_segments(state: PipelineState, revising: bool):
     if revising:
         critique = state.get("self_critique_output", "") or ""
         if _FRAME_CRITIQUE_RE.search(critique):
+            old_frame = state.get("script_frame") or {}
+            old_closing = str(old_frame.get("closing", "") or "") if isinstance(old_frame, dict) else ""
             frame = _call_script_frame(state, state.get("blueprint") or {}, critique)
             if frame:
-                return _frame_segments(state, frame, state.get("refined_script", "")), frame
+                return _frame_segments(state, frame, state.get("refined_script", ""),
+                                       old_closing), frame
         return [(title or "HOOK", text) for title, text in
                 chapters.split_by_chapters(state.get("refined_script", "") or "")], None
 
@@ -676,6 +689,20 @@ DIALECT_GROWTH_MAX = 1.1
 DIALECT_GROWTH_REVISING = 1.03
 
 
+def repair_script(state: PipelineState, script: str, *sources: str) -> str:
+    """Repair a script by code before it is trusted downstream: put back any blueprint
+    chapter a pass dropped (chapter mode) and keep only one closing sign-off. `sources`
+    are fallback texts the chapter may be copied from, in priority order."""
+    blueprint = (state or {}).get("blueprint") or {}
+    script, restored = chapters.restore_missing_chapters(blueprint, script or "", *sources)
+    if restored:
+        print(f"  🩹 restored missing chapter(s): {', '.join(restored)}")
+    script, removed = chapters.dedupe_signoffs(script)
+    if removed:
+        print(f"  🩹 removed {removed} duplicate sign-off paragraph(s)")
+    return script
+
+
 def _dialect_chapter_mode(state: PipelineState, system_prompt: str, revising: bool) -> dict:
     segments, frame = _dialect_segments(state, revising)
     workers = int(state.get("chapter_workers", 4) or 4)
@@ -718,6 +745,14 @@ def _dialect_chapter_mode(state: PipelineState, system_prompt: str, revising: bo
 
     results = chapters.parallel_map(rewrite, list(enumerate(segments)), workers)
     joined = chapters.clean_spoken_script(chapters.join_chapters([script for _, script, _ in results]))
+    # A pass can drop a chapter (a proxied rewrite, a cut): put it back before the notes.
+    blueprint_chapters = [c for c in ((state.get("blueprint") or {}).get("chapters") or [])
+                          if isinstance(c, dict)]
+    drafts = state.get("chapter_drafts") or {}
+    draft_texts = [str(drafts.get(_chapter_key(c), "") or "") for c in blueprint_chapters]
+    sources = [state.get("refined_script", ""), state.get("revised_body", ""),
+               chapters.join_chapters([x for x in draft_texts if x.strip()])]
+    joined = repair_script(state, joined, *sources)
     notes = [(label, note) for label, _, note in results if note]
     output = joined
     if notes:
@@ -1088,9 +1123,14 @@ def _soft_trim_if_padded(state: PipelineState, blueprint: dict, script: str) -> 
 def script_refinement(state: PipelineState) -> dict:
     system_prompt = load_prompt("script_refinement")
     blueprint = state.get("blueprint") or {}
+    # Fallbacks a dropped chapter can be restored from (most-authoritative first).
+    repair_sources = (state.get("dialect_script", ""), state.get("refined_script", ""),
+                      state.get("best_script", ""), state.get("revised_body", ""))
 
     if chapters.chapter_mode_on(blueprint):
-        return _refinement_chapter_mode(state, blueprint)
+        result = _refinement_chapter_mode(state, blueprint)
+        result["refined_script"] = repair_script(state, result["refined_script"], *repair_sources)
+        return result
 
     frame = state.get("script_frame") or {}
     opening = str(frame.get("opening", "") or "").strip() if isinstance(frame, dict) else ""
@@ -1132,6 +1172,7 @@ AUDIT / CRITIQUE REPORT:
     else:
         response = _soft_trim_if_padded(state, blueprint, response)
     _warn_if_refined_too_long(blueprint, response, strict=strict)
+    response = repair_script(state, response, *repair_sources)
     return {"refined_script": response}
 
 

@@ -1531,3 +1531,271 @@ class MissingChaptersTest(unittest.TestCase):
         use(self, quality, "call_llm_json", FakeLLM(answer))
         quality.self_critique(base_state(blueprint=BP, refined_script=self.ALL))
         self.assertNotIn("CODE CHECK", captured["user"])
+
+
+# --------------------------------------------------------------------------
+# repair: a dropped chapter comes back, and only one sign-off survives
+# --------------------------------------------------------------------------
+THREE_BP = {"target_minutes": 30, "words_per_minute": 135, "chapters": [
+    {"id": "C1", "title": "الفصل الأول", "words": 800},
+    {"id": "C2", "title": "الفصل الثاني", "words": 800},
+    {"id": "C3", "title": "الفصل الثالث", "words": 800},
+]}
+
+
+def _chap(title, n, prefix="ك"):
+    return f"=== {title} ===\n" + " ".join(f"{prefix}{i}" for i in range(n))
+
+
+def _titles(script):
+    return [t for t, _ in chapters.split_by_chapters(script) if t]
+
+
+class RestoreMissingChaptersTest(unittest.TestCase):
+    def test_restores_chapter_one_at_its_blueprint_position(self):
+        script = _chap("الفصل الثاني", 80, "b") + "\n\n" + _chap("الفصل الثالث", 80, "c")
+        source = _chap("الفصل الأول", 80, "a") + "\n\n" + _chap("الفصل الثاني", 80, "b")
+        out, titles = chapters.restore_missing_chapters(THREE_BP, script, source)
+        self.assertEqual(titles, ["الفصل الأول"])
+        self.assertEqual(_titles(out), ["الفصل الأول", "الفصل الثاني", "الفصل الثالث"])
+        self.assertIn("a0", out)
+
+    def test_restores_a_middle_chapter(self):
+        script = _chap("الفصل الأول", 80, "a") + "\n\n" + _chap("الفصل الثالث", 80, "c")
+        out, titles = chapters.restore_missing_chapters(
+            THREE_BP, script, _chap("الفصل الثاني", 80, "b"))
+        self.assertEqual(titles, ["الفصل الثاني"])
+        self.assertEqual(_titles(out), ["الفصل الأول", "الفصل الثاني", "الفصل الثالث"])
+
+    def test_a_stub_source_is_skipped(self):
+        script = _chap("الفصل الثاني", 80, "b") + "\n\n" + _chap("الفصل الثالث", 80, "c")
+        out, titles = chapters.restore_missing_chapters(THREE_BP, script, _chap("الفصل الأول", 5, "s"))
+        self.assertEqual(titles, [])
+        self.assertEqual(_titles(out), ["الفصل الثاني", "الفصل الثالث"])
+
+    def test_a_stub_source_falls_through_to_the_next(self):
+        script = _chap("الفصل الثاني", 80, "b") + "\n\n" + _chap("الفصل الثالث", 80, "c")
+        out, titles = chapters.restore_missing_chapters(
+            THREE_BP, script, _chap("الفصل الأول", 5, "s"), _chap("الفصل الأول", 80, "g"))
+        self.assertEqual(titles, ["الفصل الأول"])
+        self.assertIn("g0", out)
+        self.assertNotIn("s0", out)
+
+    def test_the_first_source_with_the_chapter_wins(self):
+        script = _chap("الفصل الثاني", 80, "b")
+        out, titles = chapters.restore_missing_chapters(
+            THREE_BP, script, _chap("الفصل الأول", 80, "g"), _chap("الفصل الأول", 80, "o"))
+        self.assertEqual(titles, ["الفصل الأول"])
+        self.assertIn("g0", out)
+        self.assertNotIn("o0", out)
+
+    def test_a_chapter_appended_at_the_end_lands_before_the_closing(self):
+        script = (_chap("الفصل الأول", 80, "a") + "\n\n" + _chap("الفصل الثاني", 80, "b")
+                  + "\n\n---\n\nمتنسوش تشتركوا في القناة. دمتم صحيين.")
+        out, titles = chapters.restore_missing_chapters(THREE_BP, script, _chap("الفصل الثالث", 80, "c"))
+        self.assertEqual(titles, ["الفصل الثالث"])
+        self.assertEqual(_titles(out), ["الفصل الأول", "الفصل الثاني", "الفصل الثالث"])
+        self.assertLess(out.index("c0"), out.index("متنسوش تشتركوا"))
+
+    def test_a_script_without_headers_gets_the_chapters_before_its_closing(self):
+        body = " ".join(f"b{i}" for i in range(120))
+        script = body + "\n\n---\n\nمتنسوش تشتركوا في القناة. دمتم صحيين."
+        source = (_chap("الفصل الأول", 80, "a") + "\n\n" + _chap("الفصل الثاني", 80, "b")
+                  + "\n\n" + _chap("الفصل الثالث", 80, "c"))
+        out, titles = chapters.restore_missing_chapters(THREE_BP, script, source)
+        self.assertEqual(titles, ["الفصل الأول", "الفصل الثاني", "الفصل الثالث"])
+        self.assertEqual(_titles(out), ["الفصل الأول", "الفصل الثاني", "الفصل الثالث"])
+        self.assertLess(out.index("c0"), out.index("متنسوش تشتركوا"))
+
+    def test_nothing_missing_is_unchanged(self):
+        script = (_chap("الفصل الأول", 80, "a") + "\n\n" + _chap("الفصل الثاني", 80, "b")
+                  + "\n\n" + _chap("الفصل الثالث", 80, "c"))
+        out, titles = chapters.restore_missing_chapters(THREE_BP, script, "")
+        self.assertEqual(titles, [])
+        self.assertEqual(out, script)
+
+
+class SplitClosingTest(unittest.TestCase):
+    CLOSING = ("متنسوش تشتركوا في القناة وتفعّلوا الجرس، وقولوا لنا في التعليقات. "
+               "دمتم صحيين، وأشوفكم في الحلقة الجاية على خير.")
+    BODY = " ".join(f"كلمه{i}" for i in range(120))
+
+    def test_separator_tail_is_the_closing(self):
+        text = f"=== الفصل ===\n{self.BODY}\n\n---\n\n{self.CLOSING}"
+        body, closing = chapters.split_closing(text)
+        self.assertEqual(closing, self.CLOSING)
+        self.assertNotIn("دمتم", body)
+
+    def test_hint_matches_trailing_signoff_without_a_separator(self):
+        text = f"=== الفصل ===\n{self.BODY}\n\n{self.CLOSING}"
+        body, closing = chapters.split_closing(text, self.CLOSING)
+        self.assertIn("دمتم", closing)
+        self.assertNotIn("دمتم", body)
+
+    def test_a_plain_tail_is_not_a_closing(self):
+        text = f"=== الفصل ===\n{self.BODY}"
+        self.assertEqual(chapters.split_closing(text), (text, ""))
+        self.assertEqual(chapters.split_closing(text, "something else entirely"), (text, ""))
+
+
+class DedupeSignoffsTest(unittest.TestCase):
+    CTA = ("شاركونا في التعليقات بأفكاركم وتجاربكم، وكتبوا لنا إيه اللي فارق معاكم في الحلقة دي. "
+           "دمتم صحيين ومستقرين.")
+    OLD = ("لو عجبكم الفيديو متنسوش تشتركوا في القناة وتفعّلوا الجرس، واعملوا لايك، وقولوا لنا في "
+           "التعليقات رأيكم. دمتم صحيين، وأشوفكم في الحلقة الجاية على خير.")
+    NEW = ("متنسوش تشتركوا في القناة وتفعّلوا الجرس، واعملوا لايك، وقولوا لنا في التعليقات. "
+           "دمتم صحيين، وأشوفكم في الحلقة الجاية على خير.")
+    BODY = " ".join(f"كلمه{i}" for i in range(400))
+
+    def test_real_three_signoff_ending_keeps_only_the_last_closing(self):
+        ending = "\n\n".join([self.BODY, self.CTA, "---", self.OLD, "---", self.NEW])
+        out, removed = chapters.dedupe_signoffs(ending)
+        self.assertEqual(removed, 2)
+        self.assertNotIn(self.CTA, out)
+        self.assertNotIn(self.OLD, out)
+        self.assertIn(self.NEW, out)
+        self.assertEqual(out.count("---"), 1)          # the doubled separator collapsed
+        self.assertEqual(len(chapters.farewell_paragraphs(out)), 1)
+
+    def test_three_signoffs_with_no_separator_also_collapse(self):
+        ending = "\n\n".join([self.BODY, self.CTA, self.OLD, self.NEW])
+        out, removed = chapters.dedupe_signoffs(ending)
+        self.assertEqual(removed, 2)
+        self.assertNotIn(self.CTA, out)
+        self.assertNotIn(self.OLD, out)
+        self.assertIn(self.NEW, out)
+
+    def test_a_single_closing_is_unchanged(self):
+        script = self.BODY + "\n\n" + self.NEW
+        out, removed = chapters.dedupe_signoffs(script)
+        self.assertEqual(removed, 0)
+        self.assertEqual(out, script)
+
+    def test_a_signoff_like_phrase_in_the_first_half_is_untouched(self):
+        first = "اشترك في القناة واعمل لايك وقول رأيك. دمتم صحيين، وأشوفكم في الحلقة الجاية."
+        script = first + "\n\n" + self.BODY + "\n\n" + self.NEW
+        out, removed = chapters.dedupe_signoffs(script)
+        self.assertEqual(removed, 0)
+        self.assertTrue(out.startswith(first))
+
+    def test_a_comment_question_without_farewell_is_kept(self):
+        question = "قولوا لنا في التعليقات إيه أكتر حاجة قلقتكم."
+        script = (self.BODY + "\n\n" + question + "\n\n---\n\n" + self.NEW)
+        out, removed = chapters.dedupe_signoffs(script)
+        self.assertEqual(removed, 0)
+        self.assertIn(question, out)
+
+    def test_a_two_paragraph_closing_keeps_its_long_comment_paragraph(self):
+        # The comment paragraph is most of the closing block's words; it must not be
+        # mistaken for a duplicate of the block it belongs to.
+        ask = ("شاركونا في التعليقات وقولولنا تجربتكم مع الشد الليلي وإيه اللي جربتوه قبل كده "
+               "وفاد معاكم، واشتركوا في القناة وفعلوا الجرس")
+        bye = "دمتم بصحة، وأشوفكم في الحلقة الجاية"
+        out, removed = chapters.dedupe_signoffs(self.BODY + "\n\n" + ask + "\n\n" + bye)
+        self.assertEqual(removed, 0)
+        self.assertIn(ask, out)
+
+
+class RepairScriptTest(unittest.TestCase):
+    def test_dialect_error_reply_twice_keeps_the_chapter(self):
+        long_ch = " ".join(f"ك{i}" for i in range(100))
+        refined = f"=== الفصل الأول ===\n{long_ch}\n\n=== الفصل الثاني ===\nنص ثاني"
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            if "SEGMENT LABEL: الفصل الأول" in user:
+                return "I encountered an error doing what you asked. Could you try again?"
+            label = re.search(r"SEGMENT LABEL: (.*)", user).group(1).strip()
+            return f"[{label} rewritten]\n=== SEGMENT NOTES ===\nDialect 9"
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        state = base_state(blueprint=BP, quality_revision_count=1, refined_script=refined,
+                           cta_output="cta", self_critique_output="dialect wording only",
+                           chapter_workers=1)
+        with mock.patch("builtins.print"):
+            out = script_writing.dialect_warmth_layer(state)
+        self.assertIn("=== الفصل الأول ===", out["dialect_script"])
+        self.assertIn("ك99", out["dialect_script"])
+        self.assertNotIn("I encountered an error", out["dialect_script"])
+
+    def test_script_refinement_restores_a_missing_chapter(self):
+        long_ch = " ".join(f"ك{i}" for i in range(120))
+        missing = "=== الفصل الثاني ===\n" + " ".join(f"ب{i}" for i in range(120))
+        refined = f"=== الفصل الأول ===\n{long_ch}\n\n{missing}"
+
+        def json_answer(system, user, temperature=None, max_tokens=None, **kwargs):
+            return ({"edits": [], "integrity_score": 9, "summary": "ok", "issues": []}, "raw")
+
+        use(self, script_writing, "call_llm_json", FakeLLM(json_answer))
+        state = base_state(blueprint=BP, dialect_script=missing, refined_script=refined,
+                           chapter_workers=1)
+        with mock.patch("builtins.print") as printed:
+            out = script_writing.script_refinement(state)
+        self.assertIn("=== الفصل الأول ===", out["refined_script"])
+        self.assertIn("ك119", out["refined_script"])
+        text = " ".join(str(c.args[0]) for c in printed.call_args_list)
+        self.assertIn("restored missing chapter", text)
+
+    def test_whole_mode_script_refinement_dedupes_signoffs(self):
+        cta = "اشتركوا في القناة وفعّلوا الجرس، واعملوا لايك. دمتم صحيين، وأشوفكم في الحلقة الجاية."
+        new = "متنسوش تشتركوا في القناة وفعّلوا الجرس. دمتم صحيين، وأشوفكم في الحلقة الجاية على خير."
+        body = " ".join(f"ك{i}" for i in range(400))
+        script = "\n\n".join([body, cta, "---", new])
+        use(self, script_writing, "call_llm", FakeLLM(lambda *a: script))
+        with mock.patch("builtins.print"):
+            out = script_writing.script_refinement(base_state(blueprint={}, dialect_warmth_output="D"))
+        self.assertNotIn(cta, out["refined_script"])
+        self.assertIn(new, out["refined_script"])
+
+    def test_revision_with_a_rechosen_frame_has_one_closing(self):
+        long_ch = " ".join(f"ك{i}" for i in range(120))
+        old_close = "اشتركوا في القناة وفعّلوا الجرس. دمتم صحيين، وأشوفكم في الحلقة الجاية على خير."
+        refined = f"=== الفصل الأول ===\n{long_ch}\n\n---\n\n{old_close}"
+
+        def segment(system, user, temperature=None, max_tokens=None):
+            match = re.search(
+                r"THIS SEGMENT \(rewrite ONLY this; keep its header, cues, notes and timestamps\):\n"
+                r"(.*?)\n\nLAST LINES BEFORE IT", user, re.DOTALL)
+            text = match.group(1) if match else ""
+            return f"{text}\n=== SEGMENT NOTES ===\nDialect 9"
+
+        use(self, script_writing, "call_llm", FakeLLM(segment))
+        use(self, script_writing, "call_llm_json", frame_fake(closing="متنسوش تشتركوا. دمتم صحيين."))
+        state = base_state(blueprint=BP, quality_revision_count=1, refined_script=refined,
+                           cta_output="cta", self_critique_output="the closing is weak",
+                           script_frame={"opening": "ق", "closing": old_close}, chapter_workers=1)
+        with mock.patch("builtins.print"):
+            out = script_writing.dialect_warmth_layer(state)
+        # The old closing was inside the last chapter's text; it must not survive under
+        # the new CLOSING.
+        self.assertNotIn(old_close, out["dialect_script"])
+        self.assertEqual(out["dialect_script"].count("دمتم"), 1)
+
+
+class SignoffCodeCheckTest(unittest.TestCase):
+    def _critique(self, script):
+        captured = {}
+
+        def answer(system, user, temperature=None, max_tokens=None, **kwargs):
+            captured["user"] = user
+            return ({"critique_grade": "A"}, "raw")
+
+        use(self, quality, "call_llm_json", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            quality.self_critique(base_state(blueprint=BP, refined_script=script))
+        return captured["user"]
+
+    def test_flags_leftover_multiple_signoffs(self):
+        body = " ".join(f"ك{i}" for i in range(400))
+        early = "دمتم صحيين، وأشوفكم في الحلقة الجاية."
+        late = "متنسوش تشتركوا في القناة وفعّلوا الجرس. دمتم صحيين، وأشوفكم في الحلقة الجاية على خير."
+        # The early good-bye is outside the last 35%, so the code dedupe leaves it;
+        # the judge must be told the script still ends with more than one sign-off.
+        prompt = self._critique(f"=== الفصل الأول ===\n{early}\n\n{body}\n\n{late}")
+        self.assertIn("must end with ONE sign-off", prompt)
+        self.assertIn("good-bye paragraphs", prompt)
+
+    def test_no_signoff_check_with_one_closing(self):
+        body = " ".join(f"ك{i}" for i in range(400))
+        close = "متنسوش تشتركوا في القناة وفعّلوا الجرس. دمتم صحيين."
+        prompt = self._critique(f"=== الفصل الأول ===\n{body}\n\n{close}")
+        self.assertNotIn("must end with ONE sign-off", prompt)

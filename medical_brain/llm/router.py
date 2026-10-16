@@ -149,6 +149,31 @@ class LLMRouter:
         return result
 
     MAIN_RETRY_WAITS = (10, 30)     # seconds before the 2nd and 3rd try of the main model
+    ROUTED_RETRY_WAITS = (10,)      # seconds before the routed model's one retry
+
+    def _ask_routed_with_retry(self, node, spec, system_prompt, user_prompt, temperature, max_tokens):
+        """Ask the routed model; a generic failure gets ONE retry after a short wait before
+        the step falls back to the main model. A transient broken pipe must not hand a
+        judge's job back to the writer model (in a real run it made the writer judge its own
+        script). ProviderUnavailable and a cut-off answer are not retried. Returns
+        (answer, None) on success, (None, last_error) when the caller should fall back."""
+        import time
+        try:
+            return self._ask(spec, system_prompt, user_prompt, temperature, max_tokens), None
+        except (ProviderUnavailable, AnswerCutOff) as e:
+            return None, e
+        except Exception as e:
+            last = e
+        for wait in self.ROUTED_RETRY_WAITS:
+            self._log(f"⏳ {node}: {spec} failed ({_short(last)}); trying again in {wait}s.")
+            time.sleep(wait)
+            try:
+                return self._ask(spec, system_prompt, user_prompt, temperature, max_tokens), None
+            except (ProviderUnavailable, AnswerCutOff) as e:
+                return None, e
+            except Exception as e:
+                last = e
+        return None, last
 
     def _ask_retrying(self, node, spec, system_prompt, user_prompt, temperature, max_tokens) -> str:
         """The main model gets a couple more tries for transient failures (an empty
@@ -258,25 +283,27 @@ class LLMRouter:
         if spec != self.main:
             provider = parse_spec(spec)[0]
             if not self._is_down(spec):
-                try:
-                    result = self._ask(spec, system_prompt, user_prompt, temperature, max_tokens)
+                result, error = self._ask_routed_with_retry(
+                    node, spec, system_prompt, user_prompt, temperature, max_tokens)
+                if result is not None:
                     self._count(node, spec)
                     return result
-                except ProviderUnavailable as e:
+                if isinstance(error, ProviderUnavailable):
                     # When the routed model shares the main model's provider (e.g. two agy
                     # models), only that model is benched: quotas there are per model, and
                     # benching the provider would take the main model down with it.
                     with self._lock:
                         if provider == parse_spec(self.main)[0]:
-                            self.down_specs[spec] = _short(e)
+                            self.down_specs[spec] = _short(error)
                         else:
-                            self.down[provider] = _short(e)
-                    self._log(f"⚠️ {node}: {spec} unavailable ({_short(e)}). "
+                            self.down[provider] = _short(error)
+                    self._log(f"⚠️ {node}: {spec} unavailable ({_short(error)}). "
                               f"This and later steps routed to it run on {self.main}.")
-                except Exception as e:
-                    if isinstance(e, AnswerCutOff):
-                        cut_text = e.text
-                    self._log(f"⚠️ {node}: {spec} failed ({_short(e)}). Running this step on {self.main}.")
+                else:
+                    if isinstance(error, AnswerCutOff):
+                        cut_text = error.text
+                    self._log(f"⚠️ {node}: {spec} failed ({_short(error)}). "
+                              f"Running this step on {self.main}.")
         try:
             result = self._ask_retrying(node, self.main, system_prompt, user_prompt, temperature, max_tokens)
             self._count(node, self.main)

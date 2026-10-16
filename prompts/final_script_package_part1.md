@@ -103,30 +103,7 @@ DESCRIPTION SEO RULE: weave the SEO SECONDARY KEYWORDS below naturally through t
 ---
 
 ### QA RESULTS
-| Criterion | Score | Status |
-|---|---|---|
-| Hook quality | | Pass/Warn/Fail |
-| Narrative arc | | Pass/Warn/Fail |
-| Spoken language | | Pass/Warn/Fail |
-| Word count | | Pass/Warn/Fail |
-| Open loops | | Pass/Warn/Fail |
-| Disclaimer | | Pass/Warn/Fail |
-| CTA quality | | Pass/Warn/Fail |
-| Dialect authenticity | | Pass/Warn/Fail |
-| Warmth / de-clinicalization | | Pass/Warn/Fail |
-| Medical fidelity | | Pass/Warn/Fail |
-| Translation naturalness | | Pass/Warn/Fail |
-| Contextual alignment | | Pass/Warn/Fail |
-| Transition appropriateness | | Pass/Warn/Fail |
-| Transition restraint | | Pass/Warn/Fail |
-| Text animation/overlay clarity | | Pass/Warn/Fail |
-| Animation timing | | Pass/Warn/Fail |
-| B-roll relevance | | Pass/Warn/Fail |
-| B-roll medical accuracy | | Pass/Warn/Fail |
-| Visual integration | | Pass/Warn/Fail |
-| Density balance | | Pass/Warn/Fail |
-| Platform fit | | Pass/Warn/Fail |
-| Organic feel | | Pass/Warn/Fail |
+[[QA RESULTS — inserted by code]]
 
 ---
 

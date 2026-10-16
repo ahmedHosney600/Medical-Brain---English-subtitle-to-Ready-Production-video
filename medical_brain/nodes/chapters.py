@@ -534,6 +534,286 @@ def too_short_rewrite(new_text: str, reference_words: int, floor: float = 0.4) -
     return spoken_words(new_text) < reference_words * floor
 
 
+# --------------------------------------------------------------------------
+# missing-chapter repair + one sign-off only
+# --------------------------------------------------------------------------
+# A restored chapter must be a real chapter, not a stub or a canned error.
+RESTORE_MIN_WORDS = 60
+# A sign-off is only looked for in the tail: the opening and body may mention
+# subscribing/commenting without being the closing.
+SIGNOFF_TAIL = 0.65
+# The closing tail after the last '---' must be short; a long one is real content.
+CLOSING_MAX_WORDS = 250
+SIGNOFF_JACCARD = 0.5
+
+# Sign-off markers, normalised Arabic + English; each tuple is ONE marker, any variant
+# counts once. normalize_ar lowercases nothing, so the English variants are lower-case.
+_SIGNOFF_MARKERS = (
+    ("اشترك", "الاشتراك"),
+    ("الجرس",),
+    ("لايك", "الاعجاب"),
+    ("التعليقات",),
+    ("الحلقه الجايه", "الحلقه القادمه"),
+    ("دمتم",),
+    ("اشوفكم",),
+    ("مع السلامه", "سلام"),
+    ("subscribe",),
+    ("comment",),
+    ("see you",),
+)
+# A farewell marker ends the video: on its own it makes a paragraph a sign-off.
+_FAREWELL_MARKERS = (
+    ("دمتم",),
+    ("اشوفكم",),
+    ("الحلقه الجايه", "الحلقه القادمه"),
+    ("مع السلامه",),
+    ("see you",),
+)
+
+
+def _detection_text(paragraph: str) -> str:
+    """A paragraph's text for sign-off detection: [cue] and '---' lines are not spoken."""
+    kept = []
+    for line in (paragraph or "").splitlines():
+        stripped = line.strip()
+        if re.fullmatch(r"\[.*\]", stripped) or re.fullmatch(r"-{3,}", stripped):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def _marker_hits(normalized: str, groups) -> int:
+    """How many marker GROUPS appear (any variant) in the normalized text."""
+    return sum(1 for group in groups if any(variant in normalized for variant in group))
+
+
+def _is_signoff_paragraph(paragraph: str) -> tuple:
+    """(is_signoff, has_farewell) for one paragraph: >= 2 sign-off markers, or a
+    farewell marker. Cue and '---' lines never count."""
+    normalized = normalize_ar(_detection_text(paragraph)).lower()
+    if not normalized:
+        return False, False
+    farewell = bool(_marker_hits(normalized, _FAREWELL_MARKERS))
+    return (farewell or _marker_hits(normalized, _SIGNOFF_MARKERS) >= 2), farewell
+
+
+def _word_set(text: str) -> set:
+    return set(normalize_ar(_detection_text(text)).split())
+
+
+def _jaccard(a: set, b: set) -> float:
+    union = a | b
+    return len(a & b) / len(union) if union else 0.0
+
+
+def farewell_paragraphs(script: str) -> list:
+    """The paragraphs that carry a farewell marker (cue and '---' lines ignored). Used by
+    self_critique to name a script that still ends with more than one good-bye."""
+    out = []
+    for paragraph in re.split(r"\n\s*\n", script or ""):
+        if _is_signoff_paragraph(paragraph)[1]:
+            text = " ".join(_detection_text(paragraph).split()).strip()
+            if text:
+                out.append(text)
+    return out
+
+
+def _collapse_double_dashes(text: str) -> str:
+    """A deletion can leave two '---' lines (with only blanks between) where one was:
+    collapse the duplicate."""
+    out = []
+    for line in (text or "").split("\n"):
+        if re.fullmatch(r"\s*-{3,}\s*", line):
+            k = len(out) - 1
+            while k >= 0 and out[k].strip() == "":
+                k -= 1
+            if k >= 0 and re.fullmatch(r"\s*-{3,}\s*", out[k]):
+                del out[k + 1:]
+                continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def split_closing(text: str, closing_hint: str = "") -> tuple:
+    """(body, closing): separate a script's closing/sign-off tail from its body.
+
+    With a '---' separator the closing is the tail after the LAST separator when the tail
+    is short (<= 250 spoken words) and carries a sign-off marker. Without one, the trailing
+    paragraphs that carry sign-off markers and overlap `closing_hint` (word-set Jaccard
+    >= 0.5) are the closing. Returns (text, "") when nothing looks like a closing, so an
+    ordinary chapter is never cut."""
+    raw = text or ""
+    if not raw.strip():
+        return text, ""
+    lines = raw.splitlines()
+    last_sep = None
+    for i, line in enumerate(lines):
+        if re.fullmatch(r"\s*-{3,}\s*", line):
+            last_sep = i
+    if last_sep is not None:
+        tail = "\n".join(lines[last_sep + 1:]).strip()
+        body = "\n".join(lines[:last_sep]).rstrip()
+        if body and tail and spoken_words(tail) <= CLOSING_MAX_WORDS:
+            if _marker_hits(normalize_ar(_detection_text(tail)).lower(), _SIGNOFF_MARKERS):
+                return body, tail
+    hint_words = _word_set(closing_hint)
+    if not hint_words:
+        return raw, ""
+    paragraphs = re.split(r"\n\s*\n", raw)
+    idx = len(paragraphs) - 1
+    closing = []
+    while idx >= 0:
+        is_signoff, _ = _is_signoff_paragraph(paragraphs[idx])
+        if not is_signoff or _jaccard(_word_set(paragraphs[idx]), hint_words) < SIGNOFF_JACCARD:
+            break
+        closing.insert(0, paragraphs[idx])
+        idx -= 1
+    if not closing or idx < 0:
+        return raw, ""
+    body = "\n\n".join(paragraphs[:idx + 1]).strip()
+    if not body:
+        return raw, ""
+    return body, "\n\n".join(closing).strip()
+
+
+def dedupe_signoffs(script: str) -> tuple:
+    """(script, removed_count): keep ONE closing in the tail.
+
+    A sign-off paragraph is a blank-line-separated paragraph (cue and '---' lines ignored)
+    with >= 2 sign-off markers or a farewell marker, and only paragraphs in the last 35% of
+    the spoken words are considered. With two or more, the last contiguous run is the real
+    closing; every sign-off before the FINAL one is deleted when it carries a farewell or
+    repeats the closing's words (Jaccard >= 0.5). A bare comment question that resembles
+    neither stays. The byte-identical script comes back when nothing is removed, and the
+    first 65% is never touched."""
+    text = script or ""
+    if not text.strip():
+        return script, 0
+    paragraphs = re.split(r"\n\s*\n", text)
+    spoken = [spoken_words(p) for p in paragraphs]
+    total = sum(spoken)
+    if total <= 0:
+        return script, 0
+    threshold = total * SIGNOFF_TAIL
+    signoffs = []                       # [(paragraph index, has_farewell)]
+    cumulative = 0
+    for i, paragraph in enumerate(paragraphs):
+        is_signoff, farewell = _is_signoff_paragraph(paragraph)
+        if cumulative >= threshold and is_signoff:
+            signoffs.append((i, farewell))
+        cumulative += spoken[i]
+    if len(signoffs) < 2:
+        return script, 0
+
+    block_end = signoffs[-1][0]
+    block_start = block_end
+    j = len(signoffs) - 1
+    while j - 1 >= 0 and signoffs[j - 1][0] == signoffs[j][0] - 1:
+        block_start = signoffs[j - 1][0]
+        j -= 1
+    kept_words = _word_set("\n\n".join(paragraphs[block_start:block_end + 1]))
+
+    remove = set()
+    for i, farewell in signoffs:
+        if i >= block_end:
+            continue                    # the final closing is always kept
+        if i >= block_start:
+            # Inside the final closing block a paragraph is part of that closing (a
+            # comment question before the good-bye); only an extra good-bye goes.
+            if farewell:
+                remove.add(i)
+            continue
+        # A sign-off before the closing block is a duplicate of it when it says a
+        # good-bye or repeats the closing's words; a bare comment question that does
+        # neither is left alone.
+        if farewell or _jaccard(_word_set(paragraphs[i]), kept_words) >= SIGNOFF_JACCARD:
+            remove.add(i)
+    if not remove:
+        return script, 0
+    result = "\n\n".join(p for i, p in enumerate(paragraphs) if i not in remove)
+    return _collapse_double_dashes(result), len(remove)
+
+
+def restore_missing_chapters(blueprint, script: str, *sources: str) -> tuple:
+    """(script, restored_titles): put a dropped blueprint chapter back.
+
+    Only in chapter mode. For each blueprint chapter whose "=== title ===" header is absent
+    from `script`, copy that chapter (header included) from the FIRST source that has it with
+    >= 60 spoken words (a proxy-error stub is skipped), then insert it at its blueprint
+    position: before the first present chapter that follows it, or after the last present
+    chapter that precedes it — but before any trailing closing (split_closing). A script with
+    no chapter headers gets the chapters before its closing. The script is rebuilt with
+    join_chapters; restored_titles is [] when nothing changed.
+    """
+    if not chapter_mode_on(blueprint):
+        return script, []
+    missing = missing_chapters(blueprint, script)
+    if not missing:
+        return script, []
+
+    source_maps = []
+    for source in sources:
+        if isinstance(source, str) and source.strip():
+            source_maps.append({t: x for t, x in split_by_chapters(source) if t})
+
+    chapter_texts = {}
+    for title in missing:
+        for mapping in source_maps:
+            text = mapping.get(title)
+            if text is not None and spoken_words(text) >= RESTORE_MIN_WORDS:
+                chapter_texts[title] = text
+                break
+    if not chapter_texts:
+        return script, []
+
+    parts = split_by_chapters(script or "")
+    preamble = parts[0][1] if parts and not parts[0][0] else ""
+    present = [[t, x] for t, x in parts if t]
+    titles = [(str(c.get("title", "") or "").strip(), c)
+              for c in (blueprint.get("chapters") or []) if isinstance(c, dict)]
+    order = {title: i for i, (title, _) in enumerate(titles) if title}
+
+    # Keep a trailing closing out of the way so an appended chapter lands before it.
+    closing_tail = ""
+    if present:
+        body, closing = split_closing(present[-1][1])
+        if closing:
+            present[-1][1] = body
+            closing_tail = closing
+    elif preamble:
+        body, closing = split_closing(preamble)
+        if closing:
+            preamble = body
+            closing_tail = closing
+
+    restored_titles = []
+    for title in missing:
+        text = chapter_texts.get(title)
+        if text is None:
+            continue
+        position = order.get(title)
+        if position is None:
+            continue
+        insert_at = len(present)
+        for idx, (present_title, _) in enumerate(present):
+            present_position = order.get(present_title)
+            if present_position is None or present_position > position:
+                insert_at = idx
+                break
+        present.insert(insert_at, [title, str(text).strip()])
+        restored_titles.append(title)
+    if not restored_titles:
+        return script, []
+
+    out = []
+    if preamble.strip():
+        out.append(preamble)
+    out.extend(text for _, text in present)
+    if closing_tail.strip():
+        out.append(closing_tail)
+    return join_chapters(out), restored_titles
+
+
 def clean_spoken_script(text: str) -> str:
     """The spoken script only.
 

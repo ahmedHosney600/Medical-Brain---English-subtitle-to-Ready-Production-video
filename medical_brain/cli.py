@@ -37,6 +37,16 @@ def with_heading(heading: str, content: str) -> str:
     return f"## {heading}\n\n{content}"
 
 
+_DOSSIER_CITATION_RE = re.compile(r"\[S\d+\]")
+
+
+def looks_like_dossier(text: str) -> bool:
+    """True when a source file is a research dossier rather than a plain subtitle: it
+    carries many [S#] citations (the research step's format). Such a file must take the
+    dossier-only truth checks (overclaims, every claim traced to a source)."""
+    return len(_DOSSIER_CITATION_RE.findall(text or "")) >= 10
+
+
 def stop_run(error, checkpoint_path: str = ""):
     """Ends the run with the fix, not a traceback. A saved checkpoint can be resumed."""
     kind = "" if isinstance(error, (ProviderUnavailable, ValueError)) else f"{type(error).__name__}: "
@@ -754,7 +764,12 @@ def main():
         with open(sys.argv[2], "r", encoding="utf-8") as f:
             video_analysis = f.read()
         print(f"📋 Video analysis loaded from: {sys.argv[2]}")
-    run_video(make_router(), original_script, video_analysis)
+    extra_state = {}
+    if looks_like_dossier(original_script):
+        print("📚 Source has [S#] citations — treating it as a research dossier")
+        extra_state = {"source_format": "Research dossier (verified facts with citations)",
+                       "research_dossier": True}
+    run_video(make_router(), original_script, video_analysis, extra_state=extra_state)
 
 
 if __name__ == "__main__":
