@@ -51,7 +51,9 @@ DEFAULT_PROVIDERS = {
                                      "i can't help with that right now",
                                      "i encountered an error doing what you asked",
                                      "could you try again",
-                                     "something went wrong"]},
+                                     "something went wrong",
+                                      "encountering an error",
+                                      "can i try something else"]},
     # free-gemini-api (github.com/kodelyx/free-gemini-api; local, free, OpenAI-compatible):
     # Gemini's web app through your own Google account cookies. /v1/models lists
     # gemini-3.8-flash(-thinking-*), gemini-4-argon(-thinking-*), gemini-3.1-pro(-thinking-*).
@@ -71,7 +73,9 @@ DEFAULT_PROVIDERS = {
                                       "i can't help with that right now",
                                       "i encountered an error doing what you asked",
                                       "could you try again",
-                                      "something went wrong"]},
+                                      "something went wrong",
+                                      "encountering an error",
+                                      "can i try something else"]},
     "claude": {"type": "claude", "label": "Claude", "transport": "claude_code", "effort": "high",
                "efforts": {}, "timeout_seconds": 900},
     # Google Antigravity's `agy` CLI as a plain text model. Uses the Google account

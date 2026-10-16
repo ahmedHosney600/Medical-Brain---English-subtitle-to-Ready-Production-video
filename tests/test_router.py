@@ -431,6 +431,12 @@ class CannedReplyTest(unittest.TestCase):
                            "could you try again", "something went wrong"):
                 self.assertIn(phrase, phrases)
 
+    def test_encountering_an_error_reply_raises_step_failed(self):
+        # Argon thinking-high answered a whole step with this in a benchmark run.
+        backend = self.backend("I seem to be encountering an error. Can I try something else for you?")
+        with self.assertRaises(StepFailed):
+            backend.call("s", "u", 0.2, 100)
+
     def test_error_reply_is_not_cached(self):
         c = config("geminiweb:gemini-3.8-flash",
                    geminiweb=dict(llm.DEFAULT_PROVIDERS["geminiweb"], api_key="k"))
