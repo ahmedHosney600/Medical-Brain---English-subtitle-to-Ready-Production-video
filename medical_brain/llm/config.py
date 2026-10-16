@@ -183,6 +183,18 @@ MODEL_TEMPLATES = {
                 "source_screener", "coverage_critic")},
         },
     },
+    # Gemini 4 Argon (free-gemini-api proxy, 127.0.0.1:8001) writes; agy Flash is the
+    # backup, on a different route, for when the proxy is down. Argon wrote the most
+    # vivid Arabic in the 2026-10-16 test but once added a source the research never
+    # used, so every judge (truth check included) stays on DeepSeek.
+    "argon-deepseek": {
+        "label": "Gemini 4 Argon writes + DeepSeek judges",
+        "description": "Livelier Arabic from Argon (needs the free-gemini-api proxy running); DeepSeek checks everything.",
+        "main_model": "freegemini:gemini-4-argon",
+        "single_model": "deepseek:deepseek-flash",
+        "backup_model": "agy:gemini-3.8-flash-medium",
+        "hybrid_routes": _all_routes("deepseek:deepseek-flash"),
+    },
 }
 
 

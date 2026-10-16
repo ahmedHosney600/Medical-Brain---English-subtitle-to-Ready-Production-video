@@ -265,14 +265,15 @@ def choose_and_test(config: dict, specs: list):
     test_and_repick(config, specs)
 
 
-# The three ready-made templates, keyed by the number typed at the prompt.
-TEMPLATE_CHOICES = {"1": "gemini", "2": "gemini-deepseek", "3": "gemini-claude"}
+# The ready-made templates, keyed by the number typed at the prompt.
+TEMPLATE_CHOICES = {"1": "gemini", "2": "gemini-deepseek", "3": "gemini-claude", "4": "argon-deepseek"}
 
 
 def select_template():
     """Ask which ready-made template to use. Returns its name, or None for the custom flow."""
     choice = ask("\nUse a ready template? 1) Gemini only  2) Gemini writes + DeepSeek judges (recommended)  "
-                 "3) Gemini writes + Claude judges  4) Custom choice [2]: ", "2")
+                 "3) Gemini writes + Claude judges  4) Gemini 4 Argon writes + DeepSeek judges  "
+                 "5) Custom choice [2]: ", "2")
     return TEMPLATE_CHOICES.get(choice)
 
 

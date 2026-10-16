@@ -90,6 +90,14 @@ class TemplateCliTest(unittest.TestCase):
         self.assertIn("Gemini only", text)
         self.assertIn("(recommended)", text)
 
+    def test_argon_template_writes_with_argon_and_judges_with_deepseek(self):
+        out = apply_template(BASE, "argon-deepseek")
+        self.assertEqual(out["main_model"], "freegemini:gemini-4-argon")
+        self.assertEqual(out["backup_model"], "agy:gemini-3.8-flash-medium")
+        self.assertEqual(set(out["hybrid_routes"].values()), {"deepseek:deepseek-flash"})
+        self.assertEqual(setup_models.TEMPLATE_CHOICES["4"], "argon-deepseek")
+        self.assertIsNone(setup_models.TEMPLATE_CHOICES.get("5"))  # 5 = custom choice
+
     def test_interactive_choice_2_applies_gemini_deepseek(self):
         saved = {}
         answers = iter(["2", "3"])
