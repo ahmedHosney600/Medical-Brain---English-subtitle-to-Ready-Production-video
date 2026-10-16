@@ -8,6 +8,7 @@ import unittest
 from medical_brain import llm
 from medical_brain.cli import with_heading
 from medical_brain.exports import workbook as ew
+from medical_brain.nodes import chapters
 from medical_brain.nodes.final_package import final_script_package, whiteboard_problems
 from medical_brain.nodes.quality import self_critique
 from medical_brain.nodes.script_writing import dialect_warmth_layer
@@ -125,6 +126,33 @@ class VerifiedScriptTest(unittest.TestCase):
         self.assertIn("ساعتك بتزن في إيدك", ew.production_script(out))
         self.assertNotIn("كتبه الموديل", out)
         self.assertNotIn("POLISH SUMMARY", out)
+
+
+class FilmingHeaderTest(unittest.TestCase):
+    """A single-script run can put production labels in a chapter header; the teleprompter
+    gets just the title, and a label with no title at all is dropped."""
+
+    def test_a_title_with_production_labels_becomes_a_plain_header(self):
+        script = ("=== [علاج تقلصات القدم بالليل] | Timestamp: [0:00 - 1:30] | Energy: [4] ===\n"
+                  "نص المخاطبة هنا.")
+        out = ew.filming_script(script)
+        self.assertIn("=== علاج تقلصات القدم بالليل ===", out)
+        self.assertNotIn("Timestamp", out)
+        self.assertNotIn("Energy", out)
+        self.assertEqual([t for t, _ in chapters.split_by_chapters(out)],
+                         ["علاج تقلصات القدم بالليل"])
+
+    def test_a_label_only_header_is_dropped(self):
+        script = ("=== DISCLAIMER | Timestamp: [0:00 - 0:05] ===\n"
+                  "نص المخاطبة هنا.")
+        out = ew.filming_script(script)
+        self.assertNotIn("DISCLAIMER", out)
+        self.assertNotIn("===", out)
+        self.assertEqual([t for t, _ in chapters.split_by_chapters(out) if t], [])
+
+    def test_a_plain_header_is_unchanged(self):
+        script = "=== الفصل الأول ===\nنص المخاطبة هنا."
+        self.assertEqual(ew.filming_script(script), script)
 
 
 class QualityLoopTest(unittest.TestCase):

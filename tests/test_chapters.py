@@ -1320,6 +1320,7 @@ class SingleChapterWrittenLengthGuardTest(unittest.TestCase):
         self.assertEqual(out["refined_script"], tight)
         text = " ".join(str(c.args[0]) for c in printed.call_args_list)
         self.assertIn("max of written 100 and plan 0", text)
+        self.assertNotIn("words vs planned", text)      # only the informative trim line stays
 
     def test_a_blueprint_plan_above_the_written_length_raises_the_reference(self):
         # written 100, plan = 2 min × 150 wpm = 300: 380 ≤ 1.35 × 300 = 405 → kept.
@@ -1531,6 +1532,80 @@ class MissingChaptersTest(unittest.TestCase):
         use(self, quality, "call_llm_json", FakeLLM(answer))
         quality.self_critique(base_state(blueprint=BP, refined_script=self.ALL))
         self.assertNotIn("CODE CHECK", captured["user"])
+
+
+# --------------------------------------------------------------------------
+# the frame disclaimer belongs in the opening, not the closing
+# --------------------------------------------------------------------------
+DISCLAIMER = "تنبيه طبي مهم: هذا الفيديو للتوعية فقط ولا يغني عن استشارة الطبيب."
+
+
+class DisclaimerMoveTest(unittest.TestCase):
+    def _body(self, n):
+        return " ".join(f"كلمة{i}" for i in range(n))
+
+    def test_a_late_disclaimer_moves_before_the_hook_separator(self):
+        script = ("=== الفصل الأول ===\n" + self._body(20) + "\n\n---\n\n"
+                  + self._body(180) + "\n\n" + DISCLAIMER + "\n\nخاتمة أخيرة.")
+        out, moved = chapters.move_disclaimer_early(script, DISCLAIMER)
+        self.assertTrue(moved)
+        self.assertLess(out.index(DISCLAIMER), out.index("---"))
+        self.assertLess(out.index(DISCLAIMER), out.index("كلمة50"))
+
+    def test_a_leading_metadata_block_separator_is_not_the_hook_end(self):
+        # A real script opened with "SCRIPT: … / Word Count: …" closed by its own "---";
+        # the disclaimer must land after the hook, not inside that metadata block.
+        hook = "بتكون نايم وفجأة السمانة تشد " + self._body(15)
+        script = ("SCRIPT: عنوان\nWord Count: 1,365\n\n---\n\n[HOOK]\n\n" + hook + "\n\n---\n\n"
+                  + self._body(180) + "\n\n" + DISCLAIMER + "\n\nخاتمة أخيرة.")
+        out, moved = chapters.move_disclaimer_early(script, DISCLAIMER)
+        self.assertTrue(moved)
+        self.assertLess(out.index(hook), out.index(DISCLAIMER))
+        self.assertLess(out.index(DISCLAIMER), out.index("كلمة50"))
+
+    def test_an_early_disclaimer_is_untouched(self):
+        script = "=== الفصل الأول ===\n" + DISCLAIMER + "\n\n" + self._body(200)
+        out, moved = chapters.move_disclaimer_early(script, DISCLAIMER)
+        self.assertFalse(moved)
+        self.assertEqual(out, script)
+
+    def test_a_disclaimer_not_found_is_untouched(self):
+        script = "=== الفصل الأول ===\n" + self._body(200)
+        out, moved = chapters.move_disclaimer_early(script, DISCLAIMER)
+        self.assertFalse(moved)
+        self.assertEqual(out, script)
+        self.assertFalse(chapters.has_disclaimer(script, DISCLAIMER))
+
+    def test_a_late_disclaimer_with_no_early_separator_goes_after_the_first_paragraph(self):
+        script = ("=== الفصل الأول ===\n" + self._body(20) + "\n\n"
+                  + self._body(180) + "\n\n" + DISCLAIMER)
+        out, moved = chapters.move_disclaimer_early(script, DISCLAIMER)
+        self.assertTrue(moved)
+        self.assertLess(out.index(DISCLAIMER), out.index("كلمة50"))
+
+
+class DisclaimerCodeCheckTest(unittest.TestCase):
+    def _run(self, script):
+        captured = {}
+
+        def answer(system, user, temperature=None, max_tokens=None, **kwargs):
+            captured["user"] = user
+            return ({"critique_grade": "A"}, "raw")
+
+        use(self, quality, "call_llm_json", FakeLLM(answer))
+        state = base_state(blueprint={}, refined_script=script,
+                           script_frame={"disclaimer": DISCLAIMER})
+        with mock.patch("builtins.print"):
+            quality.self_critique(state)
+        return captured["user"]
+
+    def test_flags_a_disclaimer_that_is_not_in_the_script(self):
+        self.assertIn("the chosen disclaimer is MISSING from the opening",
+                      self._run("نص بدون أي تنبيه طبي."))
+
+    def test_does_not_flag_a_disclaimer_that_is_present(self):
+        self.assertNotIn("the chosen disclaimer is MISSING",
+                         self._run("=== OPENING ===\n" + DISCLAIMER + "\n\nنص."))
 
 
 # --------------------------------------------------------------------------

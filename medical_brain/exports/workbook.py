@@ -565,6 +565,25 @@ _META_LINE = re.compile(r"^\s*[*_]*[A-Za-z][A-Za-z0-9 /&()\-]{1,40}[*_]*\s*:")
 _SUMMARY_HEAD = re.compile(r"^\s*[#*_ ]*[A-Z][A-Z /&\-]{2,40}(SUMMARY|NOTES|LOG|CHANGES)[*_ ]*:?\s*[*_]*\s*$")
 
 
+def _filming_headers(lines: list) -> list:
+    """Single-script runs sometimes come back with production labels inside a chapter
+    header ("=== [title] | Timestamp: [0:00 - 1:30] | Energy: [4] ==="). The teleprompter
+    keeps just "=== title ==="; a header that is ONLY a label ("=== DISCLAIMER | … ===",
+    see chapters.clean_spoken_script) is dropped. A plain "=== title ===" is left alone."""
+    from ..nodes.chapters import _HEADER_RE, _PRODUCTION_LABEL_RE   # avoids an import cycle
+    out = []
+    for line in lines:
+        header = _HEADER_RE.match(line)
+        if not header:
+            out.append(line)
+            continue
+        title = header.group(1).split("|")[0].replace("[", "").replace("]", "").strip()
+        if not title or _PRODUCTION_LABEL_RE.search(title):
+            continue                                # a production label, not a chapter
+        out.append(f"=== {title} ===")
+    return out
+
+
 def filming_script(script: str) -> str:
     """The script the presenter reads: script_refinement's output without its
     metadata block (title, word count, self-given scores) and its closing summary."""
@@ -580,6 +599,9 @@ def filming_script(script: str) -> str:
         if _SUMMARY_HEAD.match(line):
             lines = lines[:i]
             break
+    # Production labels that leaked into a chapter header are rewritten so
+    # split_by_chapters and the spoken-word count still see real headers.
+    lines = _filming_headers(lines)
     # A part heading inside the script would split the document; keep it as bold text.
     lines = [f"**{re.sub(r'^#+\s*', '', l).strip()}**" if _is_part_heading(l) else l for l in lines]
     return _strip_rules("\n".join(lines))

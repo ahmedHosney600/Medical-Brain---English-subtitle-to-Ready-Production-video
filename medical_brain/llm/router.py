@@ -152,16 +152,22 @@ class LLMRouter:
     ROUTED_RETRY_WAITS = (10,)      # seconds before the routed model's one retry
 
     def _ask_routed_with_retry(self, node, spec, system_prompt, user_prompt, temperature, max_tokens):
-        """Ask the routed model; a generic failure gets ONE retry after a short wait before
-        the step falls back to the main model. A transient broken pipe must not hand a
-        judge's job back to the writer model (in a real run it made the writer judge its own
-        script). ProviderUnavailable and a cut-off answer are not retried. Returns
-        (answer, None) on success, (None, last_error) when the caller should fall back."""
+        """Ask the routed model; a generic failure OR a cut-off answer gets ONE retry after
+        a short wait before the step falls back to the main model. A transient broken pipe
+        must not hand a judge's job back to the writer model (in a real run it made the writer
+        judge its own script); a cut-off answer is usually just this call's own token cap, so
+        the same retry applies (a judge that hit max_tokens once ran on the writer model).
+        ProviderUnavailable is not retried. Returns (answer, None) on success, (None, last_error)
+        when the caller should fall back; a cut-off answer is returned in preference to an
+        ordinary error so the router's cut_text fallback still has the text."""
         import time
+        last = last_cut = None
         try:
             return self._ask(spec, system_prompt, user_prompt, temperature, max_tokens), None
-        except (ProviderUnavailable, AnswerCutOff) as e:
+        except ProviderUnavailable as e:
             return None, e
+        except AnswerCutOff as e:
+            last = last_cut = e
         except Exception as e:
             last = e
         for wait in self.ROUTED_RETRY_WAITS:
@@ -169,11 +175,13 @@ class LLMRouter:
             time.sleep(wait)
             try:
                 return self._ask(spec, system_prompt, user_prompt, temperature, max_tokens), None
-            except (ProviderUnavailable, AnswerCutOff) as e:
+            except ProviderUnavailable as e:
                 return None, e
             except Exception as e:
                 last = e
-        return None, last
+                if isinstance(e, AnswerCutOff):
+                    last_cut = e
+        return None, last_cut or last
 
     def _ask_retrying(self, node, spec, system_prompt, user_prompt, temperature, max_tokens) -> str:
         """The main model gets a couple more tries for transient failures (an empty

@@ -200,6 +200,44 @@ class RoutedRetryTest(unittest.TestCase):
         self.assertEqual(run_step(router, "judge_step"), "MAIN")
         self.assertEqual(seen, {"routed": 2, "main": 1})
 
+    def _cut_router(self, cut_times, main_cut=False):
+        seen = {"routed": 0, "main": 0}
+
+        class Fake:
+            def __init__(self, spec):
+                self.spec = spec
+
+            def call(self, *a):
+                if self.spec == "j:judge":
+                    seen["routed"] += 1
+                    if seen["routed"] <= cut_times:
+                        raise llm.AnswerCutOff("hit max_tokens", f"ROUTED_CUT_{seen['routed']}")
+                    return "ROUTED"
+                seen["main"] += 1
+                if main_cut:
+                    raise llm.AnswerCutOff("hit max_tokens", "MAIN_CUT")
+                return "MAIN"
+
+        c = config("w:writer", routes={"judge_step": "j:judge"})
+        router = llm.LLMRouter(c, provider="hybrid")
+        router._backends = {"w:writer": Fake("w:writer"), "j:judge": Fake("j:judge")}
+        return router, seen
+
+    def test_routed_cut_off_is_retried_once_then_succeeds(self):
+        router, seen = self._cut_router(cut_times=1)
+        self.assertEqual(run_step(router, "judge_step"), "ROUTED")
+        self.assertEqual(seen, {"routed": 2, "main": 0})
+
+    def test_routed_cut_off_twice_falls_back_to_main(self):
+        router, seen = self._cut_router(cut_times=2)
+        self.assertEqual(run_step(router, "judge_step"), "MAIN")
+        self.assertEqual(seen, {"routed": 2, "main": 1})
+
+    def test_the_cut_off_text_survives_when_every_model_is_cut(self):
+        router, seen = self._cut_router(cut_times=2, main_cut=True)
+        self.assertEqual(run_step(router, "judge_step"), "ROUTED_CUT_2")
+        self.assertEqual(seen, {"routed": 2, "main": 1})
+
 
 
 class FreeGeminiProviderTest(unittest.TestCase):

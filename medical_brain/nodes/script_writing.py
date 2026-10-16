@@ -691,8 +691,9 @@ DIALECT_GROWTH_REVISING = 1.03
 
 def repair_script(state: PipelineState, script: str, *sources: str) -> str:
     """Repair a script by code before it is trusted downstream: put back any blueprint
-    chapter a pass dropped (chapter mode) and keep only one closing sign-off. `sources`
-    are fallback texts the chapter may be copied from, in priority order."""
+    chapter a pass dropped (chapter mode), keep only one closing sign-off, and move a
+    frame disclaimer that drifted to the end back to the opening. `sources` are fallback
+    texts the chapter may be copied from, in priority order."""
     blueprint = (state or {}).get("blueprint") or {}
     script, restored = chapters.restore_missing_chapters(blueprint, script or "", *sources)
     if restored:
@@ -700,6 +701,14 @@ def repair_script(state: PipelineState, script: str, *sources: str) -> str:
     script, removed = chapters.dedupe_signoffs(script)
     if removed:
         print(f"  🩹 removed {removed} duplicate sign-off paragraph(s)")
+    # The chosen frame's disclaimer belongs upfront (the settings ask for rigorous
+    # disclaimers before the content); a later pass sometimes carries it to the closing.
+    frame = (state or {}).get("script_frame") or {}
+    disclaimer = str(frame.get("disclaimer", "") or "") if isinstance(frame, dict) else ""
+    if disclaimer.strip():
+        script, moved = chapters.move_disclaimer_early(script, disclaimer)
+        if moved:
+            print("  🩹 moved the disclaimer back to the opening")
     return script
 
 
@@ -994,11 +1003,14 @@ def _total_length_line(blueprint: dict, strict: bool = True) -> str:
 WHOLE_TIGHTEN_ABOVE = 1.15
 
 
-def _soft_tighten_whole_script(script: str, target: int) -> str:
+def _soft_tighten_whole_script(script: str, target: int, quiet: bool = False) -> str:
     """ONE cut-only pass in soft mode (no user duration): trim real padding only when the
-    assembled script runs far over its own plan. Never squeezes content toward the number."""
+    assembled script runs far over its own plan. Never squeezes content toward the number.
+    quiet=True suppresses the generic "vs planned" line when the caller already printed a
+    more informative one (the written vs plan breakdown in _soft_trim_if_padded)."""
     current_words = chapters.spoken_words(script)
-    print(f"  ✂️ whole script: {current_words} words vs planned {target} — trimming padding")
+    if not quiet:
+        print(f"  ✂️ whole script: {current_words} words vs planned {target} — trimming padding")
     user_prompt = (f"TRIM this complete script: remove repetition, padding and side tangents only — keep "
                    "the opening hook, the disclaimer, every medical point and red flag, the call to "
                    "action and the sign-off, and all [cues]/stage directions. Aim for about "
@@ -1117,7 +1129,7 @@ def _soft_trim_if_padded(state: PipelineState, blueprint: dict, script: str) -> 
         return script
     print(f"  ✂️ whole script: {before} words vs {reference} (max of written {written} "
           f"and plan {plan}) — trimming padding")
-    return _soft_tighten_whole_script(script, reference)
+    return _soft_tighten_whole_script(script, reference, quiet=True)
 
 
 def script_refinement(state: PipelineState) -> dict:

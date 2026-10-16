@@ -520,6 +520,96 @@ def spoken_words(text: str) -> int:
     return len(spoken_text("\n".join(lines)).split())
 
 
+# The chosen frame disclaimer belongs in the opening. A later pass sometimes carries it
+# to the closing; code moves a drifted paragraph back (and self_critique flags one that
+# cannot be found at all).
+DISCLAIMER_JACCARD = 0.4
+DISCLAIMER_EARLY_FRACTION = 0.3
+
+
+def _paragraph_spans(text: str) -> list:
+    """[(start_line, end_line)] for each non-blank paragraph (a run of non-blank lines)."""
+    lines = (text or "").split("\n")
+    spans, i = [], 0
+    while i < len(lines):
+        if not lines[i].strip():
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and lines[j].strip():
+            j += 1
+        spans.append((i, j))
+        i = j
+    return spans
+
+
+def _best_disclaimer(script: str, disclaimer: str):
+    """(spans, lines, index, start_word) for the paragraph that best matches the frame
+    disclaimer (word-set Jaccard >= DISCLAIMER_JACCARD; cue and '---' lines ignored).
+    index is None when no paragraph matches; start_word is the spoken words before it."""
+    lines = (script or "").split("\n")
+    spans = _paragraph_spans(script)
+    target = _word_set(disclaimer)
+    best, best_score, best_start, words = None, 0.0, 0, 0
+    for index, (start, end) in enumerate(spans):
+        score = _jaccard(target, _word_set("\n".join(lines[start:end])))
+        if score > best_score:
+            best, best_score, best_start = index, score, words
+        words += spoken_words("\n".join(lines[start:end]))
+    if best is None or best_score < DISCLAIMER_JACCARD:
+        return spans, lines, None, 0
+    return spans, lines, best, best_start
+
+
+def has_disclaimer(script: str, disclaimer: str) -> bool:
+    """True when some paragraph matches the frame disclaimer (word-set Jaccard >= 0.4)."""
+    return _best_disclaimer(script, disclaimer)[2] is not None
+
+
+def _is_spoken_line(line: str) -> bool:
+    """A line the presenter says: Arabic text that is not a [cue], `cue`, *(stage
+    direction)*, header or "Key: value" metadata line."""
+    s = (line or "").strip().strip('"“”')
+    if not s or s.startswith(("[", "`", "*(", "(", "#", "===")) or s == "---":
+        return False
+    if re.match(r"^[A-Za-z][A-Za-z /&()\-]{1,40}:", s):
+        return False
+    return bool(re.search(r"[؀-ۿ]", s))
+
+
+def move_disclaimer_early(script: str, disclaimer: str) -> tuple:
+    """Move a drifted frame disclaimer back to the opening.
+
+    The paragraph whose word set best matches the disclaimer (Jaccard >= 0.4) is moved
+    to just before the hook's "---" line when that line lies in the first 30% of the
+    script's spoken words, otherwise to just after the first paragraph. Returns
+    (script, moved): unchanged when the disclaimer is empty, still early, or not found."""
+    spans, lines, index, start_word = _best_disclaimer(script, disclaimer)
+    if index is None:
+        return script, False
+    total = max(1, spoken_words(script))
+    if start_word <= total * DISCLAIMER_EARLY_FRACTION:
+        return script, False
+    start, end = spans[index]
+    paragraph = "\n".join(lines[start:end])
+    del lines[start:end]
+    # The hook ends at the first "---" AFTER the first spoken line: a script can open with
+    # a metadata block ("SCRIPT: …", "Word Count: …") closed by its own "---".
+    first_spoken = next((k for k, line in enumerate(lines) if _is_spoken_line(line)), 0)
+    separator = next((k for k, line in enumerate(lines)
+                      if k > first_spoken and line.strip() == "---"), None)
+    early = separator is not None and \
+        spoken_words("\n".join(lines[:separator])) <= total * DISCLAIMER_EARLY_FRACTION
+    if early:
+        insert = ["", paragraph, ""] if separator > 0 and lines[separator - 1].strip() else [paragraph, ""]
+        lines[separator:separator] = insert
+    else:
+        spans_after = _paragraph_spans("\n".join(lines))
+        first_end = spans_after[0][1] if spans_after else len(lines)
+        lines[first_end:first_end] = ["", paragraph]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip("\n"), True
+
+
 def too_short_rewrite(new_text: str, reference_words: int, floor: float = 0.4) -> bool:
     """True when an LLM answer that REPLACES a chapter/segment came back near-empty:
     the reference is long enough to judge (>= 60 words) and the new text is below

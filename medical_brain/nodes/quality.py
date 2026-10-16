@@ -418,6 +418,17 @@ Output ONLY the JSON object. Include the full revised script."""
                         f"after the code removed the duplicates: {named}. The script must end with "
                         "ONE sign-off (keep the last closing only, delete the others); grade cannot be PASS.")
 
+    # The chosen frame disclaimer must sit in the opening (code moves a drifted one back in
+    # repair_script); when it cannot be found at all, the judge must not pass the script.
+    frame = state.get("script_frame") or {}
+    disclaimer = str(frame.get("disclaimer", "") or "") if isinstance(frame, dict) else ""
+    if disclaimer.strip() and not chapters.has_disclaimer(state.get("refined_script", ""), disclaimer):
+        print("  ⚠️ the frame disclaimer is missing from the script")
+        user_prompt += ("\n\nCODE CHECK — the chosen disclaimer is MISSING from the opening: the "
+                        "disclaimer the frame picked is not in the script at all. The revised script "
+                        "must put that disclaimer back at the very start, before the content; "
+                        "grade cannot be PASS.")
+
     try:
         data, response = call_llm_json(system_prompt, user_prompt, temperature=0.6, max_tokens=12000,
                                        required=[("critique_grade", "grade"), ("dialect_authenticity_score", "dialect_score"), ("warmth_score", "warmth"), ("fidelity_score", "fidelity"), ("medical_accuracy_pass", "medical_pass")])

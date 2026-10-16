@@ -14,6 +14,21 @@ from . import chapters
 MAX_FINAL_PACKAGE_RETRIES = 2
 
 
+def _issue_weight(issues: list) -> int:
+    """How bad an attempt actually was: a missing whole section counts far more than a
+    fistful of bad cues, so a retry that fixed the cues still beats the broken original
+    (a missing section used to tie with one bad cue, keeping the worse document)."""
+    total = 0
+    for issue in issues or []:
+        text = str(issue)
+        if text.startswith("MISSING") or "absent entirely" in text:
+            total += 100
+            continue
+        match = re.search(r"\((\d+)\)", text)
+        total += int(match.group(1)) if match else 1
+    return total
+
+
 # --------------------------------------------------------------------------
 # honest numbers: the Word Count row and the whole QA RESULTS table are built by code
 # from the real judge results, so the workbook can never claim a grade nobody gave.
@@ -643,8 +658,9 @@ RULES:
         part2 = ew.fill_broll_rows(part2, approved_broll)
         part2 = _repair_cues(part2, filmed_script, "Part2")
         issues_2 = _audit_part2(part2, filmed_script)
-        if best is None or len(issues_2) < best[0]:
-            best = (len(issues_2), part2, issues_2)
+        weight = _issue_weight(issues_2)
+        if best is None or weight < best[0]:
+            best = (weight, part2, issues_2)
         if not issues_2:
             print(f"  [final_package Part2] OK on attempt {attempt + 1}")
             break
@@ -672,8 +688,9 @@ def _part2_single_call(system_prompt_2: str, base_user_prompt_2: str, approved_p
         part2 = ew.fill_broll_rows(part2, approved_broll)
         part2 = _repair_cues(part2, filmed_script, "Part2")
         issues_2 = _audit_part2(part2, filmed_script)
-        if best_2 is None or len(issues_2) < best_2[0]:
-            best_2 = (len(issues_2), part2, issues_2)
+        weight = _issue_weight(issues_2)
+        if best_2 is None or weight < best_2[0]:
+            best_2 = (weight, part2, issues_2)
         if not issues_2:
             print(f"  [final_package Part2] OK on attempt {attempt + 1}")
             break
@@ -682,7 +699,9 @@ def _part2_single_call(system_prompt_2: str, base_user_prompt_2: str, approved_p
         for i, issue in enumerate(issues_2, 1):
             correction_note_2 += f"  {i}. {issue}\n"
         correction_note_2 += "Regenerate the COMPLETE output fixing every issue above."
-    return part2, best_2
+    # The document must be the BEST attempt's text, not the last one: they can differ
+    # (attempt 3's text used to ship with attempt 1's issues printed as the warning).
+    return best_2[1], best_2
 
 
 def final_script_package(state: PipelineState) -> dict:
@@ -745,7 +764,7 @@ AVOID LIST: {state.get("avoid_list", "")}
 CRITICAL: Copy the APPROVED TITLE OPTIONS and APPROVED THUMBNAIL CONCEPTS through in full, including every AI Image Generation Prompt paragraph in full. Do NOT abbreviate, reword, or say "same as above" — these were already written and quality-gated upstream."""
 
     part1 = ""
-    best_1 = None  # (issue_count, text): a retry can come back worse, so keep the best
+    best_1 = None  # (issue_weight, text, issues): a retry can come back worse
     correction_note_1 = ""
     for attempt in range(MAX_FINAL_PACKAGE_RETRIES + 1):
         user_prompt_1 = base_user_prompt_1
@@ -757,8 +776,9 @@ CRITICAL: Copy the APPROVED TITLE OPTIONS and APPROVED THUMBNAIL CONCEPTS throug
         part1 = _repair_cues(part1, ew.production_script(part1), "Part1")
         issues_1 = _audit_part1(part1, script_is_verified=bool(verified_script),
                                 blueprint=state.get("blueprint"))
-        if best_1 is None or len(issues_1) < best_1[0]:
-            best_1 = (len(issues_1), part1, issues_1)
+        weight_1 = _issue_weight(issues_1)
+        if best_1 is None or weight_1 < best_1[0]:
+            best_1 = (weight_1, part1, issues_1)
         if not issues_1:
             print(f"  [final_package Part1] OK on attempt {attempt + 1}")
             break
