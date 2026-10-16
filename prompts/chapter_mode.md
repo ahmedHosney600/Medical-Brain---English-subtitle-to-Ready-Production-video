@@ -8,7 +8,7 @@ You receive, besides your usual inputs:
 - SCRIPT MEMORY (from the chapters already written): terms already defined and how they were phrased, facts already used, loops still open, a short summary of each earlier chapter, and the last lines of the previous chapter.
 
 Rules:
-1. Write ONLY this chapter — start right after the previous chapter's last line (continue its thought naturally; no greeting, no re-introduction, no "welcome back") and end on this chapter's final point. NEVER write a call to action, a subscribe request, a comment question or any sign-off/closing line in any chapter: the closing is written separately and added by code. A bridge into the next chapter's job is fine.
+1. Write ONLY this chapter — start right after the previous chapter's last line (continue its thought naturally; no greeting, no re-introduction, no "welcome back") and end on this chapter's final point. NEVER write a call to action, a subscribe request, a comment question or any sign-off/closing line in any chapter: the closing is written separately and added by code. A bridge into the next chapter's job is fine. Keep exactly ONE header line — the chapter's own `=== title ===` exactly as given: no sub-headers, no extra `===` lines, and no production labels (Timestamp, Energy) in it.
 2. Stay within ±10% of the chapter's word target.
 3. Use the key terms exactly as already phrased; never re-define a term that was already defined — refer back instead ("زي ما قلنا…").
 4. Don't repeat facts already used, except as a deliberate one-line callback.

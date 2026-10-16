@@ -97,7 +97,19 @@ class TemplateCliTest(unittest.TestCase):
         self.assertEqual(out["backup_model"], "agy:gemini-3.8-flash-medium")
         self.assertEqual(set(out["hybrid_routes"].values()), {"deepseek:deepseek-flash"})
         self.assertEqual(setup_models.TEMPLATE_CHOICES["4"], "argon-deepseek")
-        self.assertIsNone(setup_models.TEMPLATE_CHOICES.get("6"))  # 6 = custom choice
+        self.assertIsNone(setup_models.TEMPLATE_CHOICES.get("7"))  # 7 = custom choice
+
+    def test_deepseek_writes_template(self):
+        out = apply_template(BASE, "deepseek-writes")
+        routes = out["hybrid_routes"]
+        self.assertEqual(out["main_model"], "deepseek:deepseek-flash")      # writing steps run on main
+        self.assertNotIn("body_restructurer", routes)
+        self.assertNotIn("dialect_warmth_layer", routes)
+        self.assertEqual(routes["self_critique"], "agy:gemini-3.8-flash-high")   # judge from another family
+        self.assertEqual(routes["medical_truth_verifier"], "deepseek:deepseek-flash")
+        self.assertEqual(routes["strategy_planner"], "agy:gemini-3.8-flash-medium")
+        self.assertFalse(any(v.startswith("freegemini:") for v in routes.values()))
+        self.assertEqual(setup_models.TEMPLATE_CHOICES["6"], "deepseek-writes")
 
     def test_best_mix_routes_each_step_to_its_benchmark_winner(self):
         out = apply_template(BASE, "best-mix")

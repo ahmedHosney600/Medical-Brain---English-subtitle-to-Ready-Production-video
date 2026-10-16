@@ -242,6 +242,33 @@ MODEL_TEMPLATES = {
                 "fact_verifier", "coverage_critic", "eval_judge", "expert_brief")},
         },
     },
+    # DeepSeek writes: in the 2026-10-17 blind vividness panel (Claude, DeepSeek, Argon
+    # thinking-low and agy Flash high judging 7 writers' versions of the same chapters)
+    # every judge ranked DeepSeek's Egyptian Arabic first (9.3/10 vs 7.5 for the next).
+    # It also checks facts: in the best-mix run it caught two invented specifics that an
+    # Argon judge passed 10/10. The quality judge is agy Flash high, a different family
+    # from the writer; agy plans (most consistent plans), extracts facts and designs the
+    # visuals and titles (best in the per-step benchmark). Argon is not used.
+    "deepseek-writes": {
+        "label": "DeepSeek writes + agy plans/designs + agy judges quality",
+        "description": "Most vivid Egyptian Arabic (blind panel winner); DeepSeek also fact-checks. Paid (~$0.5-1 per video).",
+        "main_model": "deepseek:deepseek-flash",
+        "single_model": "deepseek:deepseek-flash",
+        "backup_model": "agy:gemini-3.8-flash-medium",
+        "hybrid_routes": {
+            **{n: "agy:gemini-3.8-flash-high" for n in
+               ("source_script_analyzer", "self_critique", "packaging_creative_director", "packaging_generator",
+                "transition_designer", "text_animation_overlay_designer", "broll_prompt_generator",
+                "shorts_quality_gate")},
+            **{n: "agy:gemini-3.8-flash-medium" for n in
+               ("strategy_planner", "seo_keyword_researcher", "final_script_package",
+                "shorts_moment_identifier", "shorts_script_extractor", "shorts_caption_packager")},
+            **{n: "deepseek:deepseek-flash" for n in
+               ("medical_truth_verifier", "fidelity_auditor", "packaging_honesty_ctr_auditor",
+                "production_quality_critique", "source_screener", "fact_verifier", "coverage_critic",
+                "eval_judge", "expert_brief")},
+        },
+    },
 }
 
 
