@@ -39,8 +39,9 @@ class ApplyTemplateTest(unittest.TestCase):
         self.assertEqual(len(JUDGE_ROUTES), 10)
         for name, template in MODEL_TEMPLATES.items():
             with self.subTest(name=name):
-                self.assertEqual(set(template["hybrid_routes"]), set(JUDGE_ROUTES))
-                self.assertEqual(set(apply_template(BASE, name)["hybrid_routes"]), set(JUDGE_ROUTES))
+                # best-mix also routes writing steps, so every judge must be covered (a superset)
+                self.assertLessEqual(set(JUDGE_ROUTES), set(template["hybrid_routes"]))
+                self.assertLessEqual(set(JUDGE_ROUTES), set(apply_template(BASE, name)["hybrid_routes"]))
 
     def test_unknown_name_raises(self):
         with self.assertRaises(ValueError):
@@ -96,7 +97,24 @@ class TemplateCliTest(unittest.TestCase):
         self.assertEqual(out["backup_model"], "agy:gemini-3.8-flash-medium")
         self.assertEqual(set(out["hybrid_routes"].values()), {"deepseek:deepseek-flash"})
         self.assertEqual(setup_models.TEMPLATE_CHOICES["4"], "argon-deepseek")
-        self.assertIsNone(setup_models.TEMPLATE_CHOICES.get("5"))  # 5 = custom choice
+        self.assertIsNone(setup_models.TEMPLATE_CHOICES.get("6"))  # 6 = custom choice
+
+    def test_best_mix_routes_each_step_to_its_benchmark_winner(self):
+        out = apply_template(BASE, "best-mix")
+        routes = out["hybrid_routes"]
+        self.assertEqual(out["main_model"], "agy:gemini-3.8-flash-medium")
+        self.assertEqual(out["backup_model"], "freegemini:gemini-4-argon")
+        self.assertEqual(routes["body_restructurer"], "agy:gemini-3.8-flash-high")
+        self.assertEqual(routes["medical_truth_verifier"], "freegemini:gemini-4-argon-thinking-low")
+        self.assertEqual(routes["self_critique"], "freegemini:gemini-4-argon-thinking-low")
+        self.assertEqual(routes["final_script_package"], "freegemini:gemini-4-argon")
+        self.assertEqual(routes["production_quality_critique"], "deepseek:deepseek-flash")
+        self.assertNotIn("strategy_planner", routes)        # planner and dialect run on the main model
+        self.assertNotIn("dialect_warmth_layer", routes)
+        self.assertEqual(setup_models.TEMPLATE_CHOICES["5"], "best-mix")
+        # no judge runs on an Argon thinking level that passed the flawed script
+        self.assertFalse({"freegemini:gemini-4-argon-thinking-medium",
+                          "freegemini:gemini-4-argon-thinking-high"} & set(routes.values()))
 
     def test_interactive_choice_2_applies_gemini_deepseek(self):
         saved = {}

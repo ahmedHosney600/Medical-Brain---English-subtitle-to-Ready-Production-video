@@ -213,6 +213,35 @@ MODEL_TEMPLATES = {
         "backup_model": "agy:gemini-3.8-flash-medium",
         "hybrid_routes": _all_routes("deepseek:deepseek-flash"),
     },
+    # Each step on the model that won it in the 2026-10-17 per-step benchmark (same input,
+    # 7 models): agy Flash high wrote the most complete chapters (37/37 facts) and the best
+    # visuals and titles, agy Flash medium planned the most consistently and kept the
+    # dialect pass at full length (Argon cut it 14-22%), plain/thinking-low Argon caught
+    # all 5 planted errors without false alarms and assembled the final document cleanly
+    # (Argon thinking-medium/high passed the flawed script 10/10, so they judge nothing),
+    # DeepSeek grades packaging and production. Unrouted steps run on the main model.
+    "best-mix": {
+        "label": "Best model per step (agy + Argon + DeepSeek)",
+        "description": "Benchmark winners per step; needs agy, the free-gemini-api proxy and a DeepSeek key.",
+        "main_model": "agy:gemini-3.8-flash-medium",
+        "single_model": "agy:gemini-3.8-flash-high",
+        "backup_model": "freegemini:gemini-4-argon",
+        "hybrid_routes": {
+            **{n: "agy:gemini-3.8-flash-high" for n in
+               ("source_script_analyzer", "hook_writer", "body_restructurer", "cta_retention_writer",
+                "packaging_creative_director", "packaging_generator", "transition_designer",
+                "text_animation_overlay_designer", "broll_prompt_generator")},
+            **{n: "freegemini:gemini-4-argon-thinking-low" for n in
+               ("medical_truth_verifier", "fidelity_auditor", "self_critique",
+                "translation_fidelity_auditor", "shorts_quality_gate")},
+            **{n: "freegemini:gemini-4-argon" for n in
+               ("seo_keyword_researcher", "final_script_package", "shorts_moment_identifier",
+                "shorts_script_extractor", "shorts_caption_packager")},
+            **{n: "deepseek:deepseek-flash" for n in
+               ("packaging_honesty_ctr_auditor", "production_quality_critique", "source_screener",
+                "fact_verifier", "coverage_critic", "eval_judge", "expert_brief")},
+        },
+    },
 }
 
 
