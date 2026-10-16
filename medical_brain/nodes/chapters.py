@@ -116,6 +116,22 @@ def chapter_mode_on(blueprint) -> bool:
     return len(chapters) >= 2 and words >= CHAPTER_MODE_MIN_WORDS
 
 
+def missing_chapters(blueprint, script: str) -> list:
+    """Titles of blueprint chapters whose "=== <title> ===" header is not in `script`
+    (the format split_by_chapters/join_chapters use). [] when not chapter mode."""
+    if not chapter_mode_on(blueprint):
+        return []
+    present = {title for title, _ in split_by_chapters(script or "") if title}
+    missing = []
+    for chapter in (blueprint.get("chapters") or []):
+        if not isinstance(chapter, dict):
+            continue
+        title = str(chapter.get("title", "") or "").strip()
+        if title and title not in present:
+            missing.append(title)
+    return missing
+
+
 def blueprint_signature(blueprint) -> str:
     """A stable key for a blueprint (so a checkpoint is only reused for the same plan)."""
     try:
@@ -502,6 +518,20 @@ def spoken_words(text: str) -> int:
     lines = [line for line in (text or "").split("\n")
              if not _HEADER_RE.match(line) and not _MD_HEADING_RE.match(line)]
     return len(spoken_text("\n".join(lines)).split())
+
+
+def too_short_rewrite(new_text: str, reference_words: int, floor: float = 0.4) -> bool:
+    """True when an LLM answer that REPLACES a chapter/segment came back near-empty:
+    the reference is long enough to judge (>= 60 words) and the new text is below
+    `floor` × the reference. A canned proxy error ("I encountered an error…") trips
+    this, so the caller can retry or keep the old text instead of shipping the stub."""
+    try:
+        reference_words = int(float(reference_words or 0))
+    except (TypeError, ValueError):
+        return False
+    if reference_words < 60:
+        return False
+    return spoken_words(new_text) < reference_words * floor
 
 
 def clean_spoken_script(text: str) -> str:

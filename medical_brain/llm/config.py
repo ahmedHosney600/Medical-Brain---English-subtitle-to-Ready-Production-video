@@ -48,7 +48,10 @@ DEFAULT_PROVIDERS = {
                   "canned_replies": ["i'm having a hard time fulfilling your request",
                                      "i'm a text-based ai and can't help with that",
                                      "i'm just a language model, so i can't help you with that",
-                                     "i can't help with that right now"]},
+                                     "i can't help with that right now",
+                                     "i encountered an error doing what you asked",
+                                     "could you try again",
+                                     "something went wrong"]},
     # free-gemini-api (github.com/kodelyx/free-gemini-api; local, free, OpenAI-compatible):
     # Gemini's web app through your own Google account cookies. /v1/models lists
     # gemini-3.8-flash(-thinking-*), gemini-4-argon(-thinking-*), gemini-3.1-pro(-thinking-*).
@@ -65,7 +68,10 @@ DEFAULT_PROVIDERS = {
                    "canned_replies": ["i'm having a hard time fulfilling your request",
                                       "i'm a text-based ai and can't help with that",
                                       "i'm just a language model, so i can't help you with that",
-                                      "i can't help with that right now"]},
+                                      "i can't help with that right now",
+                                      "i encountered an error doing what you asked",
+                                      "could you try again",
+                                      "something went wrong"]},
     "claude": {"type": "claude", "label": "Claude", "transport": "claude_code", "effort": "high",
                "efforts": {}, "timeout_seconds": 900},
     # Google Antigravity's `agy` CLI as a plain text model. Uses the Google account

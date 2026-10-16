@@ -349,10 +349,31 @@ def _body_chapter_mode(state: PipelineState, base_system: str, blueprint: dict) 
             previous_version = prev_by_key.get(cid) or ("" if reuse else prev_drafts.get(cid, ""))
             user_prompt = _chapter_body_prompt(state, chapter, memory, previous_chapter_text,
                                                previous_version, state.get("translation_report", ""))
+            planned = _chapter_words(chapter)
             response = call_llm(system_prompt, user_prompt, temperature=0.75,
-                                max_tokens=chapters.budget_for_words(_chapter_words(chapter)))
+                                max_tokens=chapters.budget_for_words(planned))
             text, mem = chapters.split_memory(response)
             text = _ensure_header(text, title)
+            # A canned proxy error (or any near-empty answer) must never replace the chapter.
+            if chapters.too_short_rewrite(text, planned):
+                print(f"  🗣️ chapter {cid}: the writer returned only {chapters.spoken_words(text)} of "
+                      f"{planned} words — asking again")
+                retry = call_llm(system_prompt, user_prompt, temperature=0.5,
+                                 max_tokens=chapters.budget_for_words(planned))
+                retry_text, retry_mem = chapters.split_memory(retry)
+                retry_text = _ensure_header(retry_text, title)
+                if not chapters.too_short_rewrite(retry_text, planned):
+                    text, mem = retry_text, retry_mem
+                elif previous_version:
+                    print(f"  ⚠️ chapter {cid}: the writer returned only "
+                          f"{chapters.spoken_words(retry_text)} words for a {planned}-word chapter; "
+                          "keeping its previous version")
+                    text, mem = previous_version, mem_by.get(cid, {})
+                else:
+                    if chapters.spoken_words(retry_text) >= chapters.spoken_words(text):
+                        text = retry_text
+                    print(f"  ⚠️ chapter {cid}: the writer returned only "
+                          f"{chapters.spoken_words(text)} words for a {planned}-word chapter")
             text, mem = _tighten_chapter(state, system_prompt, chapter, text, mem)
             drafts[cid] = text
         mem_by[cid] = mem
@@ -668,6 +689,16 @@ def _dialect_chapter_mode(state: PipelineState, system_prompt: str, revising: bo
         answer = call_llm(system_prompt, prompt, temperature=0.75, max_tokens=budget)
         script, notes = chapters.split_segment_answer(answer)
         original = chapters.spoken_words(text)
+        # A canned proxy error (or any near-empty answer) must never replace the segment.
+        if chapters.too_short_rewrite(script, original):
+            n = chapters.spoken_words(script)
+            print(f"  🗣️ {label}: rewrite came back with only {n} of {original} words — asking again")
+            retry = call_llm(system_prompt, prompt, temperature=0.5, max_tokens=budget)
+            script2, notes2 = chapters.split_segment_answer(retry)
+            if not chapters.too_short_rewrite(script2, original):
+                return label, script2, notes2
+            print(f"  🗣️ {label}: still empty; keeping the segment as it was")
+            return label, text, notes
         grown = chapters.spoken_words(script)
         # A revision pass rewrites an already-polished script: growth there compounds.
         limit = DIALECT_GROWTH_REVISING if revising else DIALECT_GROWTH_MAX

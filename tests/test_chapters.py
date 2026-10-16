@@ -7,7 +7,7 @@ import unittest
 from unittest import mock
 
 from medical_brain.exports import workbook as ew
-from medical_brain.nodes import analysis, chapters, script_writing
+from medical_brain.nodes import analysis, chapters, quality, script_writing
 from medical_brain.prompts import load_prompt
 
 
@@ -49,6 +49,10 @@ BP = {
 ONE_CHAPTER = {"chapters": [{"id": "C1", "title": "الفصل الوحيد", "job": "j", "words": 300,
                              "covers": [], "opens_loops": [], "closes_loops": [],
                              "depends_on_previous": False}]}
+
+# A realistic chapter answer: 250 filler words clear the near-empty-rewrite floor
+# (0.4 × the 500-word blueprint chapters) so these fixtures exercise the normal path.
+LONG_CHAPTER = " ".join(f"كلمة{i}" for i in range(250))
 
 
 def base_state(**over):
@@ -210,9 +214,9 @@ class MemoryTest(unittest.TestCase):
 class BodyChapterModeTest(unittest.TestCase):
     def _answers(self, system, user, temperature=None, max_tokens=None):
         if "id: C1" in user:
-            return ("=== الفصل الأول ===\nنص الفصل الأول هنا.\n\n"
+            return (f"=== الفصل الأول ===\n{LONG_CHAPTER}\nنص الفصل الأول هنا.\n\n"
                     + mem_block("ملخص أول", [{"term": "سكر", "phrasing": "السكر"}], ["F1"], ["لماذا؟"]))
-        return ("=== الفصل الثاني ===\nنص الفصل الثاني هنا.\n\n"
+        return (f"=== الفصل الثاني ===\n{LONG_CHAPTER}\nنص الفصل الثاني هنا.\n\n"
                 + mem_block("ملخص تاني", [], ["F2"], [], ["لماذا؟"]))
 
     def test_writes_once_per_chapter_in_order(self):
@@ -242,7 +246,8 @@ class BodyChapterModeTest(unittest.TestCase):
 
     def test_revision_rewrites_only_flagged_chapters(self):
         fake = use(self, script_writing, "call_llm",
-                   FakeLLM(lambda *a: "=== الفصل الثاني ===\nنسخة معدلة.\n\n" + mem_block("ملخص")))
+                   FakeLLM(lambda *a: f"=== الفصل الثاني ===\n{LONG_CHAPTER}\nنسخة معدلة.\n\n"
+                            + mem_block("ملخص")))
         state = base_state(
             blueprint=BP, translation_revision_count=1,
             translation_report="C2 needs fixing: a calque in the opening.",
@@ -266,7 +271,8 @@ class BodyChapterModeTest(unittest.TestCase):
 
     def test_checkpoint_reuse_skips_written_chapters(self):
         fake = use(self, script_writing, "call_llm",
-                   FakeLLM(lambda *a: "=== الفصل الثاني ===\nجديد.\n\n" + mem_block("تين")))
+                   FakeLLM(lambda *a: f"=== الفصل الثاني ===\n{LONG_CHAPTER}\nجديد.\n\n"
+                            + mem_block("تين")))
         state = base_state(blueprint=BP, chapter_drafts_round=0,
                            chapter_drafts_key=chapters.blueprint_signature(BP),
                            chapter_drafts={"C1": "=== الفصل الأول ===\nنص محفوظ"},
@@ -1389,3 +1395,139 @@ class SingleChapterWrittenLengthGuardTest(unittest.TestCase):
         text = " ".join(str(c.args[0]) for c in printed.call_args_list)
         self.assertNotIn("trimming padding", text)
         self.assertEqual(out["refined_script"], grown)
+
+
+class TooShortRewriteTest(unittest.TestCase):
+    """Defense in depth: a near-empty LLM answer (a canned proxy error, most often) must
+    never replace a chapter/segment. The caller retries once, then keeps the old text."""
+
+    ERROR = "I encountered an error doing what you asked. Could you try again?"
+
+    def test_helper_flags_only_a_long_reference_answered_near_empty(self):
+        self.assertTrue(chapters.too_short_rewrite("كلمة", 300))
+        self.assertTrue(chapters.too_short_rewrite("", 60))
+        self.assertFalse(chapters.too_short_rewrite(" ".join(f"w{i}" for i in range(150)), 300))
+        self.assertFalse(chapters.too_short_rewrite("كلمة", 59))   # reference too short to judge
+
+    # --- dialect chapter mode (revision) ---
+
+    def _dialect_state(self):
+        long_ch = " ".join(f"ك{i}" for i in range(100))
+        refined = f"=== الفصل الأول ===\n{long_ch}\n\n=== الفصل الثاني ===\nنص ثاني"
+        return base_state(blueprint=BP, quality_revision_count=1, refined_script=refined,
+                          cta_output="cta", self_critique_output="dialect wording only",
+                          chapter_workers=1)
+
+    def _other(self, system, user, temperature=None, max_tokens=None):
+        label = re.search(r"SEGMENT LABEL: (.*)", user).group(1).strip()
+        return f"[{label} rewritten]\n=== SEGMENT NOTES ===\nDialect 9 / Warmth 9"
+
+    def test_dialect_error_reply_twice_keeps_the_segment_unchanged(self):
+        def answer(system, user, temperature=None, max_tokens=None):
+            if "SEGMENT LABEL: الفصل الأول" in user:
+                return self.ERROR
+            return self._other(system, user)
+
+        fake = use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print") as printed:
+            out = script_writing.dialect_warmth_layer(self._dialect_state())
+        self.assertIn("ك99", out["dialect_script"])                     # original C1 kept
+        self.assertIn("=== الفصل الأول ===", out["dialect_script"])     # header kept
+        self.assertNotIn("I encountered an error", out["dialect_script"])
+        self.assertIn("[الفصل الثاني rewritten]", out["dialect_script"])  # others rewritten
+        c1 = [c for c in fake.calls if "SEGMENT LABEL: الفصل الأول" in c["user"]]
+        self.assertEqual(len(c1), 2)                                    # original + one retry
+        text = " ".join(str(c.args[0]) for c in printed.call_args_list)
+        self.assertIn("keeping the segment as it was", text)
+
+    def test_dialect_bad_reply_then_good_retry_uses_the_retry(self):
+        good = "=== الفصل الأول ===\n" + " ".join(f"ر{i}" for i in range(90))
+        seen = {"n": 0}
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            if "SEGMENT LABEL: الفصل الأول" in user:
+                seen["n"] += 1
+                return good if seen["n"] > 1 else self.ERROR
+            return self._other(system, user)
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            out = script_writing.dialect_warmth_layer(self._dialect_state())
+        self.assertIn("ر89", out["dialect_script"])
+        self.assertNotIn("ك99", out["dialect_script"])
+
+    # --- body chapter mode ---
+
+    def _body_bp(self):
+        return {"target_minutes": 20, "words_per_minute": 135, "chapters": [
+            {"id": "C1", "title": "طويل", "job": "j", "words": 300, "covers": [],
+             "opens_loops": [], "closes_loops": [], "depends_on_previous": False},
+            {"id": "C2", "title": "ق", "job": "j", "words": 300, "covers": [],
+             "opens_loops": [], "closes_loops": [], "depends_on_previous": True},
+        ]}
+
+    def test_body_short_chapter_is_retried_and_the_retry_used(self):
+        good = "=== طويل ===\n" + " ".join(f"g{i}" for i in range(250))
+        short = "=== طويل ===\n" + " ".join(f"s{i}" for i in range(10))
+        seen = {"n": 0}
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            if "id: C1" in user:
+                seen["n"] += 1
+                return good if seen["n"] > 1 else short
+            return "=== ق ===\n" + " ".join(f"x{i}" for i in range(250))
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print") as printed:
+            out = script_writing.body_restructurer(
+                base_state(blueprint=self._body_bp(), target_minutes=20))
+        self.assertIn("g249", out["revised_body"])
+        self.assertNotIn("s9", out["revised_body"])
+        text = " ".join(str(c.args[0]) for c in printed.call_args_list)
+        self.assertIn("asking again", text)
+
+
+class MissingChaptersTest(unittest.TestCase):
+    ALL = "=== الفصل الأول ===\nنص أول\n\n=== الفصل الثاني ===\nنص ثاني"
+    DROPPED = "=== الفصل الأول ===\nنص أول"
+
+    def test_finds_a_dropped_chapter(self):
+        self.assertEqual(chapters.missing_chapters(BP, self.DROPPED), ["الفصل الثاني"])
+
+    def test_empty_when_all_present(self):
+        self.assertEqual(chapters.missing_chapters(BP, self.ALL), [])
+
+    def test_empty_when_not_chapter_mode(self):
+        self.assertEqual(chapters.missing_chapters({}, self.DROPPED), [])
+        self.assertEqual(chapters.missing_chapters(ONE_CHAPTER, self.DROPPED), [])
+
+    def test_self_critique_names_the_missing_chapter(self):
+        captured = {}
+
+        def answer(system, user, temperature=None, max_tokens=None, **kwargs):
+            captured["user"] = user
+            return ({"critique_grade": "A", "dialect_authenticity_score": 9, "warmth_score": 9,
+                     "fidelity_score": 9, "medical_accuracy_pass": True, "revised_script": "x"}, "raw")
+
+        use(self, quality, "call_llm_json", FakeLLM(answer))
+        state = base_state(blueprint=BP, refined_script=self.DROPPED, fidelity_score=9,
+                           medical_accuracy_pass=True, truth_score=9, truth_pass=True)
+        with mock.patch("builtins.print") as printed:
+            quality.self_critique(state)
+        self.assertIn("CODE CHECK — these blueprint chapters are MISSING from the script",
+                      captured["user"])
+        self.assertIn("الفصل الثاني", captured["user"])
+        self.assertIn("grade cannot be PASS", captured["user"])
+        text = " ".join(str(c.args[0]) for c in printed.call_args_list)
+        self.assertIn("chapters missing from the script: الفصل الثاني", text)
+
+    def test_self_critique_has_no_code_check_when_all_present(self):
+        captured = {}
+
+        def answer(system, user, temperature=None, max_tokens=None, **kwargs):
+            captured["user"] = user
+            return ({"critique_grade": "A"}, "raw")
+
+        use(self, quality, "call_llm_json", FakeLLM(answer))
+        quality.self_critique(base_state(blueprint=BP, refined_script=self.ALL))
+        self.assertNotIn("CODE CHECK", captured["user"])

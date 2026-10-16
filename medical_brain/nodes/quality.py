@@ -143,7 +143,12 @@ def _translation_chapter_mode(state: PipelineState, system_prompt: str, blueprin
     revised_parts, reports = [], []
     naturalness, contextual, failed = None, None, False
     for span, verdict in zip(spans, verdicts):
-        body = chapters.ensure_header(verdict["revised"] or span["text"], span["title"])
+        revised = verdict["revised"]
+        # A near-empty revision (e.g. a proxy error stub) never replaces the chapter.
+        if revised and chapters.too_short_rewrite(revised, chapters.spoken_words(span["text"])):
+            print(f"  ⚠️ {span['title']}: translation revision came back near-empty; keeping the chapter")
+            revised = ""
+        body = chapters.ensure_header(revised or span["text"], span["title"])
         revised_parts.append(body)
         grade = verdict["grade"]
         failed = failed or grade != "PASS"
@@ -383,6 +388,19 @@ AVOID LIST:
 {state.get("avoid_list", "")}
 
 Output ONLY the JSON object. Include the full revised script."""
+
+    # A chapter the writers dropped is invisible to the judge unless it is told: a real
+    # run shipped a video with no chapter 1 because the header had been deleted. Name
+    # every blueprint chapter missing its "=== title ===" header and forbid a PASS.
+    blueprint = state.get("blueprint") or {}
+    if chapters.chapter_mode_on(blueprint):
+        missing = chapters.missing_chapters(blueprint, state.get("refined_script", ""))
+        if missing:
+            print(f"  ⚠️ chapters missing from the script: {', '.join(missing)}")
+            user_prompt += (f"\n\nCODE CHECK — these blueprint chapters are MISSING from the script: "
+                            f"{', '.join(missing)}. This is a CRITICAL failure (grade cannot be PASS); "
+                            "the revised script must restore each missing chapter from the blueprint "
+                            "and the source.")
 
     try:
         data, response = call_llm_json(system_prompt, user_prompt, temperature=0.6, max_tokens=12000,

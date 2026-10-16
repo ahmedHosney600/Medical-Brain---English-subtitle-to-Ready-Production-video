@@ -3,6 +3,7 @@ streaming on all three API types, step time-out → backup, cut-off answer → b
 Qwen thinking switched off, OpenCode session header, provider fallbacks."""
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -330,6 +331,41 @@ class CannedReplyTest(unittest.TestCase):
             phrases = llm.DEFAULT_PROVIDERS[name]["canned_replies"]
             self.assertIn("i'm having a hard time fulfilling your request", phrases)
             self.assertIn("i can't help with that right now", phrases)
+
+    ERROR_REPLY = "I encountered an error doing what you asked. Could you try again?"
+
+    def test_proxy_error_reply_raises_step_failed(self):
+        backend = self.backend(self.ERROR_REPLY)
+        with self.assertRaises(StepFailed) as caught:
+            backend.call("s", "u", 0.2, 100)
+        self.assertIn("canned non-answer", str(caught.exception))
+
+    def test_long_answer_containing_could_you_try_again_is_accepted(self):
+        # The freegemini/geminiweb "error" reply is only rejected while short: a real
+        # (>= 400 char) answer that happens to contain the phrase must pass through.
+        long_text = self.ERROR_REPLY + " " + ("real medical point. " * 40)
+        self.assertGreater(len(long_text), 500)
+        backend = self.backend(long_text)
+        self.assertEqual(backend.call("s", "u", 0.2, 100).strip(), long_text.strip())
+
+    def test_both_web_providers_have_the_new_phrases(self):
+        for name in ("freegemini", "geminiweb"):
+            phrases = llm.DEFAULT_PROVIDERS[name]["canned_replies"]
+            for phrase in ("i encountered an error doing what you asked",
+                           "could you try again", "something went wrong"):
+                self.assertIn(phrase, phrases)
+
+    def test_error_reply_is_not_cached(self):
+        c = config("geminiweb:gemini-3.8-flash",
+                   geminiweb=dict(llm.DEFAULT_PROVIDERS["geminiweb"], api_key="k"))
+        router = llm.LLMRouter(c, provider="main")
+        router._backends = {"geminiweb:gemini-3.8-flash": self.backend(self.ERROR_REPLY)}
+        cache = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, cache, ignore_errors=True)
+        router.set_cache_dir(cache)
+        with self.assertRaises(StepFailed):
+            run_step(router)
+        self.assertEqual(os.listdir(cache), [])          # a failed call is never remembered
 
 
 class _LeakBackend:
