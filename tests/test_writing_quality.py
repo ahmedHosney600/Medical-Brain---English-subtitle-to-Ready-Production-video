@@ -373,3 +373,33 @@ class MeasuredWordCountTest(unittest.TestCase):
         prompt = critique_prompt(script)
         self.assertIn("CODE MEASUREMENTS (exact", prompt)
         self.assertIn("spoken words = 500", prompt)
+
+
+class JudgeDoesNotRewriteTest(unittest.TestCase):
+    def _result(self, judge_model):
+        from medical_brain.nodes import quality
+        from medical_brain import llm
+
+        class _Router:
+            main = "deepseek:deepseek-flash"
+            def model_for(self, node):
+                return judge_model if node == "self_critique" else self.main
+
+        old = llm._router
+        llm._router = _Router()
+        try:
+            state = {"refined_script": "النص اللي كتبه الكاتب", "truth_score": 9, "truth_pass": True,
+                     "fidelity_score": 9, "medical_accuracy_pass": True, "quality_revision_count": 0,
+                     "max_quality_revision_count": 4}
+            data = {"critique_grade": "B", "dialect_authenticity_score": 9, "warmth_score": 9,
+                    "revised_script": "نص الحكم المعاد كتابته"}
+            return quality._critique_result(state, "B", data, "raw")
+        finally:
+            llm._router = old
+
+    def test_another_model_judge_does_not_replace_the_writers_text(self):
+        # A Gemini judge rewriting a DeepSeek script round after round made it heavier.
+        self.assertEqual(self._result("agy:gemini-3.8-flash-high")["refined_script"], "النص اللي كتبه الكاتب")
+
+    def test_same_model_judge_keeps_the_old_behaviour(self):
+        self.assertEqual(self._result("deepseek:deepseek-flash")["refined_script"], "نص الحكم المعاد كتابته")

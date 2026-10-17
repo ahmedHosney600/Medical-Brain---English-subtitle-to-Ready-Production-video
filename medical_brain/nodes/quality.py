@@ -502,6 +502,19 @@ def _letter_grade(value) -> str:
     return "A+" if m.group(1) == "A" and m.group(2) else m.group(1)
 
 
+def _judge_is_not_writer() -> bool:
+    """True when self_critique runs on a different model from the main (writing) model.
+    Its rewrite must not become the next round's base then: a Gemini judge rewriting a
+    DeepSeek script for four rounds left it heavier and more formal (the least vivid in
+    a blind panel). The judge critiques; the writers fix from its report next round."""
+    try:
+        from ..llm import get_router
+        router = get_router()
+        return bool(router.model_for("self_critique") != router.main)
+    except Exception:
+        return False
+
+
 def _critique_result(state: PipelineState, grade: str, data, raw: str) -> dict:
     """Combines self_critique's answer with the independent judges' verdicts, and
     keeps the best round: the loop never ends on a worse script than one it already had."""
@@ -552,7 +565,7 @@ def _critique_result(state: PipelineState, grade: str, data, raw: str) -> dict:
     result = {
         "quality_grade": "PASS" if passed else grade,
         "self_critique_output": pick(data, "critique_report", "report", default="", kind=str) or raw,
-        "refined_script": verified if passed else (revised or verified),
+        "refined_script": verified if passed or _judge_is_not_writer() else (revised or verified),
         "quality_revision_count": round_no,
         **scores,
     }
