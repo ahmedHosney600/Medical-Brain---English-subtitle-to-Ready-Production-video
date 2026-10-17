@@ -560,3 +560,15 @@ class HeaderPipeTimeTest(unittest.TestCase):
         script = "كلمة " * 135 + "— — —\n=== CTA | 11:00 | Energy: 3/5 ===\nاشترك\n"
         self.assertIn("=== CTA | 1:00 | Energy: 3/5 ===", retime_header_labels(script, 135))
         self.assertEqual(len(spoken_text("كلام — تاني --- و… خلاص").split()), 4)
+
+
+class LastChapterOverPlanTest(unittest.TestCase):
+    def test_final_chapter_far_over_its_plan_is_flagged(self):
+        from medical_brain.nodes.quality import _last_chapter_over_plan
+        script = "".join(f"=== C{i} ===\n" + "كلمة " * n + "\n" for i, n in enumerate([520, 460, 480, 500], 1))
+        bp = {"chapters": [{"words": 420}, {"words": 460}, {"words": 440}, {"words": 310}]}
+        found = _last_chapter_over_plan(script, bp)
+        self.assertIsNotNone(found)
+        self.assertIn("planned 310", found["title"])
+        bp["chapters"][-1]["words"] = 450                 # within 1.3× of its plan: fine
+        self.assertIsNone(_last_chapter_over_plan(script, bp))

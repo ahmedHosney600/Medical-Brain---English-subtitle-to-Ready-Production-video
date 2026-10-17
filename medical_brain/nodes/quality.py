@@ -25,6 +25,30 @@ def _healed_truth_note(state) -> str:
     return ""
 
 
+LAST_CHAPTER_MAX_SHARE = 0.22         # the plan keeps the final chapter ≤ ~20%
+LAST_CHAPTER_PLAN_GROWTH = 1.3
+
+
+def _last_chapter_over_plan(script: str, blueprint) -> dict:
+    """The heavy-ending finding for a final chapter that outgrew its plan: over 22% of
+    the spoken script AND over 1.3× its blueprint words. A migraine run planned C4 at
+    310 words (19%); polishing passes took it to 497 (24%) — under the generic 30% rule,
+    but the judge failed the light-ending criterion. None when it fits."""
+    sections = chapters.content_sections(chapters.normalize_section_headers(script or ""))
+    plan = [c for c in ((blueprint or {}).get("chapters") or []) if isinstance(c, dict)]
+    if len(sections) < 2 or not plan:
+        return None
+    words = [chapters.spoken_words(text) for _, text in sections]
+    total, last = sum(words), words[-1]
+    planned = int(plan[-1].get("words") or 0)
+    if not total or not planned:
+        return None
+    if last / total > LAST_CHAPTER_MAX_SHARE and last > planned * LAST_CHAPTER_PLAN_GROWTH:
+        return {"title": f"{sections[-1][0]} (planned {planned} words)", "words": last, "total": total,
+                "share": last / total, "ratio": last / (total / len(words))}
+    return None
+
+
 def _wpm(state) -> float:
     from ..exports.workbook import blueprint_wpm
     return blueprint_wpm(state.get("blueprint"))
@@ -538,6 +562,8 @@ Output ONLY the JSON object. Include the full revised script."""
         # The final chapter should be the lightest; a crammed ending (red flags + medicines +
         # conditions stacked at the end) is the review's main length problem.
         heavy = chapters.heavy_ending(script)
+        if not heavy:
+            heavy = _last_chapter_over_plan(script, state.get("blueprint"))
         if heavy:
             print(f"  ⚠️ the ending is too heavy: {heavy['title']} has {heavy['words']} of "
                   f"{heavy['total']} words")
