@@ -414,3 +414,22 @@ class BracketHeaderTest(unittest.TestCase):
         self.assertIn("=== ACT 2: اللغز ===", out)
         self.assertIn("[HOOK]", out)
         self.assertIn("[VISUAL NOTE: لقطة]", out)
+
+
+class WholeDialectGrowthGuardTest(unittest.TestCase):
+    def test_a_revision_that_grows_too_much_is_asked_again(self):
+        current = " ".join(f"ك{i}" for i in range(300))
+        grown = " ".join(f"ز{i}" for i in range(420))      # +40%
+        tight = " ".join(f"ت{i}" for i in range(310))
+        calls = []
+
+        def answer(system, user, temperature=None, max_tokens=None):
+            calls.append(user)
+            return tight if "YOUR LAST REWRITE WAS" in user else grown
+
+        use(self, script_writing, "call_llm", FakeLLM(answer))
+        with mock.patch("builtins.print"):
+            out = script_writing.dialect_warmth_layer({"quality_revision_count": 1, "refined_script": current,
+                                                       "blueprint": {}, "self_critique_output": "fix x"})
+        self.assertEqual(out["dialect_warmth_output"], tight)
+        self.assertEqual(sum("YOUR LAST REWRITE WAS" in c for c in calls), 1)

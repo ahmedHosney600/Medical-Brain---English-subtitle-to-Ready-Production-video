@@ -874,6 +874,8 @@ MEDICAL FIDELITY AUDIT:
 # A dialect rewrite of one segment may grow at most this much before it is redone.
 DIALECT_GROWTH_MAX = 1.1
 DIALECT_GROWTH_REVISING = 1.03
+# A single-script revision may grow a little while it fixes the critique, not more.
+WHOLE_DIALECT_GROWTH_REVISING = 1.15
 
 
 def repair_script(state: PipelineState, script: str, *sources: str) -> str:
@@ -1051,6 +1053,19 @@ MEDICAL FIDELITY AUDIT:
                         "new sentences, examples or asides (the video's length is already budgeted).")
 
     response = call_llm(system_prompt, user_prompt, temperature=0.75, max_tokens=9000)
+    if revising and length_source:
+        # Chapter mode already redoes a segment that grows; the single-script revision did
+        # not, and one round took a 1,654-word script to ~2,240 words.
+        before = chapters.spoken_words(length_source)
+        grown = chapters.spoken_words(chapters.clean_spoken_script(response))
+        if before >= 200 and grown > before * WHOLE_DIALECT_GROWTH_REVISING:
+            print(f"  🗣️ dialect revision grew {before} → {grown} words — asking again")
+            retry = call_llm(system_prompt, user_prompt + (
+                f"\n\nYOUR LAST REWRITE WAS {grown} SPOKEN WORDS; THE SCRIPT HAS {before}. Rewrite it "
+                f"again in at most {int(before * 1.05)} words: fix what the critique flagged by rewording "
+                "or moving lines; add nothing new."), temperature=0.5, max_tokens=9000)
+            if chapters.spoken_words(chapters.clean_spoken_script(retry)) < grown:
+                response = retry
     result = {"dialect_warmth_output": response}
     if frame:
         result["script_frame"] = frame
