@@ -705,6 +705,19 @@ _DISCLAIMER_GIST_RE = re.compile(r"(مش بديل|ليس بديل|لا يغني|
 _DISCLAIMER_WHO_RE = re.compile(r"(دكتور|طبيب|الكشف|استشار)")
 
 
+def long_disclaimer(script: str, limit: int = 50):
+    """(words, paragraph) for the first disclaimer paragraph longer than `limit` spoken
+    words, else None. A one-line warm disclaimer was polished into an 80-word formal
+    block ("خريطة طريق علمية… تحت إشراف طبي متخصص") in a real run."""
+    for paragraph in re.split(r"\n\s*\n", script or ""):
+        text = spoken_text(paragraph)
+        if _DISCLAIMER_GIST_RE.search(text) and _DISCLAIMER_WHO_RE.search(text):
+            n = len(text.split())
+            if n > limit:
+                return n, " ".join(text.split()[:25])
+    return None
+
+
 def has_disclaimer(script: str, disclaimer: str) -> bool:
     """True when some paragraph matches the frame disclaimer (word-set Jaccard >= 0.4),
     or a spoken sentence in the first half says it is not a substitute for a doctor."""

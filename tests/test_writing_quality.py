@@ -433,3 +433,11 @@ class WholeDialectGrowthGuardTest(unittest.TestCase):
                                                        "blueprint": {}, "self_critique_output": "fix x"})
         self.assertEqual(out["dialect_warmth_output"], tight)
         self.assertEqual(sum("YOUR LAST REWRITE WAS" in c for c in calls), 1)
+
+
+class LongDisclaimerTest(unittest.TestCase):
+    def test_a_long_disclaimer_is_flagged_and_a_short_one_is_not(self):
+        long_one = ("الكلام ده للتوعية ومش بديل عن طبيبك " + "وأي تعديل لازم يكون تحت إشراف طبي متخصص يناسب حالتك " * 6)
+        self.assertIsNotNone(chapters.long_disclaimer("=== A ===\n" + long_one))
+        self.assertIsNone(chapters.long_disclaimer("=== A ===\nالكلام ده للتوعية ومش بديل عن طبيبك."))
+        self.assertIn("CODE CHECK — the disclaimer is", critique_prompt("=== A ===\n" + long_one + "\n\n" + words("a", 200)))
