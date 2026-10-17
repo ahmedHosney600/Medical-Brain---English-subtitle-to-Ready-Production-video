@@ -160,10 +160,10 @@ class TranslationChapterModeTest(unittest.TestCase):
 # --------------------------------------------------------------------------
 TRANSITION_TABLE = """## TRANSITION DESIGN MAP
 ### Transition Table
-| # | Timestamp | From → To | Transition Type |
-|---|---|---|---|
-| 1 | 0:00 | A → B | Cut |
-| 2 | 0:10 | B → C | Zoom-in |"""
+| # | Timestamp | ▶️ START CUE (Arabic) | From → To | Transition Type | Direction | Easing | Duration (ms) | Range | Rationale |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 0:00 | cue one here | A → B | Cut | — | — | 0 | — | opening |
+| 2 | 0:10 | cue two here | B → C | Zoom-in | In-Out | cubic | 500 | 100%→108% | build |"""
 
 
 class ProductionChapterModeTest(unittest.TestCase):
@@ -181,8 +181,10 @@ class ProductionChapterModeTest(unittest.TestCase):
         self.assertNotIn("PRODUCTION STYLE", fake.calls[0]["user"])     # chapter 1 has none
         self.assertIn("PRODUCTION STYLE", fake.calls[1]["user"])        # later chapters reuse ch1
         self.assertIn("AC1", text)
-        self.assertEqual(text.count("| # | Timestamp | From → To | Transition Type |"), 1)
-        self.assertEqual(text.count("|---|---|---|---|"), 1)
+        self.assertEqual(text.count("| # | Timestamp | ▶️ START CUE (Arabic) | From → To | "
+                                    "Transition Type | Direction | Easing | Duration (ms) | "
+                                    "Range | Rationale |"), 1)
+        self.assertEqual(text.count("|---|---|---|---|---|---|---|---|---|---|"), 1)
         for number in ("| 1 |", "| 2 |", "| 3 |", "| 4 |"):
             self.assertIn(number, text)
         self.assertIn("=== الفصل الأول ===", text)

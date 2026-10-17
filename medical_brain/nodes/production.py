@@ -227,7 +227,9 @@ RESTRUCTURE STRATEGY PLAN (act breakdown, energy curve, pacing plan):
 B-ROLL AVAILABILITY: {state.get("broll_availability", "")}
 TARGET PLATFORM: {state.get("target_platform", "")}
 
-Read through this chapter's script section by section, noting every scene change inside it, and design a transition for each, following the principles above."""
+Read through this chapter's script section by section, noting every scene change inside it, and design a transition for each, following the principles above.
+
+Every Transition Table row must include the ▶️ START CUE (Arabic) column: 4–8 consecutive spoken words copied exactly from this chapter's script where the transition happens. Code re-times every row from that cue, so it is the shared clock for all layers."""
     if style:
         prompt += f"""
 
@@ -494,9 +496,9 @@ def _broll_chapter_mode(state: PipelineState, system_prompt: str, blueprint: dic
     texts = [outputs.get(keys[i], "") for i in range(len(spans))]
     joined, mapping = _join_broll(titles, texts, keys)
     joined = finalize_broll_table(state, joined)
-    return {"broll_prompts": joined,
-            "broll_by_chapter": mapping,
-            "production_chapter_outputs": _store_step(state, "broll_prompts", outputs)}
+    return _sync_after_broll(state, joined, {
+        "broll_by_chapter": mapping,
+        "production_chapter_outputs": _store_step(state, "broll_prompts", outputs)})
 
 
 def _broll_single_call(state: PipelineState, system_prompt: str) -> dict:
@@ -540,7 +542,25 @@ PRODUCTION CRITIQUE REPORT:
 {state.get("production_critique_output", "")}"""
 
     response = call_llm(system_prompt, user_prompt, temperature=0.6, max_tokens=9000)
-    return {"broll_prompts": finalize_broll_table(state, response)}
+    return _sync_after_broll(state, finalize_broll_table(state, response))
+
+
+def _sync_after_broll(state: PipelineState, table: str, result: dict = None) -> dict:
+    """Stores the final B-roll table and syncs the transition map to it (the map's
+    designer ran before repair_broll_timeline added its gap-fill cuts)."""
+    out = dict(result or {})
+    transition = state.get("transition_design", "")
+    script = state.get("refined_script", "")
+    if transition and table and script:
+        broll_changed = []
+        transition, _added = sync_transition_map(
+            state, transition, table, script, ew.blueprint_wpm(state.get("blueprint")),
+            broll_out=broll_changed)
+        if broll_changed:
+            table = broll_changed[-1]
+        out["transition_design"] = transition
+    out["broll_prompts"] = table
+    return out
 
 
 def broll_prompt_generator(state: PipelineState) -> dict:
@@ -918,6 +938,416 @@ def finalize_broll_table(state: PipelineState, table: str, after: int = 0,
 def _seconds(stamp: str):
     m = re.search(r"(\d{1,2}):(\d{2})", stamp or "")
     return int(m.group(1)) * 60 + int(m.group(2)) if m else None
+
+
+# --------------------------------------------------------------------------
+# transition map ↔ final B-roll table (one shared script clock)
+# --------------------------------------------------------------------------
+TRANSITION_TOLERANCE_SECONDS = 3.0
+
+
+def _fmt_seconds(seconds: float) -> str:
+    total = max(0, int(round(seconds)))
+    return f"{total // 60}:{total % 60:02d}"
+
+
+def _transition_cols(header: list) -> dict:
+    upper = [c.strip().upper() for c in header]
+
+    def col(*names):
+        return next((k for k, h in enumerate(upper) if any(n in h for n in names)), None)
+
+    return {"num": next((k for k, h in enumerate(upper) if h == "#"), None),
+            "time": col("TIMESTAMP", "TIMECODE", "TIME", "⏱"),
+            "cue": col("START CUE", "▶", "START"),
+            "from_to": col("FROM"),
+            "type": col("TRANSITION TYPE", "TYPE"),
+            "direction": col("DIRECTION"),
+            "easing": col("EASING"),
+            "duration": col("DURATION"),
+            "range": col("RANGE"),
+            "rationale": col("RATIONALE")}
+
+
+def _transition_blocks(text: str) -> list:
+    """Every markdown table in `text` whose header is a transition map (chapter mode
+    repeats the header once per "=== title ===" section). Rows keep their cell list."""
+    lines = (text or "").splitlines()
+    blocks, i = [], 0
+    while i < len(lines):
+        if not lines[i].strip().startswith("|"):
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and lines[j].strip().startswith("|"):
+            j += 1
+        header = _table_cells(lines[i])
+        upper = [c.upper() for c in header]
+        if any("FROM" in c and "TO" in c for c in upper) or any("TRANSITION TYPE" in c for c in upper):
+            separator = lines[i + 1] if i + 1 < j and chapters.is_separator_row(lines[i + 1]) else None
+            data_start = i + (2 if separator is not None else 1)
+            rows = []
+            for k in range(data_start, j):
+                cells = _table_cells(lines[k])
+                if not cells or all(_SEPARATOR_CELL.fullmatch(c) for c in cells if c):
+                    continue
+                rows.append({"cells": (cells + [""] * len(header))[:len(header)], "order": k})
+            blocks.append({"start": i, "end": j, "header": lines[i], "separator": separator,
+                           "cols": _transition_cols(header), "rows": rows, "ncols": len(header)})
+        i = j
+    return blocks
+
+
+def _transition_row_time(row: dict, cols: dict, script: str, wpm: float,
+                         after: int = 0) -> float:
+    cells = row["cells"]
+    cue_col = cols["cue"]
+    cue = cells[cue_col] if cue_col is not None and cue_col < len(cells) else ""
+    if cue:
+        seconds = ew.cue_seconds(cue, script, wpm, after=after)
+        if seconds is not None:
+            return float(seconds)
+    time_col = cols["time"]
+    if time_col is not None and time_col < len(cells):
+        stamp = _seconds(cells[time_col])
+        if stamp is not None:
+            return float(stamp)
+    return None
+
+
+def _transition_row_times(blocks: list, script: str, wpm: float) -> list:
+    """Times in table order, resolving a repeated cue to its occurrence at/after the
+    previous row (the same running-position rule as the rest of the production layer)."""
+    norm_script = ew.normalize_ar(ew.spoken_text(script))
+    pos, out = 0, []
+    for block in blocks:
+        cols = block["cols"]
+        for row in block["rows"]:
+            cells = row["cells"]
+            cue = cells[cols["cue"]] if cols["cue"] is not None and cols["cue"] < len(cells) else ""
+            seconds = ew.cue_seconds(cue, script, wpm, after=pos) if cue else None
+            if seconds is None:
+                seconds = _transition_row_time(row, cols, script, wpm, after=pos)
+            out.append(seconds)
+            if cue:
+                later = [p for p in ew.cue_positions(cue, norm_script) if p >= pos]
+                if later:
+                    pos = later[0]
+    return out
+
+
+def _row_cell(row: dict, cols: dict, name: str) -> str:
+    at = cols.get(name)
+    return row["cells"][at] if at is not None and at < len(row["cells"]) else ""
+
+
+def _sort_transition_blocks(blocks: list, script: str, wpm: float) -> None:
+    """Sort rows by their script position, renumber 1..n and put each row back in the
+    chapter block whose time range contains it (single-table runs keep one block)."""
+    flat, order = [], 0
+    for bi, block in enumerate(blocks):
+        for row in block["rows"]:
+            t = _transition_row_time(row, block["cols"], script, wpm)
+            flat.append((t is None, t or 0.0, order, bi, row))
+            order += 1
+    flat.sort(key=lambda item: (item[0], item[1], item[2]))
+    for number, item in enumerate(flat, 1):
+        num_col = blocks[item[3]]["cols"]["num"]
+        if num_col is not None:
+            item[4]["cells"][num_col] = str(number)
+
+    if len(blocks) == 1:
+        blocks[0]["rows"] = [item[4] for item in flat]
+        return
+
+    # Anchor each chapter block on the rows it already had, so a code-added B-roll cut
+    # joins the chapter it belongs to instead of stretching the first block's range.
+    ranges = []
+    for block in blocks:
+        times = []
+        for only_original in (True, False):
+            times = []
+            for row in block["rows"]:
+                rationale = _row_cell(row, block["cols"], "rationale")
+                if only_original and "code-added" in rationale.lower():
+                    continue
+                t = _transition_row_time(row, block["cols"], script, wpm)
+                if t is not None:
+                    times.append(t)
+            if times:
+                break
+        ranges.append((min(times), max(times)) if times else None)
+
+    assigned = [[] for _ in blocks]
+    for item in flat:
+        _missing, t, order_no, original, row = item
+        time = None if _missing else t
+        block_index = original
+        if time is not None:
+            containing = [k for k, rng in enumerate(ranges) if rng and rng[0] <= time <= rng[1]]
+            if containing:
+                block_index = original if original in containing else containing[0]
+            else:
+                distances = []
+                for k, rng in enumerate(ranges):
+                    if rng is None:
+                        distances.append((float("inf"), k))
+                    elif time < rng[0]:
+                        distances.append((rng[0] - time, k))
+                    elif time > rng[1]:
+                        distances.append((time - rng[1], k))
+                    else:
+                        distances.append((0.0, k))
+                block_index = min(distances)[1]
+        assigned[block_index].append((float("inf") if time is None else time, order_no, row))
+    for block, rows in zip(blocks, assigned):
+        rows.sort(key=lambda item: (item[0], item[1]))
+        block["rows"] = [row for _t, _o, row in rows]
+
+
+def _render_transition_blocks(text: str, blocks: list) -> str:
+    lines = (text or "").splitlines()
+    out, pos = [], 0
+    for block in blocks:
+        out.extend(lines[pos:block["start"]])
+        out.append(block["header"])
+        if block["separator"] is not None:
+            out.append(block["separator"])
+        out.extend("| " + " | ".join(row["cells"]) + " |" for row in block["rows"])
+        pos = block["end"]
+    out.extend(lines[pos:])
+    joined = "\n".join(out)
+    return joined + ("\n" if (text or "").endswith("\n") else "")
+
+
+def _new_transition_row(block: dict, cue: str, from_to: str, rationale: str,
+                        seconds: float) -> dict:
+    """A transition row matching `block`'s header (unknown columns left empty)."""
+    cols, cells = block["cols"], [""] * block["ncols"]
+    values = {"num": "0", "time": _fmt_seconds(seconds), "cue": cue, "from_to": from_to,
+              "type": "Cut", "direction": "—", "easing": "—", "duration": "0",
+              "range": "—", "rationale": rationale}
+    for name, value in values.items():
+        at = cols.get(name)
+        if at is not None:
+            cells[at] = value
+    return {"cells": cells, "order": 0}
+
+
+def _broll_row_times(rows: list, script: str, wpm: float) -> tuple:
+    """(start, end) script seconds for every B-roll row, using running cue positions."""
+    norm_script = ew.normalize_ar(ew.spoken_text(script))
+    pos, starts, ends = 0, [], []
+    for row in rows:
+        cue = row.get("start") or ""
+        seconds = ew.cue_seconds(cue, script, wpm, after=pos) if cue else None
+        if seconds is None:
+            stamp = _seconds(row.get("time", ""))
+            seconds = float(stamp) if stamp is not None else None
+        starts.append(seconds)
+        if cue:
+            later = [p for p in ew.cue_positions(cue, norm_script) if p >= pos]
+            if later:
+                pos = later[0]
+        end = row.get("end") or ""
+        end_seconds = ew.cue_seconds(end, script, wpm) if end else None
+        ends.append(end_seconds)
+    return starts, ends
+
+
+def _overlay_warning_holds(text: str, script: str, wpm: float) -> list:
+    """[(start_s, end_s)] for overlay rows whose Element Type is a WARNING/ALERT box."""
+    lines = (text or "").splitlines()
+    holds, i = [], 0
+    while i < len(lines):
+        if not lines[i].strip().startswith("|"):
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and lines[j].strip().startswith("|"):
+            j += 1
+        header = _table_cells(lines[i])
+        upper = [c.upper() for c in header]
+        if not (any("ELEMENT" in c for c in upper) and any("HOLD" in c for c in upper)
+                and any("START" in c for c in upper)):
+            i = j
+            continue
+
+        def col(*names):
+            return next((k for k, h in enumerate(upper) if any(n in h for n in names)), None)
+
+        element_col = col("ELEMENT")
+        start_col = col("START CUE", "▶", "START")
+        hold_col = col("HOLD")
+        time_col = col("TIMESTAMP", "TIMECODE", "TIME", "⏱")
+        separator = i + 1 < j and chapters.is_separator_row(lines[i + 1])
+        for k in range(i + (2 if separator else 1), j):
+            cells = _table_cells(lines[k])
+            if not cells or all(_SEPARATOR_CELL.fullmatch(c) for c in cells if c):
+                continue
+            element = cells[element_col].upper() if element_col is not None and element_col < len(cells) else ""
+            if "WARNING" not in element and "ALERT" not in element:
+                continue
+            hold_match = re.search(r"\d+(?:\.\d+)?",
+                                   cells[hold_col] if hold_col is not None and hold_col < len(cells) else "")
+            if not hold_match or float(hold_match.group(0)) <= 0:
+                continue
+            start = None
+            if start_col is not None and start_col < len(cells) and cells[start_col]:
+                start = ew.cue_seconds(cells[start_col], script, wpm)
+            if start is None and time_col is not None and time_col < len(cells):
+                stamp = _seconds(cells[time_col])
+                start = float(stamp) if stamp is not None else None
+            if start is not None:
+                holds.append((float(start), float(start) + float(hold_match.group(0))))
+        i = j
+    return holds
+
+
+def _move_out_of_warning_holds(state: PipelineState, text: str, broll_table: str,
+                               script: str, wpm: float) -> tuple:
+    """Moves transition rows that would cut away during a warning card's hold to the
+    first sentence at/after the hold's end. A code-added cut into B-roll moves that
+    B-roll row's own START CUE instead, so the two layers stay on the same clock."""
+    warnings = _overlay_warning_holds(state.get("text_animation_overlay", ""), script, wpm)
+    blocks = _transition_blocks(text)
+    if not warnings or not blocks:
+        return text, broll_table, 0
+
+    sentences = _script_sentences(script, wpm)
+    norm_script = ew.normalize_ar(ew.spoken_text(script))
+    realigned, _ = ew.realign_broll_table(broll_table or "")
+    broll_layout = _broll_layout(realigned) if realigned else None
+    broll_by_num = {}
+    if broll_layout and broll_layout["cols"]["num"] is not None:
+        for row in broll_layout["rows"]:
+            cells, at = row["cells"], broll_layout["cols"]["num"]
+            if at < len(cells):
+                broll_by_num[cells[at].strip()] = row
+
+    moved, broll_changed = 0, False
+    for warning_start, warning_end in warnings:
+        for block in blocks:
+            cols = block["cols"]
+            for row in block["rows"]:
+                when = _transition_row_time(row, cols, script, wpm)
+                if when is None or not (warning_start < when < warning_end):
+                    continue
+                sentence = _first_sentence(sentences, warning_end, None)
+                if sentence is None:
+                    continue
+                cue = _sentence_cue(sentence, norm_script)
+                cells = row["cells"]
+                rationale = (cells[cols["rationale"]]
+                             if cols["rationale"] is not None and cols["rationale"] < len(cells) else "")
+                cut = re.search(r"Code-added: cut to B-roll #(\d+)", rationale)
+                if cut and broll_layout is not None and cut.group(1) in broll_by_num:
+                    broll_row = broll_by_num[cut.group(1)]
+                    start_col = broll_layout["cols"]["start"]
+                    if start_col is not None and start_col < len(broll_row["cells"]):
+                        broll_row["cells"][start_col] = cue
+                        broll_changed = True
+                if cols["cue"] is not None and cols["cue"] < len(cells):
+                    cells[cols["cue"]] = cue
+                elif cols["time"] is not None and cols["time"] < len(cells):
+                    cells[cols["time"]] = _fmt_seconds(sentence["start_s"])
+                moved += 1
+
+    if moved:
+        text = _render_transition_blocks(text, blocks)
+        text = ew.rewrite_cue_timestamps(text, script, wpm)
+    if broll_changed:
+        broll_table = _render_broll_layout(broll_layout, broll_layout["rows"])
+        broll_table = ew.rewrite_broll_timestamps(broll_table, script, wpm)
+    return text, broll_table, moved
+
+
+def sync_transition_map(state: PipelineState, transition_design: str, broll_table: str,
+                        script: str, wpm: float, broll_out: list = None) -> tuple:
+    """Runs the sync pass until it changes nothing (at most 3 passes): moving a transition
+    out of a warning hold can uncover a B-roll cut, which the next pass adds. See
+    _sync_transition_once. Returns (transition_text, total_added)."""
+    total = 0
+    text = transition_design
+    for _ in range(3):
+        holder = []
+        new_text, added, moved = _sync_transition_once(state, text, broll_table, script, wpm, holder)
+        if holder:
+            broll_table = holder[-1]
+        total += added
+        unchanged = new_text == text
+        text = new_text
+        if (not added and not moved) or unchanged:
+            break
+    if broll_out is not None:
+        broll_out.append(broll_table)
+    return text, total
+
+
+def _sync_transition_once(state: PipelineState, transition_design: str, broll_table: str,
+                          script: str, wpm: float, broll_out: list = None) -> tuple:
+    """Adds the final B-roll table's cuts to the transition map and keeps both layers on
+    the script's clock. Run after repair_broll_timeline, because gap-fills add B-rolls the
+    map's designer never saw.
+
+    For every B-roll row whose start (and, when it has an END CUE, end) has no transition
+    row within ±3 s, one Cut row is added, then all rows are sorted by cue position,
+    renumbered and re-timed. Warning/alert overlays are life-safety cards: a transition
+    strictly inside their hold is moved to the first sentence after the hold. Idempotent.
+
+    Returns (transition_text, added_count). `broll_out`, when given, receives the (possibly
+    re-timed) B-roll table so the node can store it as well."""
+    if not transition_design or not broll_table or not script:
+        return transition_design, 0, 0
+    wpm = ew.blueprint_wpm({"words_per_minute": wpm})
+    realigned, _ = ew.realign_broll_table(broll_table)
+    brolls = ew.broll_rows(realigned)
+    blocks = _transition_blocks(transition_design)
+    if not brolls or not blocks:
+        return transition_design, 0, 0
+
+    target = next((block for block in blocks if block["cols"]["cue"] is not None), blocks[0])
+    starts, ends = _broll_row_times(brolls, script, wpm)
+    existing = [t for t in _transition_row_times(blocks, script, wpm) if t is not None]
+    added = 0
+    for row, start, end in zip(brolls, starts, ends):
+        number = str(row.get("num", "")).strip()
+        if start is not None and not any(abs(t - start) <= TRANSITION_TOLERANCE_SECONDS
+                                         for t in existing):
+            target["rows"].append(_new_transition_row(
+                target, row.get("start", ""), f"Talking Head → B-roll #{number}",
+                f"Code-added: cut to B-roll #{number}", start))
+            existing.append(start)
+            added += 1
+        if (row.get("end") and end is not None
+                and not any(abs(t - end) <= TRANSITION_TOLERANCE_SECONDS for t in existing)):
+            target["rows"].append(_new_transition_row(
+                target, row.get("end", ""), f"B-roll #{number} → Talking Head",
+                "Code-added: back to the presenter", end))
+            existing.append(end)
+            added += 1
+
+    if added:
+        print(f"  🔧 transition map: added {added} B-roll cuts")
+
+    _sort_transition_blocks(blocks, script, wpm)
+    text = _render_transition_blocks(transition_design, blocks)
+    text = ew.rewrite_cue_timestamps(text, script, wpm)
+
+    text, broll_table, moved = _move_out_of_warning_holds(state, text, broll_table, script, wpm)
+    if moved:
+        print(f"  🔧 moved {moved} transitions out of warning-card holds")
+        blocks = _transition_blocks(text)
+        if blocks:
+            _sort_transition_blocks(blocks, script, wpm)
+            text = _render_transition_blocks(text, blocks)
+            text = ew.rewrite_cue_timestamps(text, script, wpm)
+
+    if broll_out is not None:
+        broll_out.append(broll_table)
+    if isinstance(state, dict) and broll_table != realigned:
+        state["broll_prompts"] = broll_table
+    return text, added, moved
 
 
 def _script_length_line(script: str, blueprint) -> str:

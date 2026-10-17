@@ -67,10 +67,12 @@ OUTPUT FORMAT:
 [2-3 sentences on the overall visual motion language chosen for this specific video — why these choices match this topic and energy curve]
 
 ### Transition Table
-| # | Timestamp | From → To | Transition Type | Direction | Easing | Duration (ms) | Range | Rationale |
-|---|---|---|---|---|---|---|---|---|
-| 1 | 0:00 | Pre-roll → Hook | Cut | — | — | 0 | — | [why] |
-| 2 | 0:05 | Hook talking head → Hook B-roll | Zoom-in | In-Out | ease-in-out-cubic | 500 | 100%→108% | [why] |
+| # | Timestamp | ▶️ START CUE (Arabic) | From → To | Transition Type | Direction | Easing | Duration (ms) | Range | Rationale |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 0:00 | [the first 4–8 spoken words of the script] | Pre-roll → Hook | Cut | — | — | 0 | — | [why] |
+| 2 | 0:05 | [the 4–8 spoken words where the B-roll starts] | Hook talking head → Hook B-roll | Zoom-in | In-Out | ease-in-out-cubic | 500 | 100%→108% | [why] |
+
+The ▶️ START CUE (Arabic) column is REQUIRED on every row: copy 4–8 CONSECUTIVE spoken words exactly from the script at which the transition happens (never a label, timecode or paraphrase). Code re-times every row from this cue, so the Timestamp is only a placeholder — the cue is the single clock shared with the B-roll and overlay layers.
 
 ### Transition Density Summary
 | Act | Total Transitions | Hard Cuts | Soft Transitions | Notes |

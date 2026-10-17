@@ -119,10 +119,10 @@ class OneClockTest(unittest.TestCase):
     def test_rewrite_cue_timestamps_fixes_transition_and_overlay_tables(self):
         text = (
             "## TRANSITION DESIGN MAP\n"
-            "| # | Timestamp | From → To | START CUE | Transition Type |\n"
+            "| # | Timestamp | START CUE | From → To | Transition Type |\n"
             "|---|---|---|---|---|\n"
-            f"| 1 | 0:00 | A → B | {sentence(0)} | Cut |\n"
-            f"| 2 | 0:00 | B → C | {sentence(2)} | Zoom |\n"
+            f"| 1 | 0:00 | {sentence(0)} | A → B | Cut |\n"
+            f"| 2 | 0:00 | {sentence(2)} | B → C | Zoom |\n"
             "\n## TEXT ANIMATION & OVERLAY GUIDE\n"
             "| # | ⏱️ Timecode | Element | START CUE | END CUE |\n"
             "|---|---|---|---|---|\n"
@@ -133,21 +133,24 @@ class OneClockTest(unittest.TestCase):
             "|---|---|---|---|---|\n"
             f"| 1 | 9:59 | QUOTE | {sentence(4)} | {sentence(4)} |\n")
         out = ew.rewrite_cue_timestamps(text, script(30), 60)
-        self.assertIn("| 1 | 0:00 | A → B |", out)
-        self.assertIn("| 2 | 0:10 | B → C |", out)
+        self.assertIn("| 1 | 0:00 |", out)
+        self.assertIn("| A → B | Cut |", out)
+        self.assertIn("| 2 | 0:10 |", out)
+        self.assertIn("| B → C | Zoom |", out)
         self.assertIn("| 1 | 0:15 | POPUP |", out)
         self.assertIn("| 2 | 9:59 | TITLE |", out)            # unknown cue: unchanged
         self.assertIn("| 1 | 0:20 | QUOTE |", out)
 
     def test_designers_put_their_tables_on_the_script_clock(self):
         transition = ("## TRANSITION DESIGN MAP\n"
-                      "| # | Timestamp | From → To | START CUE | Transition Type |\n"
+                      "| # | Timestamp | START CUE | From → To | Transition Type |\n"
                       "|---|---|---|---|---|\n"
-                      f"| 1 | 5:00 | A → B | {sentence(2)} | Cut |\n")
+                      f"| 1 | 5:00 | {sentence(2)} | A → B | Cut |\n")
         use(self, production, "call_llm", FakeLLM(lambda *a: transition))
         state = {"refined_script": script(30), "blueprint": {"words_per_minute": 60}}
         out = production.transition_designer(state)["transition_design"]
-        self.assertIn("| 1 | 0:10 | A → B |", out)
+        self.assertIn("| 1 | 0:10 |", out)
+        self.assertIn("| A → B | Cut |", out)
 
         overlay = ("## TEXT ANIMATION & OVERLAY GUIDE\n"
                    "| # | ⏱️ Timecode | Element | START CUE | END CUE |\n"
