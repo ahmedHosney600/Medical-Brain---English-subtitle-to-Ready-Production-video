@@ -637,6 +637,10 @@ _BRACKET_HEADER_RE = re.compile(r"^\s*\[\s*((?:ACT|CHAPTER|PART|الفصل)\s*\d
 _TIMED_BRACKET_HEADER_RE = re.compile(
     r"^\s*\[\s*([^\[\]|]{2,90}?)\s*\|\s*~?\d{1,2}:\d{2}(?:\s*[–\-—]\s*~?\d{1,2}:\d{2})?\s*(?:\|[^\[\]]*)?\]\s*$")
 _CUE_LABEL_RE = re.compile(r"^[A-Z][A-Z0-9 \-/&]*:")
+# "=== [CHAPTER 1 | العنوان] ===": brackets inside the header and a "|" after the number
+# (a "|" title reads as a production label "DISCLAIMER | Timestamp …" and is skipped).
+_WRAPPED_HEADER_RE = re.compile(r"^\s*===\s*\[\s*(.*?)\s*\]\s*===\s*$")
+_NUMBERED_PIPE_RE = re.compile(r"^((?:ACT|CHAPTER|PART|الفصل)\s*\d+)\s*\|\s*(.+)$", re.IGNORECASE)
 
 
 def normalize_section_headers(text: str) -> str:
@@ -647,9 +651,22 @@ def normalize_section_headers(text: str) -> str:
     lines = text.split("\n")
     changed = False
     for i, line in enumerate(lines):
+        m = _WRAPPED_HEADER_RE.match(line) or (_HEADER_RE.match(line) if "|" in line else None)
+        if m:
+            title = m.group(1).strip()
+            numbered = _NUMBERED_PIPE_RE.match(title)
+            if numbered:
+                title = f"{numbered.group(1)} — {numbered.group(2).strip()}"
+            if f"=== {title} ===" != line.strip():
+                lines[i] = f"=== {title} ==="
+                changed = True
+            continue
         m = _BRACKET_HEADER_RE.match(line)
         if m:
-            lines[i] = f"=== {m.group(1).strip()} ==="
+            title = m.group(1).strip()
+            numbered = _NUMBERED_PIPE_RE.match(title)
+            lines[i] = f"=== {numbered.group(1)} — {numbered.group(2).strip() if numbered else ''} ===" \
+                if numbered else f"=== {title} ==="
             changed = True
             continue
         m = _TIMED_BRACKET_HEADER_RE.match(line)

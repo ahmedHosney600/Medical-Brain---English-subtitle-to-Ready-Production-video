@@ -518,3 +518,16 @@ class RevisionGrowthTest(unittest.TestCase):
                 mock.patch("builtins.print"):
             sw.script_refinement(state)
         self.assertEqual(llm.call_count, 1)
+
+
+class WrappedHeaderTest(unittest.TestCase):
+    def test_bracketed_chapter_with_pipe_inside_equals(self):
+        from medical_brain.nodes.chapters import normalize_section_headers, content_sections
+        text = ("[HOOK]\nكلام\n=== [CHAPTER 1 | علاج الصداع] ===\nكلام كتير\n"
+                "=== [CHAPTER 2 | الجيوب] ===\nكلام تاني\n=== DISCLAIMER | Timestamp: 1:05 ===\nتنبيه\n")
+        out = normalize_section_headers(text)
+        self.assertIn("=== CHAPTER 1 — علاج الصداع ===", out)
+        self.assertIn("=== CHAPTER 2 — الجيوب ===", out)
+        self.assertIn("=== DISCLAIMER | Timestamp: 1:05 ===", out)      # a production label stays
+        self.assertEqual([t for t, _ in content_sections(out)], ["CHAPTER 1 — علاج الصداع", "CHAPTER 2 — الجيوب"])
+        self.assertEqual(normalize_section_headers(out), out)
