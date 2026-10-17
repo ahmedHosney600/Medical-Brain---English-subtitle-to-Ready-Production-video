@@ -933,6 +933,9 @@ def repair_script(state: PipelineState, script: str, *sources: str) -> str:
     script, removed = chapters.dedupe_signoffs(script)
     if removed:
         print(f"  🩹 removed {removed} duplicate sign-off paragraph(s)")
+    script, shared = chapters.ensure_share_line(script)
+    if shared:
+        print("  🩹 added the family-share line before the sign-off")
     # The chosen frame's disclaimer belongs upfront (the settings ask for rigorous
     # disclaimers before the content); a later pass sometimes carries it to the closing.
     frame = (state or {}).get("script_frame") or {}

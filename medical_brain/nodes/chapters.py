@@ -933,6 +933,42 @@ def farewell_paragraphs(script: str) -> list:
     return out
 
 
+SHARE_LINE = "ابعت الفيديو ده لحد في البيت بيعاني من ده."
+_SHARE_RE = re.compile(r"(ابعت|ابعتوا|شارك|شاركوا|ابعتي)\s+(ال)?(فيديو|الفيديو|ده)")
+
+
+def ensure_share_line(script: str) -> tuple:
+    """(script, added). The closing must carry the family-share line («ابعت الفيديو ده
+    لحد في البيت بيعاني من ده»); judges failed the callback-closing criterion when a
+    revision dropped it. When the last third of the spoken script has no share request,
+    the line is inserted as its own paragraph right before the final sign-off paragraph.
+    Short texts (< 300 spoken words) and scripts without a sign-off are left alone."""
+    text = script or ""
+    if not text.strip():
+        return script, False
+    spoken = spoken_text(text)
+    if len(spoken.split()) < 300:                    # not a full video script
+        return script, False
+    if _SHARE_RE.search(normalize_ar(spoken[int(len(spoken) * 0.66):])) or _SHARE_RE.search(spoken[int(len(spoken) * 0.66):]):
+        return script, False
+    paragraphs = re.split(r"(\n\s*\n)", text)
+    for k in range(len(paragraphs) - 1, -1, -1):
+        if paragraphs[k].strip() and _is_signoff_paragraph(paragraphs[k])[1]:
+            # Right before the good-bye sentence itself: a closing paragraph often holds
+            # the recap and the last question too, and the share line comes after those.
+            parts = re.split(r"(?<=[.!?؟…])(\s+)", paragraphs[k])
+            for j in range(len(parts)):
+                if parts[j].strip() and _is_signoff_paragraph(parts[j])[1]:
+                    if j == 0:
+                        break
+                    parts.insert(j, SHARE_LINE + "\n")
+                    paragraphs[k] = "".join(parts)
+                    return "".join(paragraphs), True
+            paragraphs.insert(k, SHARE_LINE + "\n\n")
+            return "".join(paragraphs), True
+    return script, False                             # no closing to put it before
+
+
 def _collapse_double_dashes(text: str) -> str:
     """A deletion can leave two '---' lines (with only blanks between) where one was:
     collapse the duplicate."""

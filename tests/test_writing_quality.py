@@ -572,3 +572,22 @@ class LastChapterOverPlanTest(unittest.TestCase):
         self.assertIn("planned 310", found["title"])
         bp["chapters"][-1]["words"] = 450                 # within 1.3× of its plan: fine
         self.assertIsNone(_last_chapter_over_plan(script, bp))
+
+
+class ShareLineTest(unittest.TestCase):
+    BODY = "كلام مفيد عن الصداع. " * 120
+
+    def test_missing_share_line_goes_before_the_goodbye(self):
+        from medical_brain.nodes.chapters import ensure_share_line, SHARE_LINE
+        script = self.BODY + "\n\nاكتب في التعليقات كام يوم. خلي بالك من نفسك. أشوفك في الحلقة الجاية.\n"
+        out, added = ensure_share_line(script)
+        self.assertTrue(added)
+        self.assertLess(out.find(SHARE_LINE), out.find("أشوفك"))
+        self.assertGreater(out.find(SHARE_LINE), out.find("اكتب في التعليقات"))
+        self.assertEqual(ensure_share_line(out), (out, False))
+
+    def test_present_or_short_is_left_alone(self):
+        from medical_brain.nodes.chapters import ensure_share_line
+        has = self.BODY + "\n\nابعت الفيديو ده لأمك. أشوفك في الحلقة الجاية.\n"
+        self.assertFalse(ensure_share_line(has)[1])
+        self.assertFalse(ensure_share_line("كلام قليل. أشوفك في الحلقة الجاية.")[1])
