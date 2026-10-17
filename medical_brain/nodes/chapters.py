@@ -529,6 +529,26 @@ HEAVY_ENDING_SHARE = 0.30      # the last content section may not hold > 30% of 
 HEAVY_ENDING_RATIO = 1.6       # nor be > 1.6 × the average section
 
 
+_HEADER_TIME_RE = re.compile(r"(Timestamp\s*:\s*)~?\d{1,2}:\d{2}(?:\s*[–-]\s*\d{1,2}:\d{2})?", re.IGNORECASE)
+
+
+def retime_header_labels(script: str, wpm: float = 135) -> str:
+    """Rewrite the planned "Timestamp: M:SS" inside "=== … ===" headers to where the
+    section really starts (spoken words before it / wpm). A script grown from 11 to 16
+    minutes kept "OUTRO | Timestamp: 11:35" and the production judge took it as the end."""
+    if not script or not wpm:
+        return script
+    out, words = [], 0
+    for title, text in split_by_chapters(script):
+        if title and _HEADER_TIME_RE.search(text.split("\n", 1)[0]):
+            head, sep, rest = text.partition("\n")
+            head = _HEADER_TIME_RE.sub(lambda m: m.group(1) + fmt_time(words / wpm * 60.0), head, count=1)
+            text = head + sep + rest
+        out.append(text)
+        words += len(spoken_text(text).split())
+    return "".join(out)
+
+
 def content_sections(script: str) -> list:
     """[(title, text)] for the "=== … ===" content sections, without the preamble and
     without a trailing CTA/OUTRO/CLOSING section (its title contains one of those)."""

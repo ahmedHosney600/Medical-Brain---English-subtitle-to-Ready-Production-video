@@ -441,3 +441,14 @@ class LongDisclaimerTest(unittest.TestCase):
         self.assertIsNotNone(chapters.long_disclaimer("=== A ===\n" + long_one))
         self.assertIsNone(chapters.long_disclaimer("=== A ===\nالكلام ده للتوعية ومش بديل عن طبيبك."))
         self.assertIn("CODE CHECK — the disclaimer is", critique_prompt("=== A ===\n" + long_one + "\n\n" + words("a", 200)))
+
+
+class RetimeHeaderLabelsTest(unittest.TestCase):
+    def test_header_timestamp_rewritten_to_measured_start(self):
+        from medical_brain.nodes.chapters import retime_header_labels
+        script = ("كلمة " * 135 + "\n=== ACT 1 — بداية ===\n" + "كلمة " * 270
+                  + "\n=== OUTRO | Timestamp: 11:35 | Energy: 2/5 ===\nمع السلامة\n")
+        out = retime_header_labels(script, 135)
+        self.assertIn("=== OUTRO | Timestamp: 3:00 | Energy: 2/5 ===", out)
+        self.assertIn("=== ACT 1 — بداية ===", out)
+        self.assertEqual(out.replace("3:00", "11:35"), script)

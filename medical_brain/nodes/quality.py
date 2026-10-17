@@ -11,6 +11,11 @@ from ..utils.llm_json import UnreadableAnswer, pick
 from . import chapters
 
 
+def _wpm(state) -> float:
+    from ..exports.workbook import blueprint_wpm
+    return blueprint_wpm(state.get("blueprint"))
+
+
 def _translation_single_call(state: PipelineState, system_prompt: str) -> dict:
     """The original whole-body audit (also the fallback when the body isn't chaptered)."""
     user_prompt = f"""Audit this restructured body for translation risk and contextual alignment against the original.
@@ -353,7 +358,7 @@ The ORIGINAL SOURCE above is a verified RESEARCH DOSSIER with citations [S#]. Ev
             "truth_verification_report": report,
             "truth_score": truth_score,
             "truth_pass": truth_pass and (truth_score >= 9),
-            "refined_script": final_script,
+            "refined_script": chapters.retime_header_labels(final_script, _wpm(state)),
         }
     except Exception:
         return {
@@ -593,4 +598,6 @@ def _critique_result(state: PipelineState, grade: str, data, raw: str) -> dict:
         result.update(best_scores)
         result["refined_script"] = best_script
         result["quality_grade"] = "PASS" if best_passed else result["quality_grade"]
+    if result.get("refined_script"):
+        result["refined_script"] = chapters.retime_header_labels(result["refined_script"], _wpm(state))
     return result

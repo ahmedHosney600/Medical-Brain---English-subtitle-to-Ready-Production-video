@@ -2115,6 +2115,22 @@ def _video_minutes(state: PipelineState) -> float:
     return words / 140 if words else 0
 
 
+def script_clock(script: str, wpm: float) -> str:
+    """Code-measured clock of the script for the production judge: where every
+    "=== … ===" section starts and where the spoken script ends (spoken words / wpm).
+    A real judge guessed the end at 11:35 for a 16:23 script and failed every layer
+    for a "drift" that did not exist."""
+    if not script or not wpm:
+        return ""
+    marks, words = [], 0
+    for title, text in chapters.split_by_chapters(script):
+        if title:
+            marks.append(f"{_fmt_seconds(words / wpm * 60.0)} «{title[:50]}»")
+        words += len(ew.spoken_text(text).split())
+    return (f"spoken words = {words}, {wpm:g} wpm → the script ENDS at {_fmt_seconds(words / wpm * 60.0)}"
+            + (f"; sections start at: {'; '.join(marks)}" if marks else ""))
+
+
 def production_quality_critique(state: PipelineState) -> dict:
     system_prompt = load_prompt("production_quality_critique")
     code_problems = broll_engagement_problems(state.get("broll_prompts", ""), state.get("text_animation_overlay", ""),
@@ -2125,6 +2141,8 @@ def production_quality_critique(state: PipelineState) -> dict:
                                               state.get("text_animation_overlay", ""))
     code_note = ("\n\n### Code checks — B-roll engagement (must fix)\n" + "\n".join(f"- {p}" for p in code_problems)
                  if code_problems else "")
+
+    clock = script_clock(state.get("refined_script", ""), ew.blueprint_wpm(state.get("blueprint")))
 
     user_prompt = f"""Audit the post-production editing layers as an integrated visual system.
 
@@ -2147,6 +2165,7 @@ TARGET PLATFORM: {state.get("target_platform", "")}
 B-ROLL AVAILABILITY: {state.get("broll_availability", "")}
 
 REVISION COUNT: {state.get("production_revision_count", 0)}
+{("SCRIPT CLOCK (measured by code — exact; use these times, do not estimate the script's timing): " + clock) if clock else ""}
 {("CODE CHECKS (measured by code — each one is a CRITICAL issue to list in your report):" + code_note) if code_problems else ""}
 
 Evaluate all three layers individually AND as an integrated system. Score each criterion. Output ONLY the JSON object."""

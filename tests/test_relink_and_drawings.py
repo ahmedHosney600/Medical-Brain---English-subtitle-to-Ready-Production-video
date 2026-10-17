@@ -225,3 +225,17 @@ class DrawingWindowTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScriptClockTest(unittest.TestCase):
+    def test_section_starts_and_end_from_spoken_words(self):
+        from medical_brain.nodes.production import script_clock
+        script = ("=== أولاً ===\n" + "كلمة " * 120 + "\n=== ثانياً ===\n" + "كلمة " * 240 + "\n")
+        clock = script_clock(script, 120)
+        self.assertIn("ENDS at 3:00", clock)
+        self.assertIn("0:00 «أولاً»", clock)
+        self.assertIn("1:00 «ثانياً»", clock)
+
+    def test_empty_script(self):
+        from medical_brain.nodes.production import script_clock
+        self.assertEqual(script_clock("", 135), "")
