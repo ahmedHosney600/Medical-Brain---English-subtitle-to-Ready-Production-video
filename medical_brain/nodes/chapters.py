@@ -632,11 +632,16 @@ def has_early_comment_question(script: str, fraction: float = COMMENT_QUESTION_F
 # "=== title ===": the chapter-aware checks (heavy ending, missing chapters) then saw
 # no chapters at all in a real run.
 _BRACKET_HEADER_RE = re.compile(r"^\s*\[\s*((?:ACT|CHAPTER|PART|الفصل)\s*\d+\s*[—:\-–|].*?)\s*\]\s*$", re.IGNORECASE)
+# "[الفخ الأول: مش كل صداع جيوب | 1:15–3:15 | Energy: 3]": a titled section with its
+# planned time range. The planned times go stale when the script grows, so they are dropped.
+_TIMED_BRACKET_HEADER_RE = re.compile(
+    r"^\s*\[\s*([^\[\]|]{2,90}?)\s*\|\s*~?\d{1,2}:\d{2}(?:\s*[–\-—]\s*~?\d{1,2}:\d{2})?\s*(?:\|[^\[\]]*)?\]\s*$")
+_CUE_LABEL_RE = re.compile(r"^[A-Z][A-Z0-9 \-/&]*:")
 
 
 def normalize_section_headers(text: str) -> str:
-    """Rewrite bracketed act/chapter header lines ("[ACT 2 — اللغز]") to "=== ACT 2 — اللغز ===".
-    Cue lines ([VISUAL NOTE: …], [SFX: …], [HOOK]) are left alone."""
+    """Rewrite bracketed act/chapter header lines ("[ACT 2 — اللغز]") to "=== ACT 2 — اللغز ===",
+    and timed section lines ("[العنوان | 1:15–3:15 | Energy: 3]") to "=== العنوان ===". Cue lines ([VISUAL NOTE: …], [SFX: …], [HOOK]) are left alone."""
     if not text:
         return text
     lines = text.split("\n")
@@ -644,6 +649,11 @@ def normalize_section_headers(text: str) -> str:
     for i, line in enumerate(lines):
         m = _BRACKET_HEADER_RE.match(line)
         if m:
+            lines[i] = f"=== {m.group(1).strip()} ==="
+            changed = True
+            continue
+        m = _TIMED_BRACKET_HEADER_RE.match(line)
+        if m and not _CUE_LABEL_RE.match(m.group(1).strip()):
             lines[i] = f"=== {m.group(1).strip()} ==="
             changed = True
     return "\n".join(lines) if changed else text

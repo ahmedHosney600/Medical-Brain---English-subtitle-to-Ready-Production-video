@@ -463,3 +463,16 @@ class HookTieBreakTest(unittest.TestCase):
         self.assertTrue(hook.split("\n\n")[1] == "deepseek hook")
         hook, _ = _contest_hook(cands, {"H1": 19, "H2": 18.89}, writers, prefer="deepseek:y")
         self.assertTrue(hook.split("\n\n")[1] == "agy hook")
+
+
+class TimedBracketHeaderTest(unittest.TestCase):
+    def test_timed_section_lines_become_headers_and_cues_stay(self):
+        from medical_brain.nodes.chapters import normalize_section_headers
+        text = ("[HOOK]\nكلام\n[الفخ الأول: مش كل صداع جيوب أنفية | 1:15–3:15 | Energy: 3]\nكلام\n"
+                "[VISUAL NOTE: لافتة | 0:30]\n[المقدمة والتعريف | 0:35–1:15 | Energy: 3]\n"
+                "[وقفة — حزم]\n[TEXT OVERLAY: الفخ الأول]")
+        out = normalize_section_headers(text)
+        self.assertIn("=== الفخ الأول: مش كل صداع جيوب أنفية ===", out)
+        self.assertIn("=== المقدمة والتعريف ===", out)
+        for kept in ("[HOOK]", "[VISUAL NOTE: لافتة | 0:30]", "[وقفة — حزم]", "[TEXT OVERLAY: الفخ الأول]"):
+            self.assertIn(kept, out)
