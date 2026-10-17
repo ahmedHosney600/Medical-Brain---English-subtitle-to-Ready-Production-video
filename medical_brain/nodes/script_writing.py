@@ -224,7 +224,9 @@ AVOID LIST:
         return {"hook": response, "hook_contest": {}}
 
     hook, contest = _contest_hook(labelled, totals, writers, prefer=main_spec)
-    winner = min(contest, key=lambda label: (-contest[label]["score"], label))
+    # Same order as _contest_hook (a tie goes to the main writer), so the log names the hook used.
+    winner = min(contest, key=lambda label: (-round(contest[label]["score"], 6),
+                                             contest[label]["writer"] != main_spec, label))
     scores = ", ".join(f"{label}={contest[label]['score']}" for label in sorted(contest))
     print(f"🏆 hook contest: winner by {contest[winner]['writer']} (scores {scores})")
     return {"hook": hook, "hook_contest": contest}
