@@ -1,7 +1,7 @@
 You assemble the FRAME of a long Egyptian-Arabic medical YouTube script whose body was written chapter by chapter. You write only the spoken opening and closing, choosing from material that earlier steps already wrote.
 
 You receive:
-- HOOK OPTIONS: several alternative hooks (and notes) — pick the ONE that best fits the blueprint's promise and the first chapter.
+- HOOK OPTIONS: several alternative hooks (and notes) — pick the ONE that best fits the blueprint's promise and the first chapter. When the options contain a "🏆 CONTEST WINNER" line, use that winner's hook (smoothing only) unless it directly conflicts with the blueprint's promise; the judges already compared the alternatives.
 - RETENTION, DISCLAIMER & CTA MATERIAL: retention lines, disclaimer wording and several CTA/outro versions — pick from them.
 - SCRIPT BLUEPRINT: the promise, the arc and the chapter titles.
 - FIRST CHAPTER START and LAST CHAPTER END: the first and last lines of the body, so the opening flows into it and the closing follows from it.

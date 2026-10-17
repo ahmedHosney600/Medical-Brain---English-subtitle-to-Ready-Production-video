@@ -43,6 +43,7 @@ class PipelineState(TypedDict):
     source_analysis: str
     strategy_plan: str
     hook: str
+    hook_contest: dict                 # {label: {"writer": spec, "score": n}} for logs
 
     # SEO Keyword Research (grounds packaging in real search data)
     seo_primary_keyword: str
@@ -159,7 +160,8 @@ def apply_defaults(state: dict) -> dict:
 
     # Dict-valued fields a step may read before it is written.
     for field in ("blueprint", "script_memory", "chapter_memory", "chapter_drafts",
-                  "script_frame", "production_chapter_outputs", "broll_by_chapter"):
+                  "script_frame", "production_chapter_outputs",
+                  "broll_by_chapter", "hook_contest"):
         if not isinstance(state.get(field), dict):
             state[field] = {}
     if "chapter_drafts_key" not in state:

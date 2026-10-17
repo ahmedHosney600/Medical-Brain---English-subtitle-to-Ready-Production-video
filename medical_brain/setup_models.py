@@ -8,8 +8,9 @@ to change models or check your subscriptions:
     python3 setup_models.py --template NAME  # apply a template, test its models, save
 
 Ready-made templates (pick one in the menu, or with --template NAME):
+    deepseek-writes  RECOMMENDED — DeepSeek writes, agy plans/designs and judges quality.
     gemini           Gemini only — free Google quota; Gemini judges its own work (lenient).
-    gemini-deepseek  RECOMMENDED — Gemini writes, DeepSeek judges (sharp, cheap API).
+    gemini-deepseek  Gemini writes, DeepSeek judges (cheap API, lighter Arabic).
     gemini-claude    Gemini writes, Claude judges (strictest; slower, subscription tokens).
 
 Providers: Gemini Canvas proxy, Claude (subscription or API key), DeepSeek API,
@@ -271,18 +272,22 @@ TEMPLATE_CHOICES = {"1": "gemini", "2": "gemini-deepseek", "3": "gemini-claude",
 
 
 def select_template():
-    """Ask which ready-made template to use. Returns its name, or None for the custom flow."""
-    choice = ask("\nUse a ready template? 1) Gemini only  2) Gemini writes + DeepSeek judges (recommended)  "
+    """Ask which ready-made template to use. Returns its name, or None for the custom flow.
+    Enter takes the recommended deepseek-writes template (choice 6)."""
+    choice = ask("\nUse a ready template?  6) DeepSeek writes + agy plans/judges (recommended)  "
+                 "1) Gemini only  2) Gemini writes + DeepSeek judges  "
                  "3) Gemini writes + Claude judges  4) Gemini 4 Argon writes + DeepSeek judges  "
-                 "5) Best model per step (agy + Argon + DeepSeek)  6) DeepSeek writes + agy plans/judges  "
-                 "7) Custom choice [2]: ", "2")
+                 "5) Best model per step (agy + Argon + DeepSeek)  7) Custom choice [6]: ",
+                 "6")
     return TEMPLATE_CHOICES.get(choice)
 
 
 def list_templates():
     print("\nReady-made model templates")
     print("--------------------------")
-    for name, template in MODEL_TEMPLATES.items():
+    order = [RECOMMENDED_TEMPLATE, *[n for n in MODEL_TEMPLATES if n != RECOMMENDED_TEMPLATE]]
+    for name in order:
+        template = MODEL_TEMPLATES[name]
         mark = "  (recommended)" if name == RECOMMENDED_TEMPLATE else ""
         print(f"  {name}{mark}")
         print(f"      {template['label']} — {template['description']}")
@@ -314,7 +319,8 @@ def main():
         return
     if "--template" in args:
         i = args.index("--template")
-        run_template(args[i + 1] if i + 1 < len(args) else "")
+        name = args[i + 1] if i + 1 < len(args) and not args[i + 1].startswith("-") else RECOMMENDED_TEMPLATE
+        run_template(name)
         return
 
     check_packages()

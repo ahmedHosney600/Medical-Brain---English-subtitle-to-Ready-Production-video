@@ -130,13 +130,8 @@ def thinking_mode(cfg: dict, model: str) -> Optional[str]:
     return None
 
 
-DEFAULT_MAIN = "gemini:gemini-3-flash-preview"
-
-
-DEFAULT_BACKUP = ""
-
-
-DEFAULT_SINGLE = "claude:claude-opus-5-5"
+# The model defaults live below, next to MODEL_TEMPLATES: a fresh install uses the
+# recommended template exactly (see RECOMMENDED_TEMPLATE).
 
 
 # Research workflow judge → the video judge whose model it borrows when not set.
@@ -147,17 +142,6 @@ RESEARCH_JUDGES = {
     # The expert brief is model knowledge used to direct research; route it like the
     # fact verifier (fact_verifier is resolved earlier in this ordered mapping).
     "expert_brief": "fact_verifier",
-}
-
-
-DEFAULT_HYBRID_ROUTES = {
-    # High-stakes medical checks: deepest reasoning.
-    "medical_truth_verifier": "claude:claude-opus-5-5",
-    "fidelity_auditor": "claude:claude-opus-5-5",
-    # Critiques: strong, cheaper, a different model family from the writer.
-    "self_critique": "claude:claude-sonnet-5-5",
-    "packaging_honesty_ctr_auditor": "claude:claude-sonnet-5-5",
-    "production_quality_critique": "claude:claude-sonnet-5-5",
 }
 
 
@@ -185,7 +169,7 @@ MODEL_TEMPLATES = {
     },
     "gemini-deepseek": {
         "label": "Gemini writes + DeepSeek judges",
-        "description": "Recommended: sharpest judge, light-touch corrections, cheap API key.",
+        "description": "Gemini writes; DeepSeek judges. Cheaper than DeepSeek writing, lighter Arabic.",
         "main_model": "agy:gemini-3.8-flash-medium",
         "single_model": "deepseek:deepseek-flash",
         "backup_model": "agy:gemini-3.8-flash-low",
@@ -271,12 +255,25 @@ MODEL_TEMPLATES = {
                ("medical_truth_verifier", "fidelity_auditor", "packaging_honesty_ctr_auditor",
                 "production_quality_critique", "source_screener", "fact_verifier", "coverage_critic",
                 "eval_judge", "expert_brief")},
+            # Hook contest: a second family writes alternatives and two blind judges score
+            # them; hook_writer itself stays on the main model (DeepSeek).
+            "hook_writer_alt": "agy:gemini-3.8-flash-medium",
+            "hook_judge_a": "agy:gemini-3.8-flash-high",
+            "hook_judge_b": "deepseek:deepseek-flash",
         },
     },
 }
 
 
-RECOMMENDED_TEMPLATE = "gemini-deepseek"
+RECOMMENDED_TEMPLATE = "deepseek-writes"
+
+
+# A fresh install (no llm_variables.json) gets exactly the recommended template.
+_DEFAULT_TEMPLATE = MODEL_TEMPLATES[RECOMMENDED_TEMPLATE]
+DEFAULT_MAIN = _DEFAULT_TEMPLATE["main_model"]
+DEFAULT_SINGLE = _DEFAULT_TEMPLATE["single_model"]
+DEFAULT_BACKUP = _DEFAULT_TEMPLATE["backup_model"]
+DEFAULT_HYBRID_ROUTES = dict(_DEFAULT_TEMPLATE["hybrid_routes"])
 
 
 def apply_template(config: dict, name: str) -> dict:

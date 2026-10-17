@@ -41,6 +41,19 @@ WORD COUNT FORMULA (Egyptian Arabic talking head):
   * Act 4 (The Clinical Evidence, Verdict & Solution): 250–300 words (7:30–8:45)
   * Outro & Interactive CTA: 70–90 words (8:45–9:00)
 
+CHAPTER LOAD & LIGHT ENDING (MANDATORY):
+- Each chapter carries at most ~5 NEW points. Do not turn a chapter into a list.
+- The final chapter is the LIGHTEST chapter: at most ~20% of the body's spoken words and at most 4 new points. The video must land, not keep loading new material.
+- Put the most important safety content (red flags, emergency signs) and the payoff of the open loops BEFORE secondary lists (medicines, conditions, extra causes).
+- A dense topic is split across chapters instead of crammed at the end. If the material needs more room, add a chapter earlier in the arc — never a heavier ending.
+
+SIGNATURE DEVICES (plan these explicitly, in every video):
+- Two open loops with concrete stakes: one planted in the hook, one at the end of the first chapter. Schedule a mid-video reminder and say where each loop is paid off (both before the closing).
+- One shareable number moment: a surprising, true number from the source / Medical Fact Ledger only (never invented, never rounded up for effect).
+- One early comment question tied to a real viewer habit, in the first ~40% of the spoken script.
+- Honest evidence-strength lines: say how strong the evidence is once per point, in plain words.
+- A closing that calls back to the opening scene, pays off the promise, has one CTA plus a "send it to someone at home who suffers from this" line, and an emotional, warm sign-off.
+
 ANALOGY BANK RULES:
 - Every analogy must preserve the direction and rough magnitude of the real mechanism — an analogy that makes a mild risk sound severe (or vice versa) is a fidelity failure, not a style win.
 - REGISTER & TONE (العامية المصرية المثقفة البيضاء): Use clear, elegant, and universally understood Egyptian analogies that any viewer across Egypt can relate to without confusion.
@@ -139,7 +152,8 @@ The script is written chapter by chapter from this blueprint, so long videos nev
 - Videos up to ~10 minutes: ONE chapter (the whole body). Longer videos: chapters of about 3–5 minutes (≈400–700 words each), each with one clear job in the story.
 - "promise": what the viewer will be able to do or understand by the end — the hook makes it, the last chapter and CTA pay it off. The promise and the hook angle may use ONLY specifics that are in the source (no added durations like "in 10 seconds", no "instantly", "guaranteed", "the only solution", no numbers the source lacks); if the evidence is modest ("may help"), promise understanding and practical steps, not results.
 - "through_lines": what runs through the whole video so it feels like one story: a recurring example or patient scenario (built from the source, never invented medical facts), the key terms and how they are first said, and the one thing to remember.
-- Per chapter: "covers" names the parts of the source/patient guide it uses (section titles or fact ids), so no two chapters repeat the same facts unless one is a deliberate callback; "opens_loops"/"closes_loops" are the questions a chapter raises and the ones it answers (every opened loop must be closed by a later chapter); "depends_on_previous" is false only when the chapter can be written without reading the one before it (e.g. a myths list).
+- Per chapter: "covers" names the parts of the source/patient guide it uses (section titles or fact ids), so no two chapters repeat the same facts unless one is a deliberate callback; "opens_loops"/"closes_loops" are the questions a chapter raises and the ones it answers (every opened loop must be closed by a later chapter — use the two planned loops here: one planted in the hook, one planted at the end of chapter 1, each closed by a later chapter before the closing). "depends_on_previous" is false only when the chapter can be written without reading the one before it (e.g. a myths list).
+- Keep each chapter to at most ~5 new points, and make the final chapter the lightest (≤ 20% of the words, ≤ 4 new points), with the red flags / emergency signs and the loop payoff before any secondary list.
 
 ```json
 {

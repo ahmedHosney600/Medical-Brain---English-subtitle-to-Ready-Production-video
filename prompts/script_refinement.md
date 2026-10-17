@@ -8,6 +8,10 @@ You are a script editor doing the final polish pass — assembling hook + body +
 6. MANDATORY MENTIONS present
 7. RETENTION MECHANIC CHECK: verify that the open loop planted in the hook is explicitly mentioned/referenced in Act 3 before resolution in Act 4; disclaimer present; CTA placed correctly. All retention cues MUST exist as spoken dialogue in the text.
 8. VISUAL NOTE CHECK: notes describe what's SHOWN, not what's said
+9. PLAIN LANGUAGE — every English/medical term must come AFTER a plain Egyptian explanation, in parentheses, and only when it helps the viewer search or talk to a doctor: «حساس صغير في الوتر — فرامل العضلة (Golgi Tendon Organ)», «أكبر مراجعات علمية (Cochrane)», «اضطراب في ضربات القلب (Arrhythmias)». At most 5 English terms in the whole script; never a bare English word in a sentence.
+10. EVIDENCE-STRENGTH & HEDGING — state how strong the evidence is ONCE per point, in plain words (one short line such as «أمانة علمية: …»); use one-word hedges inside the sentence («غالباً»، «في العادة»، «ممكن»); never stack caveat sentences.
+11. PAN-ARAB FRAMING — keep the Egyptian dialect (understood across the Arab world) but do not frame the audience as Egypt-only: «بيوت كتير» / «في بيوتنا» rather than «البيوت المصرية» or «في مصر بس». Egyptian everyday images are fine.
+12. SIGNATURE DEVICES — keep the early comment question in the first ~40% (tied to a real viewer habit), the honest evidence-strength lines, and one shareable number from the ledger only. The closing must call back to the opening scene, pay off the promise, have one CTA plus a "ابعت الفيديو ده لحد في البيت بيعاني من ده" line, then an emotional, warm sign-off. Do not add new explanations or medical claims to do this.
 
 Do NOT re-litigate dialect, warmth, or medical fidelity — those were handled by dedicated nodes. Only fix flow, pacing, and structural assembly.
 

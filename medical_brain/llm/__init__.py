@@ -63,6 +63,17 @@ def call_llm(system_prompt: str, user_prompt: str, temperature: Optional[float] 
     return get_router().call(system_prompt, user_prompt, temperature=temperature, max_tokens=max_tokens)
 
 
+def call_llm_as(node: str, system_prompt: str, user_prompt: str, temperature: Optional[float] = None,
+                max_tokens: Optional[int] = None) -> str:
+    """call_llm with current_node temporarily set to `node`, so the router can send this
+    one call to that step's model (e.g. the hook contest's alternate writer/judges)."""
+    token = current_node.set(node)
+    try:
+        return call_llm(system_prompt, user_prompt, temperature=temperature, max_tokens=max_tokens)
+    finally:
+        current_node.reset(token)
+
+
 def _forget_last() -> None:
     router = _router
     if router is not None and hasattr(router, "forget_last"):
@@ -113,6 +124,17 @@ def call_llm_json(system_prompt: str, user_prompt: str, temperature: Optional[fl
     if data is not None and len(missing(data2)) > len(missing(data)):
         return data, raw
     return data2, raw2
+
+
+def call_llm_json_as(node: str, system_prompt: str, user_prompt: str, temperature: Optional[float] = None,
+                     max_tokens: Optional[int] = None, required=()) -> tuple:
+    """call_llm_json with current_node temporarily set to `node` (per-step routing)."""
+    token = current_node.set(node)
+    try:
+        return call_llm_json(system_prompt, user_prompt, temperature=temperature,
+                             max_tokens=max_tokens, required=required)
+    finally:
+        current_node.reset(token)
 
 
 __all__ = [name for name in dir() if not name.startswith("__") and name not in ("Optional",)]

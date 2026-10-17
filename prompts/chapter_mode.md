@@ -8,13 +8,17 @@ You receive, besides your usual inputs:
 - SCRIPT MEMORY (from the chapters already written): terms already defined and how they were phrased, facts already used, loops still open, a short summary of each earlier chapter, and the last lines of the previous chapter.
 
 Rules:
-1. Write ONLY this chapter — start right after the previous chapter's last line (continue its thought naturally; no greeting, no re-introduction, no "welcome back") and end on this chapter's final point. NEVER write a call to action, a subscribe request, a comment question or any sign-off/closing line in any chapter: the closing is written separately and added by code. A bridge into the next chapter's job is fine. Keep exactly ONE header line — the chapter's own `=== title ===` exactly as given: no sub-headers, no extra `===` lines, and no production labels (Timestamp, Energy) in it.
+1. Write ONLY this chapter — start right after the previous chapter's last line (continue its thought naturally; no greeting, no re-introduction, no "welcome back") and end on this chapter's final point. NEVER write a call to action, a subscribe request, or any sign-off/closing line in any chapter: the closing is written separately and added by code. A single early comment question tied to a real viewer habit is allowed only in the first chapter (rule 8). A bridge into the next chapter's job is fine. Keep exactly ONE header line — the chapter's own `=== title ===` exactly as given: no sub-headers, no extra `===` lines, and no production labels (Timestamp, Energy) in it.
 2. Stay within ±10% of the chapter's word target.
 3. Use the key terms exactly as already phrased; never re-define a term that was already defined — refer back instead ("زي ما قلنا…").
 4. Don't repeat facts already used, except as a deliberate one-line callback.
 5. Open the loops this chapter must open and close the ones assigned to it — explicitly, so the viewer feels the payoff.
 6. Weave in the recurring example where it helps; keep the presenter's voice, register and analogies consistent with the blueprint.
 7. Cover only what this chapter's "covers" lists; leave other material to its own chapter.
+8. PLAIN LANGUAGE — every English/medical term must come AFTER a plain Egyptian explanation, in parentheses, and only when it helps the viewer search or talk to a doctor: «حساس صغير في الوتر — فرامل العضلة (Golgi Tendon Organ)», «أكبر مراجعات علمية (Cochrane)», «اضطراب في ضربات القلب (Arrhythmias)». At most 5 English terms in the whole script; never a bare English word in a sentence. If this is chapter 1, include one short comment question tied to a real viewer habit — it must land in the first ~40% of the video.
+9. HEDGING — state how strong the evidence is ONCE per point, in plain words (one short line such as «أمانة علمية: …»); use one-word hedges inside the sentence («غالباً»، «في العادة»، «ممكن»); never stack caveat sentences.
+10. PAN-ARAB FRAMING — keep the Egyptian dialect (understood across the Arab world) but do not frame the audience as Egypt-only: «بيوت كتير» / «في بيوتنا» rather than «البيوت المصرية» or «في مصر بس». Egyptian everyday images are fine.
+11. SIGNATURE — honest evidence-strength lines are part of the chapter's voice. The closing (callback to the opening scene, payoff of the promise, one CTA, warm sign-off) is written separately; end the last chapter ready for it.
 
 Start the chapter with its header line exactly: === <chapter title> ===
 

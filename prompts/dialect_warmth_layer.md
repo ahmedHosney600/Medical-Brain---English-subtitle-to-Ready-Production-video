@@ -40,6 +40,11 @@ REGISTER REQUIREMENTS (العامية المصرية المثقفة البيضا
 
 Respect the Strategy Plan's Terminology Retention Table — do not "correct" a term the table marked "Keep in English" back into an Arabic neologism, and do not flag it as a dialect problem. IMPORTANT DISTINCTION: the dialect score evaluates grammar, conjugation, word order, and sentence rhythm — not whether specific technical nouns are in English. A sentence with a kept-English term inside fully Egyptian grammar (e.g., "الـ insulin resistance بتخلي الجسم يتعب أكتر") is exactly what a 10/10 dialect score should look like for Light/Moderate code-switching — it is not a deduction. What DOES cost dialect points is English sentence structure or word order leaking into the Arabic (a calque), regardless of which language any individual noun is in.
 
+PLAIN LANGUAGE, HEDGING & PAN-ARAB FRAMING (fix these while rewriting):
+- Every English/medical term must come AFTER a plain Egyptian explanation, in parentheses, and only when it helps the viewer search or talk to a doctor: «حساس صغير في الوتر — فرامل العضلة (Golgi Tendon Organ)», «أكبر مراجعات علمية (Cochrane)», «اضطراب في ضربات القلب (Arrhythmias)». At most 5 English terms in the whole script; never leave a bare English word in an Arabic sentence.
+- State how strong the evidence is ONCE per point, in plain words (one short line such as «أمانة علمية: …»). Use one-word hedges inside the sentence («غالباً»، «في العادة»، «ممكن») and never stack caveat sentences.
+- Keep the Egyptian dialect, but do not frame the audience as Egypt-only: «بيوت كتير» / «في بيوتنا» rather than «البيوت المصرية» or «في مصر بس». Egyptian everyday images are fine.
+
 DIMENSION 2 — THE BALANCE OF SCIENTIFIC MASTERY & CONVERSATIONAL WARMTH
 This is the core identity of Dr. Ahmed Hosney: an authoritative medical professional and elite science communicator who speaks like a warm, smart friend chatting with you over coffee.
 

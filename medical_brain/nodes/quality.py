@@ -325,7 +325,8 @@ The ORIGINAL SOURCE above is a verified RESEARCH DOSSIER with citations [S#]. Ev
         truth_pass = pick(data, "truth_pass", default=False, kind=bool)
         verified_script = (data.get("verified_script", "") or "").strip()
         report = data.get("truth_verification_report", "") or text
-        final_script = verified_script if verified_script else state.get("refined_script", "")
+        final_script = chapters.strip_script_extras(
+            verified_script if verified_script else state.get("refined_script", ""))
         if state.get("research_dossier"):
             final_script, report = _overclaim_fix_pass(state, final_script, report)
         # A single-chapter script can still grow past its whole-video budget while being
@@ -344,8 +345,9 @@ The ORIGINAL SOURCE above is a verified RESEARCH DOSSIER with citations [S#]. Ev
         # A verified script can still be missing a chapter the verifier dropped: repair
         # by code, then keep only one closing, before it moves on to self_critique.
         from .script_writing import repair_script
-        final_script = repair_script(state, final_script, state.get("refined_script", ""),
-                                     state.get("best_script", ""), state.get("revised_body", ""))
+        final_script = chapters.strip_script_extras(
+            repair_script(state, final_script, state.get("refined_script", ""),
+                          state.get("best_script", ""), state.get("revised_body", "")))
 
         return {
             "truth_verification_report": report,
@@ -428,6 +430,38 @@ Output ONLY the JSON object. Include the full revised script."""
                         "disclaimer the frame picked is not in the script at all. The revised script "
                         "must put that disclaimer back at the very start, before the content; "
                         "grade cannot be PASS.")
+
+    script = state.get("refined_script", "") or ""
+    if chapters.spoken_words(script) > 0:
+        # The final chapter should be the lightest; a crammed ending (red flags + medicines +
+        # conditions stacked at the end) is the review's main length problem.
+        heavy = chapters.heavy_ending(script)
+        if heavy:
+            print(f"  ⚠️ the ending is too heavy: {heavy['title']} has {heavy['words']} of "
+                  f"{heavy['total']} words")
+            user_prompt += (f"\n\nCODE CHECK — the ending is too heavy: {heavy['title']} has "
+                            f"{heavy['words']} of {heavy['total']} words ({heavy['share']:.0%} of the "
+                            f"spoken script, {heavy['ratio']:.1f}× the average section); move the "
+                            "secondary lists earlier or cut repetition; grade cannot be A.")
+
+        bare, groups = chapters.english_terms(script)
+        if bare or len(groups) > 5:
+            named_bare = ", ".join(dict.fromkeys(bare)) or "(none)"
+            named_groups = " | ".join(f"({g})" for g in groups) or "(none)"
+            print(f"  ⚠️ English terms: {len(bare)} bare, {len(groups)} parenthesised")
+            user_prompt += (f"\n\nCODE CHECK — {len(bare)} English term(s) outside parentheses: "
+                            f"{named_bare}; {len(groups)} parenthesised English group(s) (limit 5): "
+                            f"{named_groups}. Replace them with plain Egyptian wording; keep an "
+                            "English term only after its Arabic explanation, in parentheses, when it "
+                            "helps the viewer search or talk to a doctor.")
+            if len(bare) > 3:
+                user_prompt += " Grade cannot be A while more than 3 bare English terms remain."
+
+        if not chapters.has_early_comment_question(script):
+            print("  ⚠️ no comment question in the first ~40% of the script")
+            user_prompt += ("\n\nCODE CHECK (warning) — no comment question in the first ~40% of "
+                            "the spoken script. Add one short question tied to a real viewer habit "
+                            "(warning only; it does not cap the grade).")
 
     try:
         data, response = call_llm_json(system_prompt, user_prompt, temperature=0.6, max_tokens=12000,

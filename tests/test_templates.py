@@ -2,12 +2,16 @@
 import builtins
 import contextlib
 import io
+import os
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
 from medical_brain import setup_models
-from medical_brain.llm.config import JUDGE_ROUTES, MODEL_TEMPLATES, apply_template
+from medical_brain.llm import config as llm_config
+from medical_brain.llm.config import (JUDGE_ROUTES, MODEL_TEMPLATES, RECOMMENDED_TEMPLATE,
+                                      apply_template)
 
 
 BASE = {
@@ -46,6 +50,26 @@ class ApplyTemplateTest(unittest.TestCase):
     def test_unknown_name_raises(self):
         with self.assertRaises(ValueError):
             apply_template(BASE, "no-such-template")
+
+
+class DefaultConfigTest(unittest.TestCase):
+    def test_recommended_template_is_deepseek_writes(self):
+        self.assertEqual(RECOMMENDED_TEMPLATE, "deepseek-writes")
+
+    def test_a_missing_config_equals_the_recommended_template(self):
+        template = MODEL_TEMPLATES[RECOMMENDED_TEMPLATE]
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(llm_config, "load_keys"):
+            config = llm_config.load_llm_config(os.path.join(tmp, "missing.json"))
+        self.assertEqual(config["provider"], "hybrid")
+        self.assertEqual(config["main_model"], template["main_model"])
+        self.assertEqual(config["single_model"], template["single_model"])
+        self.assertEqual(config["backup_model"], template["backup_model"])
+        self.assertEqual(config["hybrid_routes"], template["hybrid_routes"])
+
+    def test_enter_selects_the_recommended_template(self):
+        with mock.patch.object(builtins, "input", return_value=""):
+            self.assertEqual(setup_models.select_template(), "deepseek-writes")
+        self.assertEqual(setup_models.TEMPLATE_CHOICES["6"], "deepseek-writes")
 
 
 class TemplateCliTest(unittest.TestCase):
@@ -110,6 +134,11 @@ class TemplateCliTest(unittest.TestCase):
         self.assertEqual(routes["strategy_planner"], "agy:gemini-3.8-flash-medium")
         self.assertFalse(any(v.startswith("freegemini:") for v in routes.values()))
         self.assertEqual(setup_models.TEMPLATE_CHOICES["6"], "deepseek-writes")
+        # The hook contest: a second writer and two blind judges, while hook_writer stays main.
+        self.assertEqual(routes["hook_writer_alt"], "agy:gemini-3.8-flash-medium")
+        self.assertEqual(routes["hook_judge_a"], "agy:gemini-3.8-flash-high")
+        self.assertEqual(routes["hook_judge_b"], "deepseek:deepseek-flash")
+        self.assertNotIn("hook_writer", routes)
 
     def test_best_mix_routes_each_step_to_its_benchmark_winner(self):
         out = apply_template(BASE, "best-mix")
@@ -145,6 +174,34 @@ class TemplateCliTest(unittest.TestCase):
             setup_models.main()
         self.assertEqual(saved["config"]["single_model"], "deepseek:deepseek-flash")
         self.assertEqual(saved["config"]["hybrid_routes"], MODEL_TEMPLATES["gemini-deepseek"]["hybrid_routes"])
+
+    def test_interactive_enter_applies_the_recommended_template(self):
+        saved = {}
+        answers = iter(["", "3"])
+        with mock.patch.object(sys, "argv", ["setup_models.py"]), \
+                mock.patch.object(setup_models, "check_packages", lambda: None), \
+                self.patch_config(), \
+                mock.patch.object(setup_models, "show_status", lambda config: {}), \
+                mock.patch.object(setup_models, "offer_keys", lambda config, status: False), \
+                mock.patch.object(setup_models, "collect_models", lambda config, status: []), \
+                mock.patch.object(setup_models, "print_models", lambda specs, config: None), \
+                mock.patch.object(setup_models.lp, "test_model", lambda spec, providers: (True, "answers (0.0 s)")), \
+                mock.patch.object(setup_models.lp, "save_llm_config",
+                                  lambda config, *a, **k: saved.update(config=config)), \
+                mock.patch.object(builtins, "input", side_effect=lambda prompt="": next(answers)):
+            setup_models.main()
+        self.assertEqual(saved["config"]["main_model"], MODEL_TEMPLATES["deepseek-writes"]["main_model"])
+        self.assertEqual(saved["config"]["hybrid_routes"], MODEL_TEMPLATES["deepseek-writes"]["hybrid_routes"])
+
+    def test_template_without_a_name_applies_the_recommended_template(self):
+        saved = {}
+        with mock.patch.object(sys, "argv", ["setup_models.py", "--template"]), \
+                self.patch_config(), \
+                mock.patch.object(setup_models.lp, "test_model", lambda spec, providers: (True, "answers (0.0 s)")), \
+                mock.patch.object(setup_models.lp, "save_llm_config",
+                                  lambda config, *a, **k: saved.update(config=config)):
+            setup_models.main()
+        self.assertEqual(saved["config"]["main_model"], MODEL_TEMPLATES["deepseek-writes"]["main_model"])
 
 
 if __name__ == "__main__":

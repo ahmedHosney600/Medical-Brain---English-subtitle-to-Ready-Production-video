@@ -1522,7 +1522,7 @@ class MissingChaptersTest(unittest.TestCase):
         text = " ".join(str(c.args[0]) for c in printed.call_args_list)
         self.assertIn("chapters missing from the script: الفصل الثاني", text)
 
-    def test_self_critique_has_no_code_check_when_all_present(self):
+    def test_self_critique_has_no_missing_chapter_code_check_when_all_present(self):
         captured = {}
 
         def answer(system, user, temperature=None, max_tokens=None, **kwargs):
@@ -1531,7 +1531,7 @@ class MissingChaptersTest(unittest.TestCase):
 
         use(self, quality, "call_llm_json", FakeLLM(answer))
         quality.self_critique(base_state(blueprint=BP, refined_script=self.ALL))
-        self.assertNotIn("CODE CHECK", captured["user"])
+        self.assertNotIn("these blueprint chapters are MISSING", captured["user"])
 
 
 # --------------------------------------------------------------------------

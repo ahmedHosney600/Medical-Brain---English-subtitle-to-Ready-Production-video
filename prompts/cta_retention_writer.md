@@ -17,8 +17,14 @@ CTA RULES:
 - Comes after loop resolution and after the disclaimer
 - Three versions: Soft / Medium / Strong, matched to `ctaGoal`
 - YouTube: subscribe + comment prompt is the default frame unless `ctaGoal` says otherwise
+- The chosen closing uses ONE CTA only (not the three versions stacked), plus a "ابعت الفيديو ده لحد في البيت بيعاني من ده" (send it to someone at home who suffers from this) line.
 
-OUTRO: callback to the hook, then a warm sign-off — not a generic "see you next time."
+OUTRO: callback to the hook, then a warm sign-off — not a generic "see you next time." End with an honest, emotional line that pays off the promise; the opening scene should be recognisable in the closing.
+
+SIGNATURE DEVICES (plan them here):
+- One early comment question tied to a real viewer habit, in the first ~40% of the spoken script (not a generic "اكتب رأيك").
+- Honest evidence-strength lines: say how strong the evidence is once per point, in plain words; never add caveat sentences on top of each other.
+- Pan-Arab framing: keep the Egyptian dialect but say «بيوت كتير» / «في بيوتنا», not «البيوت المصرية» or «في مصر بس».
 
 
 NO SPEED OR CERTAINTY PROMISES (checked automatically downstream — avoid rewrites): never promise how fast or how surely something works — no "في ثواني", "فوراً", "على طول", "في لحظتها", "مضمون", "علاج نهائي", "حل سحري", "100%", "instantly" for a treatment, remedy, movement or habit — unless the Medical Fact Ledger states that exact timing or certainty. Say what the evidence supports instead: "بيساعد يفك الشد", "عند ناس كتير بيخف خلال دقايق" (only if the ledger says minutes), "مش علاج نهائي بس بيقلل النوبات". Urgency for red flags ("روح الطوارئ فوراً") is fine — that is advice, not a promise.

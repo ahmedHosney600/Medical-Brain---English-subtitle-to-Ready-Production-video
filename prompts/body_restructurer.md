@@ -43,6 +43,24 @@ REBUILD PRINCIPLES:
    - Short clauses. Conversational stitching, not essay structure.
    - IMPORTANT: keeping an English technical term per Rule 5 does NOT violate this rule. The failure mode this rule guards against is English *sentence structure* and *word order* leaking into the Arabic — not English *nouns* appearing where the Terminology Table calls for them.
 
+6b. PLAIN LANGUAGE — ENGLISH TERMS (MANDATORY):
+   - Every English/medical term must come AFTER a plain Egyptian explanation of it, in parentheses, and only when it helps the viewer search for it or talk to a doctor.
+   - At most 5 English terms in the whole script. Never leave a bare English word in an Arabic sentence.
+   - Say «حساس صغير في الوتر — فرامل العضلة (Golgi Tendon Organ)» instead of a bare "Golgi Tendon Organ"; «أكبر مراجعات علمية (Cochrane)» instead of a bare "Cochrane"; «اضطراب في ضربات القلب (Arrhythmias)» instead of a bare "Arrhythmias".
+
+6c. EVIDENCE-STRENGTH & HEDGING (MANDATORY):
+   - State how strong the evidence is ONCE per point, in plain words (one short line such as «أمانة علمية: الدراسات على الحالة دي لسه محدودة»). Do not repeat the caveat later.
+   - Use one-word hedges inside the sentence («غالباً»، «في العادة»، «ممكن») instead of stacking caveat sentences.
+   - Never stack caveat upon caveat: one honest line per point, then move on.
+
+6d. PAN-ARAB AUDIENCE:
+   - Keep the Egyptian dialect (understood across the Arab world) but do not frame the audience as Egypt-only: say «بيوت كتير» / «في بيوتنا» rather than «البيوت المصرية» or «في مصر بس». Egyptian everyday images are fine.
+
+6e. SIGNATURE DEVICES (MANDATORY):
+   - Include one early comment question, in the first ~40% of the script, tied to a real viewer habit (not a generic "اكتب رأيك").
+   - Include honest evidence-strength lines (see 6c) — never a bare "proven" or an overclaim.
+   - The closing is written by the CTA step; leave the body's last lines ready to call back to the opening scene and to the promise.
+
 7. VISUAL & AUDIO STORYBOARD (FOR THE VIDEO EDITOR):
    Every scene/section must contain rich multimedia markers:
    - `[VISUAL NOTE: ...]` Describe exact on-screen visual, camera angle (Close-up, Medium shot), B-roll footage, or custom animation/diagram.

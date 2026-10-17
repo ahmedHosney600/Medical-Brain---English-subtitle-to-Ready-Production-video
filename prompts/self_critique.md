@@ -16,6 +16,12 @@ AUDIT CRITERIA — score each (1–10), flag CRITICAL / WARNING / MINOR:
 12. AVOID LIST & ANTI-SENSATIONALISM (Critical) — verify the script strictly honors the avoid_list. Confirm there is NO sensationalist melodrama or body-antagonism (e.g., 'جسمك بيخونك', 'غدر', 'خيانة', 'طعنة', 'قلبه يخذله') AND NO low-brow street slang or mechanic-shop jargon (e.g., 'كلبشت', 'قفشت', 'موضوع ناشف', 'بتغلس', 'بيتجنن', 'حتة لحمة', 'وجع رخم', 'مابتخرفش', 'قرصت عليها', 'فيوزات', 'تجنزر', 'تصدي'). Any occurrence of these tropes is an automatic failure for Warmth and requires immediate rewriting in revised_script.
 13. SCIENTIFIC MASTERY & DEPTH BALANCE (Critical) — verify the script strikes Dr. Ahmed Hosney's balance: authoritative, precise medical science (receptors, reflexes, biochemical cascades) delivered through warm Egyptian storytelling and clever analogies (السهل الممتنع). Deduct points if the medicine is stripped away or over-simplified into vague colloquial hand-waving.
 14. SCIENTIFIC TRUTH & FACT VERIFICATION (Critical, hardest gate) — pull `truth_pass` and `truth_score` from the Medical Truth Verifier audit below. If `truth_pass` is false or `truth_score` < 9, this is an automatic non-A regardless of everything else. Check the Truth Verification Report to ensure all claims, mechanisms, numbers, and advice are confirmed true and accurate.
+15. OPEN LOOPS PLANTED + PAID (Critical) — two loops with concrete stakes: one planted in the hook, one at the end of chapter 1; a mid-video reminder; each paid off before the closing, in the script text.
+16. EARLY COMMENT QUESTION (Warning) — one comment question tied to a real viewer habit, in the first ~40% of the spoken script.
+17. SHAREABLE NUMBER MOMENT (Critical) — one memorable number moment, and it comes from the Medical Fact Ledger / sources only (never invented or rounded up for effect).
+18. CALLBACK CLOSING (Critical) — the closing calls back to the opening scene, pays off the promise, has ONE CTA plus a "ابعت الفيديو ده لحد في البيت بيعاني من ده" line, and an emotional, warm sign-off.
+19. PLAIN LANGUAGE & ENGLISH TERMS (Critical) — at most 5 English/medical terms in the whole script; each comes after a plain Egyptian explanation, in parentheses, and only when it helps the viewer search or talk to a doctor; no bare English word in a sentence.
+20. LIGHT ENDING (Critical) — the final chapter is the lightest: at most ~20% of the spoken words and at most 4 new points. Red flags, emergency signs and the loop payoff sit BEFORE secondary lists (medicines, conditions); the ending must not be a crammed list.
 
 HARD GATES — grade can only be "A" if ALL of the following hold:
 - dialect_authenticity_score >= 8
@@ -25,6 +31,9 @@ HARD GATES — grade can only be "A" if ALL of the following hold:
 - strictly zero occurrences of prohibited sensationalist tropes ('بيخونك', 'غدر وخيانة', etc.), low-brow street slang ('كلبشت', 'قفشت', 'موضوع ناشف', 'بتغلس', 'بيتجنن', 'حتة لحمة', 'وجع رخم', 'مابتخرفش', 'قرصت عليها'), or mechanic-shop slang ('فيوزات', 'تجنزر', 'تصدي', etc.) in revised_script
 - actual spoken script length >= 85% of target (minimum 1,150 words for an 8–10 minute target video)
 - open loop planted in hook is explicitly referenced in Act 3 and resolved in Act 4 in the script text
+- the final chapter is the lightest (≤ ~20% of the spoken words, ≤ 4 new points) and the loop payoff/red flags come before secondary lists
+- an early comment question (first ~40%) and at most 5 English terms (each explained in parentheses) are present
+- the closing calls back to the opening scene, pays off the promise, has ONE CTA plus the "send it to someone at home" line, and a warm sign-off
 
 REVISION MODE: if `revision_count` > 0, verify the specific issues from your previous critique are actually resolved in the current script — not renamed or superficially touched.
 

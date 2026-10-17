@@ -9,7 +9,7 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 
-from ..exports.workbook import normalize_ar, spoken_text
+from ..exports.workbook import _META_LINE, _SUMMARY_HEAD, normalize_ar, spoken_text
 from ..llm.progress import quiet
 from ..utils.llm_json import parse_llm_json
 
@@ -518,6 +518,120 @@ def spoken_words(text: str) -> int:
     lines = [line for line in (text or "").split("\n")
              if not _HEADER_RE.match(line) and not _MD_HEADING_RE.match(line)]
     return len(spoken_text("\n".join(lines)).split())
+
+
+# --------------------------------------------------------------------------
+# narrative/word-quality checks used by self_critique
+# --------------------------------------------------------------------------
+# A trailing CTA/outro section is not "content": it must not make the ending look heavy.
+_CTA_TITLE_RE = re.compile(r"CTA|OUTRO|CLOSING", re.IGNORECASE)
+HEAVY_ENDING_SHARE = 0.30      # the last content section may not hold > 30% of the words
+HEAVY_ENDING_RATIO = 1.6       # nor be > 1.6 × the average section
+
+
+def content_sections(script: str) -> list:
+    """[(title, text)] for the "=== … ===" content sections, without the preamble and
+    without a trailing CTA/OUTRO/CLOSING section (its title contains one of those)."""
+    titled = [(title, text) for title, text in split_by_chapters(script or "") if title]
+    while titled and _CTA_TITLE_RE.search(titled[-1][0]):
+        titled.pop()
+    return titled
+
+
+def heavy_ending(script: str):
+    """None when the ending is balanced; a dict when the last content section is too
+    heavy. The final chapter should be the lightest (≤ 20% of the words), so a last
+    section over 30% of the spoken words (or 1.6× the average) means the ending was
+    crammed. A script with fewer than two content sections has no "ending section" to
+    compare."""
+    sections = content_sections(script)
+    if len(sections) < 2:
+        return None
+    words = [spoken_words(text) for _, text in sections]
+    total = sum(words)
+    if total <= 0:
+        return None
+    average = total / len(words)
+    # The crammed part is often the second-to-last section, with a short prevention or
+    # summary section after it (a real run: red flags + medicines + diseases = 32% in
+    # act 4, then a light act 5), so the last two content sections are both checked.
+    # The last section fails on either rule; the one before it only on the ratio rule
+    # (with three sections a ~33% share is simply normal).
+    checks = [(len(words) - 1, True)]
+    if len(words) >= 3:
+        checks.append((len(words) - 2, False))
+    for index, share_rule in checks:
+        size = words[index]
+        if (share_rule and size > total * HEAVY_ENDING_SHARE) or size > average * HEAVY_ENDING_RATIO:
+            return {"title": sections[index][0], "words": size, "total": total,
+                    "average": average, "share": size / total, "ratio": size / average}
+    return None
+
+
+# A Latin word of 3+ letters outside parentheses is "bare" (the viewer cannot parse it).
+_LATIN_WORD_RE = re.compile(r"[A-Za-z]{3,}")
+_PAREN_GROUP_RE = re.compile(r"\(([^()]*)\)")
+
+
+def english_terms(script: str) -> tuple:
+    """(bare_words, paren_groups) in the spoken text only.
+
+    bare_words: Latin words of 3+ letters outside parentheses (a bare English term in
+    an Arabic sentence). paren_groups: the contents of parenthesised groups that contain
+    Latin letters (the allowed "Arabic explanation (English term)" form). [cues],
+    === headers === and stage directions are dropped by spoken_text first."""
+    text = spoken_text(script or "")
+    groups = [m.group(1).strip() for m in _PAREN_GROUP_RE.finditer(text)
+              if re.search(r"[A-Za-z]", m.group(1))]
+    outside = _PAREN_GROUP_RE.sub(" ", text)
+    return _LATIN_WORD_RE.findall(outside), groups
+
+
+_COMMENT_MARKERS_RE = re.compile(r"كومنت|تعليق|اكتبلي|اكتبولي")
+COMMENT_QUESTION_FRACTION = 0.4
+
+
+def has_early_comment_question(script: str, fraction: float = COMMENT_QUESTION_FRACTION) -> bool:
+    """True when a comment/engagement question sits in a sentence before `fraction` of
+    the spoken words (the signature early-comment device)."""
+    text = spoken_text(script or "")
+    total = len(text.split())
+    if total <= 0:
+        return False
+    position = 0
+    for sentence in re.split(r"(?<=[.!?؟…])\s+|\n+", text):
+        if _COMMENT_MARKERS_RE.search(sentence) and position < total * fraction:
+            return True
+        position += len(sentence.split())
+    return False
+
+
+def strip_script_extras(text: str) -> str:
+    """Drop the non-spoken wrapper a polishing pass may add: a leading metadata block
+    ("SCRIPT: …", "Word Count: …" up to the first ---) and a trailing
+    "POLISH SUMMARY:"-style block. "=== chapter ===" headers, [cues] and the spoken
+    script are kept. Text with neither wrapper comes back unchanged."""
+    original = text or ""
+    if not original.strip():
+        return original
+    raw = original.replace("\r\n", "\n").replace("\r", "\n").strip()
+    lines = raw.split("\n")
+    changed = False
+    rules = [i for i, line in enumerate(lines) if line.strip() == "---"]
+    if rules:
+        first = rules[0]
+        head = [line for line in lines[:first] if line.strip()]
+        if head and all(_META_LINE.match(line) or line.lstrip().startswith("#") for line in head):
+            lines = lines[first + 1:]
+            changed = True
+    for i, line in enumerate(lines):
+        if _SUMMARY_HEAD.match(line):
+            lines = lines[:i]
+            changed = True
+            break
+    if not changed:
+        return original
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
 # The chosen frame disclaimer belongs in the opening. A later pass sometimes carries it

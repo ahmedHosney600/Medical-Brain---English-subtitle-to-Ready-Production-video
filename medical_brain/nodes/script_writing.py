@@ -7,13 +7,141 @@ shared plan + script memory, then checked as one whole by an integrity pass. A
 one-chapter blueprint keeps the original single-call behaviour exactly."""
 
 import json
+import random
 import re
 
-from ..llm import call_llm, call_llm_json
+from ..llm import (call_llm, call_llm_as, call_llm_json, call_llm_json_as, get_router)
 from ..prompts import load_prompt
 from ..state import PipelineState
 from ..utils.llm_json import UnreadableAnswer, pick
 from . import chapters
+
+
+# Hook headings the hook_writer prompt asks for: "### HOOK A — …". A candidate runs
+# from its heading to the next HOOK heading (the RECOMMENDED HOOK block is not one).
+_HOOK_HEADING_RE = re.compile(r"^\s*#{1,6}\s*HOOK\s+[A-Za-z0-9]+\b", re.IGNORECASE)
+_HOOK_BOUNDARY_RE = re.compile(r"^\s*#{1,6}\s*(?:HOOK\s+[A-Za-z0-9]+|RECOMMENDED\s+HOOK)\b",
+                               re.IGNORECASE)
+
+
+def _split_hooks(answer: str) -> list:
+    """Best-effort split of one hook answer into its HOOK A/B/C candidates.
+
+    Falls back to [the whole answer] when the model did not use the headings, so a
+    usable answer is never dropped."""
+    text = (answer or "").strip()
+    if not text:
+        return []
+    starts, offset = [], 0
+    for line in text.splitlines(keepends=True):
+        if _HOOK_HEADING_RE.match(line.rstrip("\n")):
+            starts.append(offset)
+        offset += len(line)
+    if not starts:
+        return [text]
+    bounds = []
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        if _HOOK_BOUNDARY_RE.match(line.rstrip("\n")):
+            bounds.append(offset)
+        offset += len(line)
+    out = []
+    for start in starts:
+        end = next((b for b in bounds if b > start), len(text))
+        chunk = text[start:end].strip()
+        lines = chunk.splitlines()
+        while lines and re.fullmatch(r"\s*-{3,}\s*", lines[0]):
+            lines.pop(0)
+        while lines and re.fullmatch(r"\s*-{3,}\s*", lines[-1]):
+            lines.pop()
+        chunk = "\n".join(lines).strip()
+        if chunk:
+            out.append(chunk)
+    return out or [text]
+
+
+def _hook_contest_specs():
+    """(main_writer, alt_writer) when the router routes hook_writer_alt to a different
+    model; None when the router (or a test fake) has no model_for or both are the same."""
+    model_for = getattr(get_router(), "model_for", None)
+    if not callable(model_for):
+        return None
+    try:
+        main_spec = model_for("hook_writer")
+        alt_spec = model_for("hook_writer_alt")
+    except Exception:
+        return None
+    if not main_spec or not alt_spec or str(main_spec) == str(alt_spec):
+        return None
+    return str(main_spec), str(alt_spec)
+
+
+def _hook_judge_user(state: PipelineState, candidates: list) -> str:
+    blocks = [f"CANDIDATE {label}:\n{text}" for label, text in candidates]
+    return ("Blindly judge these hook options for the same Egyptian-Arabic medical video. "
+            "You do not know who wrote which.\n\n"
+            f"MEDICAL TOPIC: {state.get('medical_topic', '')}\n\n"
+            + "\n\n---\n\n".join(blocks)
+            + '\n\nScore every candidate 1–10 on: stopping power in the first 3 seconds, '
+              'sensory/visual vividness, natural Egyptian spoken feel, curiosity/open loop, '
+              'and honesty (no overclaim). Return ONLY JSON: '
+              '{"scores": {"H1": {"total": 8, "stopping_power": 8, "vividness": 8, '
+              '"egyptian_feel": 8, "curiosity": 8, "honesty": 8}}, "best": "H1"}'
+            + "\nEvery label above must appear once in scores.")
+
+
+def _hook_judge_totals(state: PipelineState, candidates: list) -> tuple:
+    """({label: summed score}, judges_that_answered). A failed judge is skipped."""
+    system_prompt = load_prompt("hook_judge")
+    user_prompt = _hook_judge_user(state, candidates)
+    totals = {label: 0 for label, _ in candidates}
+    judged = 0
+    for judge in ("hook_judge_a", "hook_judge_b"):
+        try:
+            data, _ = call_llm_json_as(judge, system_prompt, user_prompt, temperature=0.2,
+                                       max_tokens=2500, required=["scores"])
+        except Exception as error:
+            print(f"  ⚠️ hook contest: judge {judge} failed ({error}); skipping it")
+            continue
+        scores = data.get("scores") if isinstance(data, dict) else None
+        if not isinstance(scores, dict):
+            print(f"  ⚠️ hook contest: judge {judge} returned no scores; skipping it")
+            continue
+        values = {}
+        for label, _ in candidates:
+            entry = scores.get(label)
+            value = entry.get("total") if isinstance(entry, dict) else entry
+            try:
+                values[label] = float(value)
+            except (TypeError, ValueError):
+                continue
+        top = max(values.values(), default=0)
+        used = top > 0
+        if used:
+            # One judge may score "total" out of 10 and the other out of 50: scale each
+            # judge to its own best candidate so neither outweighs the other.
+            for label, value in values.items():
+                totals[label] += round(10 * value / top, 2)
+            judged += 1
+        else:
+            print(f"  ⚠️ hook contest: judge {judge} returned no usable scores; skipping it")
+    return totals, judged
+
+
+def _contest_hook(candidates: list, totals: dict, writers: dict) -> tuple:
+    """(hook text for the state, hook_contest log dict). The winner is first under a
+    line, then a short score table, then every candidate labelled H1…Hn."""
+    ordered = sorted(candidates, key=lambda item: (-totals.get(item[0], 0), item[0]))
+    winner, winner_text = ordered[0]
+    winner_score = totals.get(winner, 0)
+    parts = [f"🏆 CONTEST WINNER (score {winner_score:g})", winner_text,
+             "### CONTEST SCORES", "| Hook | Score |", "|---|---|"]
+    parts += [f"| {label} | {totals.get(label, 0):g} |" for label, _ in ordered]
+    parts.append("### ALL CANDIDATES")
+    parts += [f"#### {label}\n{text}" for label, text in ordered]
+    contest = {label: {"writer": writers[label], "score": totals.get(label, 0)}
+               for label, _ in candidates}
+    return "\n\n".join(parts), contest
 
 
 def hook_writer(state: PipelineState) -> dict:
@@ -46,7 +174,37 @@ AVOID LIST:
 Write three distinct hooks, each a different type, written directly in Egyptian Arabic. Score each. Recommend the strongest one."""
 
     response = call_llm(system_prompt, user_prompt, temperature=0.85, max_tokens=2500)
-    return {"hook": response}
+
+    specs = _hook_contest_specs()
+    if specs is None:
+        return {"hook": response}
+    main_spec, alt_spec = specs
+    try:
+        alt_response = call_llm_as("hook_writer_alt", system_prompt, user_prompt,
+                                   temperature=0.85, max_tokens=2500)
+    except Exception as error:
+        print(f"  ⚠️ hook contest: the alternate writer failed ({error}); keeping the main hooks only")
+        return {"hook": response}
+
+    candidates = [(text, main_spec) for text in _split_hooks(response)]
+    candidates += [(text, alt_spec) for text in _split_hooks(alt_response)]
+    if not candidates:
+        return {"hook": response}
+    # Shuffle before labelling so neither judge (nor the stored hook) can tell the writer.
+    random.Random(str(state.get("medical_topic") or state.get("seo_primary_keyword") or "")).shuffle(candidates)
+    labelled = [(f"H{i + 1}", text) for i, (text, _) in enumerate(candidates)]
+    writers = {f"H{i + 1}": writer for i, (_, writer) in enumerate(candidates)}
+
+    totals, judged = _hook_judge_totals(state, labelled)
+    if not judged:
+        print("  ⚠️ hook contest: both judges failed; keeping the main model's recommendation")
+        return {"hook": response, "hook_contest": {}}
+
+    hook, contest = _contest_hook(labelled, totals, writers)
+    winner = min(contest, key=lambda label: (-contest[label]["score"], label))
+    scores = ", ".join(f"{label}={contest[label]['score']}" for label in sorted(contest))
+    print(f"🏆 hook contest: winner by {contest[winner]['writer']} (scores {scores})")
+    return {"hook": hook, "hook_contest": contest}
 
 
 # --------------------------------------------------------------------------
@@ -550,6 +708,10 @@ FIRST CHAPTER START:
 
 LAST CHAPTER END:
 {last_end or "(none)"}"""
+    if "CONTEST WINNER" in (state.get("hook", "") or ""):
+        prompt += ("\n\nCONTEST WINNER: the HOOK OPTIONS above mark one winner. Use that winner's "
+                   "hook as the opening (smoothing only, no new claims) unless it directly "
+                   "conflicts with the blueprint's promise.")
     if critique:
         prompt += f"""
 
@@ -1141,7 +1303,8 @@ def script_refinement(state: PipelineState) -> dict:
 
     if chapters.chapter_mode_on(blueprint):
         result = _refinement_chapter_mode(state, blueprint)
-        result["refined_script"] = repair_script(state, result["refined_script"], *repair_sources)
+        result["refined_script"] = chapters.strip_script_extras(
+            repair_script(state, chapters.strip_script_extras(result["refined_script"]), *repair_sources))
         return result
 
     frame = state.get("script_frame") or {}
@@ -1178,13 +1341,14 @@ AUDIT / CRITIQUE REPORT:
 {state.get("self_critique_output", "")}"""
 
     strict = duration_fixed(state)
-    response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=9000)
+    response = chapters.strip_script_extras(
+        call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=9000))
     if strict:
         response = _tighten_whole_script(blueprint, response, strict=True)
     else:
         response = _soft_trim_if_padded(state, blueprint, response)
     _warn_if_refined_too_long(blueprint, response, strict=strict)
-    response = repair_script(state, response, *repair_sources)
+    response = chapters.strip_script_extras(repair_script(state, response, *repair_sources))
     return {"refined_script": response}
 
 
