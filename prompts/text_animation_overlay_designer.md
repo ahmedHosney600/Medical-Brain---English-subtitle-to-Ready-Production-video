@@ -96,7 +96,7 @@ DESIGN PRINCIPLES — NON-NEGOTIABLE:
 
 8. DRAWING ANIMATIONS ARE CONDITIONAL: Only include them when the medical mechanism genuinely benefits from visual clarification. When included, specs must be detailed enough for an animator or AI tool to execute without ambiguity.
 
-9. ANIMATION TIMING MUST BE READABLE: Text elements must hold long enough to be read (minimum 2 seconds for short text, 4 seconds for longer callouts).
+9. ANIMATION TIMING MUST BE READABLE: hold every text element for at least (its word count ÷ 2.5) seconds, and never under 2 seconds — viewers read Arabic on screen at about 2.5 words per second. Keep cards short: at most ~12 words per card and at most 4 bullets per list; a longer list (e.g. red flags) is built bullet-by-bullet on the narration as separate rows, each with its own START CUE. One layer per fact: if a B-roll or drawing already shows a number or idea at that moment, don't repeat it in a second text card.
 
 10. COORDINATE WITH B-ROLL: If a B-roll visual is planned for a timestamp, position elements in areas of the frame that won't compete with the B-roll's focal point.
 
