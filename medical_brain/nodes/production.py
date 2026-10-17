@@ -1191,6 +1191,7 @@ Return ONLY the markdown row (one line, same number of columns as the header).""
 
 
 DRAWING_WINDOW_SECONDS = 15
+DRAWING_LEAD_SECONDS = 5           # a clip starting this soon before a drawing overlaps it
 
 
 def _cue_seconds_loose(cue: str, script: str, wpm: float):
@@ -1419,6 +1420,68 @@ def _move_brolls_out_of_drawings(rows: list, layout: dict, windows: list, senten
     return kept, moved, dropped
 
 
+def _replace_repeated_families(rows: list, layout: dict, sentences: list, script: str, wpm: float,
+                               after: int, budget: list) -> int:
+    """ONE small call groups B-rolls that repeat the same subject + action (word overlap
+    cannot see it: three "pill out of a blister pack beside a glass" shots scored like
+    unrelated rows). The first of each group stays (and a last-row callback to the
+    opening); the others get a new prompt for their own sentence that must differ.
+    Shares the call budget; any failure changes nothing."""
+    prompt_col = layout["cols"].get("prompt")
+    if prompt_col is None or len(rows) < 4 or budget[0] <= 0:
+        return 0
+    header = [c.strip().upper() for c in _table_cells(layout["header"])]
+    cue_col = next((k for k, h in enumerate(header) if "MAIN CUE" in h), None)
+    listing = []
+    for i, row in enumerate(rows, 1):
+        cells = row["cells"]
+        text = cells[cue_col] if cue_col is not None and cue_col < len(cells) and cells[cue_col].strip() \
+            else (cells[prompt_col][:160] if prompt_col < len(cells) else "")
+        listing.append(f"{i}. {text}")
+    try:
+        data, _ = call_llm_json(
+            "You audit visual variety in a video's B-roll list.",
+            "B-ROLL SHOTS (in order):\n" + "\n".join(listing)
+            + "\n\nGroup shots that repeat the same SUBJECT doing the same ACTION (e.g. several 'man in bed "
+              "clutching his temple beside pills'), even if worded differently. Different angles of different "
+              "ideas are NOT repeats. Return ONLY JSON: {\"repeats\": [[3, 11, 20], [14, 19]]} — [] when none.",
+            temperature=0.1, max_tokens=800, required=["repeats"])
+    except Exception:
+        return 0
+    groups = [g for g in (pick(data, "repeats", default=[]) or []) if isinstance(g, list)]
+    times = _running_row_times(rows, layout, script, wpm, after=after)
+    starts = [s["start_s"] for s in sentences]
+    replaced = 0
+    for group in groups:
+        members = sorted({int(n) for n in group if str(n).isdigit() and 1 <= int(n) <= len(rows)})
+        keep = members[0] if members else None
+        for n in members[1:]:
+            if n == len(rows) and keep is not None and keep <= 3:
+                continue                       # the closing's deliberate callback to the opening
+            if budget[0] <= 0:
+                break
+            j = n - 1
+            if times[j] is None:
+                continue
+            index = max((k for k, t in enumerate(starts) if t <= times[j] + 0.5), default=None)
+            if index is None:
+                continue
+            budget[0] -= 1
+            cells = _ask_gap_row(layout, rows, index, sentences, avoid=rows[keep - 1]["cells"][prompt_col])
+            if cells is None:
+                continue
+            old = rows[j]["cells"]
+            for name in ("num", "start", "end", "time"):
+                at = layout["cols"].get(name)
+                if at is not None and at < len(cells) and at < len(old):
+                    cells[at] = old[at]
+            rows[j]["cells"] = cells
+            replaced += 1
+    if replaced:
+        print(f"  🔧 B-roll: re-imaged {replaced} shots that repeated another's subject and action")
+    return replaced
+
+
 def _replace_duplicate_images(rows: list, layout: dict, sentences: list, script: str, wpm: float,
                               after: int, norm_script: str, budget: list) -> int:
     """The later of two near-identical B-roll prompts (≥ 50% shared content words, the
@@ -1582,7 +1645,13 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
 
     # Whiteboard drawings own their windows: no B-roll starts under a drawing, and a
     # gap-fill is never inserted inside one.
-    drawing_windows = _drawing_windows(state.get("text_animation_overlay", ""), script, wpm)
+    overlay_guide = state.get("text_animation_overlay", "")
+    # A clip that starts a few seconds before a drawing still plays over it, and a
+    # warning card owns its hold: B-rolls are moved out here, where the spacing rule
+    # applies (a later shift out of a hold left two B-rolls 6 s apart).
+    drawing_windows = sorted(
+        [(max(0.0, a - DRAWING_LEAD_SECONDS), b) for a, b in _drawing_windows(overlay_guide, script, wpm)]
+        + _overlay_warning_holds(overlay_guide, script, wpm))
     if drawing_windows:
         rows, moved_out, dropped_out = _move_brolls_out_of_drawings(
             rows, layout, drawing_windows, sentences, script, wpm, norm_script, after, budget)
@@ -1622,6 +1691,7 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
 
     rows = _sorted_rows(rows, layout, script, wpm, after=after)
     re_imaged = _replace_duplicate_images(rows, layout, sentences, script, wpm, after, norm_script, budget)
+    re_imaged += _replace_repeated_families(rows, layout, sentences, script, wpm, after, budget)
     if re_imaged:
         report["re_imaged"] = re_imaged
     _fit_end_cues(rows, layout, sentences, script, wpm, after)

@@ -252,3 +252,23 @@ class DuplicateImageTest(unittest.TestCase):
         self.assertEqual(out.count("sofa at night"), 1)
         self.assertIn("sofa at night", fake.calls[0]["user"])          # told what to avoid
         self.assertIn(sentence(6), out)                               # keeps its own cue
+
+
+class RepeatedFamilyTest(unittest.TestCase):
+    def test_family_repeats_after_the_first_are_re_imaged(self):
+        table = HEAD + row(1, 0) + row(2, 3) + row(3, 6) + row(4, 9) + row(5, 12)
+        use(self, production, "call_llm_json", FakeLLM(lambda *a: ({"repeats": [[2, 4]]}, "raw")))
+        fake = use(self, production, "call_llm", FakeLLM(
+            lambda *a: "| 9 | 9:59 | X | X | 🎬 Video | lighthouse keeper polishing a lens, dolly |"))
+        out, report = repair(table)
+        self.assertEqual(report["re_imaged"], 1)
+        self.assertIn("lighthouse keeper", out)
+        self.assertIn(SUBJECTS[3], fake.calls[0]["user"])            # told to avoid row 2's picture
+
+    def test_a_closing_callback_to_the_opening_is_kept(self):
+        table = HEAD + row(1, 0) + row(2, 3) + row(3, 6) + row(4, 9) + row(5, 12)
+        use(self, production, "call_llm_json", FakeLLM(lambda *a: ({"repeats": [[1, 5]]}, "raw")))
+        fake = use(self, production, "call_llm", FakeLLM(lambda *a: "| 9 | 9:59 | X | X | 🎬 Video | other |"))
+        out, report = repair(table)
+        self.assertNotIn("re_imaged", report)
+        self.assertEqual(fake.calls, [])
