@@ -376,22 +376,27 @@ class DialectChapterModeTest(unittest.TestCase):
         self.assertIn("ك99", out["dialect_script"])
         self.assertNotIn("م159", out["dialect_script"])
 
-    def test_revision_pass_allows_almost_no_growth(self):
+    def revise_with(self, grown_words):
         long_ch = " ".join(f"ك{i}" for i in range(100))
         refined = f"=== الفصل الأول ===\n{long_ch}\n\n=== الفصل الثاني ===\nنص ثاني"
 
         def answer(system, user, temperature=None, max_tokens=None):
             if "SEGMENT LABEL: الفصل الأول" not in user:
                 return self._answers(system, user)
-            return "=== الفصل الأول ===\n" + " ".join(f"م{i}" for i in range(108))   # +8%
+            return "=== الفصل الأول ===\n" + " ".join(f"م{i}" for i in range(grown_words))
 
         use(self, script_writing, "call_llm_json", frame_fake())
         use(self, script_writing, "call_llm", FakeLLM(answer))
         state = self._state(refined_script=refined, quality_revision_count=1,
                             script_frame={"opening": "o", "closing": "c"})
         with mock.patch("builtins.print"):
-            out = script_writing.dialect_warmth_layer(state)
-        self.assertIn("ك99", out["dialect_script"])
+            return script_writing.dialect_warmth_layer(state)
+
+    def test_revision_keeps_a_small_growth_with_its_fixes(self):
+        self.assertIn("م107", self.revise_with(108)["dialect_script"])          # +8%: kept
+
+    def test_revision_pass_rejects_real_growth(self):
+        self.assertIn("ك99", self.revise_with(120)["dialect_script"])           # +20%: old text
 
     def test_frame_failure_falls_back_to_the_raw_hook_and_cta(self):
         def boom(*a, **k):

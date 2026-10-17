@@ -875,7 +875,9 @@ MEDICAL FIDELITY AUDIT:
 
 # A dialect rewrite of one segment may grow at most this much before it is redone.
 DIALECT_GROWTH_MAX = 1.1
-DIALECT_GROWTH_REVISING = 1.03
+DIALECT_GROWTH_REVISING = 1.08
+DIALECT_GROWTH_SLACK_WORDS = 15   # a few added words in a short segment are not growth
+DIALECT_GROWTH_KEEP = 1.15        # a rewrite this close is kept (with its fixes) over the old text
 # A single-script revision may grow a little while it fixes the critique, not more.
 WHOLE_DIALECT_GROWTH_REVISING = 1.15
 REVISION_GROWTH_LIMIT = 1.15      # a revision round may grow the assembled script by at most this
@@ -945,7 +947,8 @@ def _dialect_chapter_mode(state: PipelineState, system_prompt: str, revising: bo
         grown = chapters.spoken_words(script)
         # A revision pass rewrites an already-polished script: growth there compounds.
         limit = DIALECT_GROWTH_REVISING if revising else DIALECT_GROWTH_MAX
-        if original >= 50 and grown > original * limit:
+        allowed = max(original * limit, original + DIALECT_GROWTH_SLACK_WORDS)
+        if original >= 50 and grown > allowed:
             # Models ignore the ±5% line: in a 20-minute run this pass added 865 words.
             print(f"  🗣️ {label}: dialect rewrite grew {original} → {grown} words — asking again")
             retry = call_llm(system_prompt, prompt + (
@@ -953,8 +956,16 @@ def _dialect_chapter_mode(state: PipelineState, system_prompt: str, revising: bo
                 f"Rewrite it again in at most {int(original * 1.05)} words: change wording only, "
                 "add nothing new."), temperature=0.5, max_tokens=budget)
             script2, notes2 = chapters.split_segment_answer(retry)
-            if chapters.spoken_words(script2) <= original * limit:
+            again = chapters.spoken_words(script2)
+            if again <= allowed and not chapters.too_short_rewrite(script2, original):
                 return label, script2, notes2
+            # Throwing the rewrite away also throws away the critique's fixes in it: keep
+            # the shorter rewrite when it is still close to the segment's length.
+            best_script, best_notes, best = (script2, notes2, again) if (
+                again < grown and not chapters.too_short_rewrite(script2, original)) else (script, notes, grown)
+            if best <= original * DIALECT_GROWTH_KEEP:
+                print(f"  🗣️ {label}: keeping the {best}-word rewrite (segment had {original})")
+                return label, best_script, best_notes
             print(f"  🗣️ {label}: still too long; keeping the segment as written")
             return label, text, notes
         return label, script, notes
