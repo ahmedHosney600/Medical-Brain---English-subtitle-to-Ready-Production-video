@@ -313,3 +313,21 @@ class LinkRecomputeTest(unittest.TestCase):
         self.assertIn("| — |", rows[1])                    # nothing within ±3 s of sentence 3
         self.assertNotIn("T#36", ov)                       # dead inline reference removed
         self.assertNotIn("T#77", ov)
+
+
+class PresenterMoveAndIdTest(unittest.TestCase):
+    def test_presenter_move_is_left_alone_and_a_cut_is_added(self):
+        transition = transition_table(transition_row(1, 0, "Talking Head (Wide) → Talking Head (Punch-in)", "reframe"))
+        broll = broll_table(broll_row(1, 0, 1))
+        with mock.patch("builtins.print"):
+            out, added = sync(transition, broll)
+        froms = [r["cells"][3] for r in transition_rows(out)]
+        self.assertIn("Talking Head (Wide) → Talking Head (Punch-in)", froms)
+        self.assertIn("Talking Head → B-roll #1", froms)
+
+    def test_a_wrong_broll_number_at_an_edge_is_corrected(self):
+        transition = transition_table(transition_row(1, 0, "Talking Head → B-roll #20", "clinic"))
+        broll = broll_table(broll_row(1, 0, 1))
+        with mock.patch("builtins.print"):
+            out, _ = sync(transition, broll)
+        self.assertIn("Talking Head → B-roll #1", [r["cells"][3] for r in transition_rows(out)])

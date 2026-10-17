@@ -2362,6 +2362,18 @@ def rebuild_density_summary(text: str, script: str, wpm: float) -> str:
     return text[:head.end()] + "\n\n" + "\n".join(lines) + "\n" + after
 
 
+_VISUAL_WORDS = re.compile(r"(?i)b-?\s?roll|animation|graphic|drawing|whiteboard|motion|\b[23]d\b|split|"
+                           r"card|overlay|screen|black|title|map|diagram|insert|cutaway|footage|stock|end ?card")
+_PRESENTER_WORDS = re.compile(r"(?i)talking head|a-?roll|presenter|dr\.?\s|د\.|medium|close-?up|wide|punch|reframe")
+
+
+def _presenter_only(from_to: str) -> bool:
+    """True when a transition only changes the presenter shot (both sides are the
+    talking head / A-roll framing, no other visual)."""
+    text = from_to or ""
+    return bool(_PRESENTER_WORDS.search(text)) and not _VISUAL_WORDS.search(text)
+
+
 def _sync_transition_once(state: PipelineState, transition_design: str, broll_table: str,
                           script: str, wpm: float, broll_out: list = None,
                           map_out: dict = None) -> tuple:
@@ -2388,8 +2400,11 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
     target = next((block for block in blocks if block["cols"]["cue"] is not None), blocks[0])
     starts, ends = _broll_row_times(brolls, script, wpm)
     row_refs = [(block, row) for block in blocks for row in block["rows"]]
+    # A presenter-only move (punch-in, reframe) is not a cut to anything: it neither
+    # covers a B-roll's entry nor may be relabelled as one (a critique found "Scale +
+    # Position shift → B-roll #14" whose rationale reframed the presenter).
     timed = [(t, block, row) for t, (block, row) in zip(_transition_row_times(blocks, script, wpm), row_refs)
-             if t is not None]
+             if t is not None and not _presenter_only(_row_cell(row, block["cols"], "from_to"))]
     existing = [t for t, _, _ in timed]
     # A cut needed inside a warning card's hold is placed at the hold's end instead:
     # adding it inside and then moving it out uncovered the B-roll edge again, so the
@@ -2428,6 +2443,17 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
             return
         current = row["cells"][at]
         if re.search(r"b-?\s?roll", current, re.IGNORECASE):
+            if re.search(rf"b-?\s?roll\s*#?\s*{re.escape(number)}\b", current, re.IGNORECASE):
+                return
+            # Names another B-roll number at this B-roll's edge: a stale or wrong ID.
+            parts = re.split(r"\s*(?:→|->)\s*", current, maxsplit=1)
+            if len(parts) == 2:
+                k = 1 if entering else 0
+                fixed = re.sub(r"(?i)(b-?\s?roll\s*#?\s*)\d+", rf"\g<1>{number}", parts[k], count=1)
+                if fixed != parts[k]:
+                    parts[k] = fixed
+                    row["cells"][at] = f"{parts[0]} → {parts[1]}"
+                    relabelled[0] += 1
             return
         parts = re.split(r"\s*(?:→|->)\s*", current, maxsplit=1)
         side_from = parts[0].strip() or "Talking Head"
