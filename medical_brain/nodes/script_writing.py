@@ -544,6 +544,23 @@ def _body_chapter_mode(state: PipelineState, base_system: str, blueprint: dict) 
             "chapter_drafts_key": signature}
 
 
+def _chapter_map_line(blueprint: dict) -> str:
+    """The blueprint's chapter split as proportions, for single-call writers: without it
+    the body writer saw only one total and wrote a 200-word final chapter as 547 words
+    (31% of the script), burying the ending. Proportions, not a fixed duration."""
+    chs = [c for c in (blueprint or {}).get("chapters") or [] if isinstance(c, dict)]
+    words = [int(c.get("words") or 0) for c in chs]
+    total = sum(words)
+    if len(chs) < 2 or total <= 0:
+        return ""
+    rows = [f"- {c.get('title', c.get('id', ''))}: about {round(100 * w / total)}% of the body"
+            for c, w in zip(chs, words)]
+    return ("\nCHAPTER MAP (keep these proportions — the material decides the total length, "
+            "but no chapter may swell past its share, and the FINAL chapter must stay the "
+            "lightest; move extra material to an earlier chapter or cut repetition):\n"
+            + "\n".join(rows) + "\n")
+
+
 def body_restructurer(state: PipelineState) -> dict:
     system_prompt = load_prompt("body_restructurer")
     blueprint = state.get("blueprint") or {}
@@ -563,6 +580,7 @@ def body_restructurer(state: PipelineState) -> dict:
                        "room the content needs; do not pad, do not compress real points.\n")
     else:
         length_line = ""
+    length_line += _chapter_map_line(blueprint)
 
     user_prompt = f"""Rebuild the script body in Egyptian Arabic.
 
@@ -1325,7 +1343,7 @@ RESTRUCTURE STRATEGY PLAN (word count target, retention schedule):
 VOICE STYLE: {state.get("voice_style", "")}
 MANDATORY MENTIONS: {state.get("mandatory_mentions", "")}
 
-Assemble into one continuous, polished script.{_total_length_line(blueprint, strict=duration_fixed(state))}"""
+Assemble into one continuous, polished script.{_total_length_line(blueprint, strict=duration_fixed(state))}{_chapter_map_line(blueprint)}"""
 
     # Only include revision mode block when we're actually revising
     if state.get("quality_revision_count", 0) > 0:

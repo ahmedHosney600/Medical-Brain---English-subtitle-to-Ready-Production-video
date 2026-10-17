@@ -353,3 +353,15 @@ class ReworedDisclaimerTest(unittest.TestCase):
         from medical_brain.nodes import chapters as C
         self.assertFalse(C.has_disclaimer("=== A ===\n" + "كلام عن الإطالة والوقاية. " * 30,
                                           "تنبيه: ده مش بديل عن الدكتور"))
+
+
+class ChapterMapTest(unittest.TestCase):
+    def test_body_writer_sees_the_chapter_proportions(self):
+        from medical_brain.nodes import script_writing as SW
+        bp = {"target_minutes": 11, "words_per_minute": 135,
+              "chapters": [{"id": "C1", "title": "أول", "words": 270}, {"id": "C2", "title": "تاني", "words": 410},
+                           {"id": "C3", "title": "تالت", "words": 430}, {"id": "C4", "title": "رابع", "words": 200}]}
+        line = SW._chapter_map_line(bp)
+        self.assertIn("رابع: about 15% of the body", line)
+        self.assertIn("FINAL chapter must stay the lightest", line)
+        self.assertEqual(SW._chapter_map_line({"chapters": [{"id": "C1", "words": 300}]}), "")
