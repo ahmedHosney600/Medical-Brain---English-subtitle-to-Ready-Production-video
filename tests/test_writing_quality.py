@@ -531,3 +531,23 @@ class WrappedHeaderTest(unittest.TestCase):
         self.assertIn("=== DISCLAIMER | Timestamp: 1:05 ===", out)      # a production label stays
         self.assertEqual([t for t, _ in content_sections(out)], ["CHAPTER 1 — علاج الصداع", "CHAPTER 2 — الجيوب"])
         self.assertEqual(normalize_section_headers(out), out)
+
+
+class WrappedHeaderWithTimesTest(unittest.TestCase):
+    def test_times_after_the_brackets_are_dropped(self):
+        from medical_brain.nodes.chapters import normalize_section_headers
+        out = normalize_section_headers("=== [CHAPTER 1: علاج الشد] | 0:00–3:00 | Energy: 4 ===\nكلام\n")
+        self.assertIn("=== CHAPTER 1: علاج الشد ===", out)
+
+
+class HookLoopTest(unittest.TestCase):
+    def test_judges_see_the_planned_hook_loop(self):
+        from medical_brain.nodes.script_writing import _hook_judge_user
+        state = {"medical_topic": "cramps", "blueprint": {"chapters": [
+            {"id": "C1", "opens_loops": ["الحركة الغلط في السرير", "سؤال تاني"]},
+            {"id": "C2", "closes_loops": ["الحركة الغلط في السرير"]}]}}
+        prompt = _hook_judge_user(state, [("H1", "هوك")])
+        self.assertIn("PLANNED HOOK LOOP", prompt)
+        self.assertIn("الحركة الغلط في السرير", prompt)
+        self.assertIn("plants_loop", prompt)
+        self.assertNotIn("PLANNED HOOK LOOP", _hook_judge_user({"medical_topic": "x"}, [("H1", "هوك")]))

@@ -76,17 +76,38 @@ def _hook_contest_specs():
     return str(main_spec), str(alt_spec)
 
 
+def _planned_hook_loop(blueprint) -> str:
+    """The open loop the plan plants in the hook: the first loop chapter 1 opens (a later
+    chapter pays it off). "" when the blueprint has none."""
+    chapters_ = [c for c in ((blueprint or {}).get("chapters") or []) if isinstance(c, dict)]
+    loops = chapters_[0].get("opens_loops") if chapters_ else None
+    return str(loops[0]).strip() if isinstance(loops, list) and loops else ""
+
+
+def _hook_loop_line(state: PipelineState) -> str:
+    loop = _planned_hook_loop(state.get("blueprint"))
+    return (f"PLANNED HOOK LOOP (the question the video pays off later — the hook must plant it): {loop}\n\n"
+            if loop else "")
+
+
 def _hook_judge_user(state: PipelineState, candidates: list) -> str:
     blocks = [f"CANDIDATE {label}:\n{text}" for label, text in candidates]
+    loop = _planned_hook_loop(state.get("blueprint"))
     return ("Blindly judge these hook options for the same Egyptian-Arabic medical video. "
             "You do not know who wrote which.\n\n"
             f"MEDICAL TOPIC: {state.get('medical_topic', '')}\n\n"
+            + _hook_loop_line(state)
             + "\n\n---\n\n".join(blocks)
             + '\n\nScore every candidate 1–10 on: stopping power in the first 3 seconds, '
               'sensory/visual vividness, natural Egyptian spoken feel, curiosity/open loop, '
-              'and honesty (no overclaim). Return ONLY JSON: '
+              'honesty (no overclaim)'
+            + (', and plants_loop (does it open the PLANNED HOOK LOOP above? a hook that opens a '
+               'different question scores at most 4 here)' if loop else '')
+            + '. Return ONLY JSON: '
               '{"scores": {"H1": {"total": 8, "stopping_power": 8, "vividness": 8, '
-              '"egyptian_feel": 8, "curiosity": 8, "honesty": 8}}, "best": "H1"}'
+              '"egyptian_feel": 8, "curiosity": 8, "honesty": 8'
+            + (', "plants_loop": 8' if loop else '')
+            + '}}, "best": "H1"}'
             + "\nEvery label above must appear once in scores.")
 
 
@@ -173,7 +194,7 @@ PRESENTER PROFILE:
 AVOID LIST:
 {state.get("avoid_list", "")}
 
-Write three distinct hooks, each a different type, written directly in Egyptian Arabic. Score each. Recommend the strongest one."""
+{_hook_loop_line(state)}Write three distinct hooks, each a different type, written directly in Egyptian Arabic. Every hook plants the planned hook loop above (when given). Score each. Recommend the strongest one."""
 
     response = call_llm(system_prompt, user_prompt, temperature=0.85, max_tokens=2500)
 

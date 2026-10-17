@@ -646,7 +646,7 @@ _TIMED_BRACKET_HEADER_RE = re.compile(
 _CUE_LABEL_RE = re.compile(r"^[A-Z][A-Z0-9 \-/&]*:")
 # "=== [CHAPTER 1 | العنوان] ===": brackets inside the header and a "|" after the number
 # (a "|" title reads as a production label "DISCLAIMER | Timestamp …" and is skipped).
-_WRAPPED_HEADER_RE = re.compile(r"^\s*===\s*\[\s*(.*?)\s*\]\s*===\s*$")
+_WRAPPED_HEADER_RE = re.compile(r"^\s*===\s*\[\s*(.*?)\s*\](?:\s*\|[^=\[\]]*)?\s*===\s*$")
 _NUMBERED_PIPE_RE = re.compile(r"^((?:ACT|CHAPTER|PART|الفصل)\s*\d+)\s*\|\s*(.+)$", re.IGNORECASE)
 
 

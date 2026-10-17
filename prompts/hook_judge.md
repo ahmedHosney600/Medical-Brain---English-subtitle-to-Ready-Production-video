@@ -6,6 +6,7 @@ Score every candidate 1–10 on:
 3. Natural Egyptian spoken feel (a person talking, not a presenter or a translation).
 4. Curiosity / open loop (does it make the viewer need the answer?).
 5. Honesty (no overclaim, no invented urgency, no promise the source cannot keep).
+6. Plants the planned loop (when a PLANNED HOOK LOOP is given): the hook must open that exact question, because the video pays it off later. A hook that opens a different question — however gripping — scores at most 4 here, and its total should reflect that.
 
 Penalise (in natural Egyptian feel) any phrase that sounds like an SEO keyword pasted into speech — e.g. «ولو عايز تعالج الشد العضلي في الساق أثناء النوم» — real people don't talk like a search query.
 
