@@ -403,3 +403,14 @@ class JudgeDoesNotRewriteTest(unittest.TestCase):
 
     def test_same_model_judge_keeps_the_old_behaviour(self):
         self.assertEqual(self._result("deepseek:deepseek-flash")["refined_script"], "نص الحكم المعاد كتابته")
+
+
+class BracketHeaderTest(unittest.TestCase):
+    def test_bracketed_act_headers_become_chapter_headers(self):
+        from medical_brain.nodes import chapters as C
+        text = "[HOOK]\nكلام\n[ACT 1 — الحركة الميكانيكية]\n[VISUAL NOTE: لقطة]\nكلام\n[ACT 2: اللغز]\nكلام"
+        out = C.normalize_section_headers(text)
+        self.assertIn("=== ACT 1 — الحركة الميكانيكية ===", out)
+        self.assertIn("=== ACT 2: اللغز ===", out)
+        self.assertIn("[HOOK]", out)
+        self.assertIn("[VISUAL NOTE: لقطة]", out)

@@ -875,7 +875,8 @@ def repair_script(state: PipelineState, script: str, *sources: str) -> str:
     frame disclaimer that drifted to the end back to the opening. `sources` are fallback
     texts the chapter may be copied from, in priority order."""
     blueprint = (state or {}).get("blueprint") or {}
-    script, restored = chapters.restore_missing_chapters(blueprint, script or "", *sources)
+    script = chapters.normalize_section_headers(script or "")
+    script, restored = chapters.restore_missing_chapters(blueprint, script, *sources)
     if restored:
         print(f"  🩹 restored missing chapter(s): {', '.join(restored)}")
     script, removed = chapters.dedupe_signoffs(script)

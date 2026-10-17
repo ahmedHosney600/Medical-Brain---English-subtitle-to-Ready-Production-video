@@ -606,6 +606,27 @@ def has_early_comment_question(script: str, fraction: float = COMMENT_QUESTION_F
     return False
 
 
+# Assembly sometimes writes section headers as "[ACT 1 — title]" instead of
+# "=== title ===": the chapter-aware checks (heavy ending, missing chapters) then saw
+# no chapters at all in a real run.
+_BRACKET_HEADER_RE = re.compile(r"^\s*\[\s*((?:ACT|CHAPTER|PART|الفصل)\s*\d+\s*[—:\-–|].*?)\s*\]\s*$", re.IGNORECASE)
+
+
+def normalize_section_headers(text: str) -> str:
+    """Rewrite bracketed act/chapter header lines ("[ACT 2 — اللغز]") to "=== ACT 2 — اللغز ===".
+    Cue lines ([VISUAL NOTE: …], [SFX: …], [HOOK]) are left alone."""
+    if not text:
+        return text
+    lines = text.split("\n")
+    changed = False
+    for i, line in enumerate(lines):
+        m = _BRACKET_HEADER_RE.match(line)
+        if m:
+            lines[i] = f"=== {m.group(1).strip()} ==="
+            changed = True
+    return "\n".join(lines) if changed else text
+
+
 def strip_script_extras(text: str) -> str:
     """Drop the non-spoken wrapper a polishing pass may add: a leading metadata block
     ("SCRIPT: …", "Word Count: …" up to the first ---) and a trailing
