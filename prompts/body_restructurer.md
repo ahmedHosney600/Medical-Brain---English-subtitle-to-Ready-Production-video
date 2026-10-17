@@ -20,7 +20,7 @@ REBUILD PRINCIPLES:
 
 4. USE THE ANALOGY BANK, DON'T OVER-USE IT: pull analogies from the Strategy Plan where they were mapped to a specific fact. Don't force an analogy onto every sentence — plain warm Arabic works fine for simple points; save the analogies for the genuinely hard-to-grasp mechanisms.
 
-5. FOLLOW THE TERMINOLOGY RETENTION TABLE: for every technical/medical term, use the exact decision the Strategy Plan made — keep it in English, Arabize it, or say it first-mention-both. Do not re-decide this term by term as you write; the table already did that work. A term marked "Keep in English" should sit in English inside an otherwise fully Egyptian sentence, exactly the way an Egyptian doctor or health creator would actually say it (e.g., "الـ insulin resistance بتخلي الجسم..." is correct Egyptian Arabic with an English term inside it — it is NOT translation risk).
+5. FOLLOW THE TERMINOLOGY RETENTION TABLE: for every technical/medical term, use the exact decision the Strategy Plan made — keep it in English, Arabize it, or say it first-mention-both. Do not re-decide this term by term as you write; the table already did that work. A term marked "Keep in English" still follows Rule 6b: say the plain Egyptian meaning first and put the English term after it in parentheses (e.g., «الجسم بيبطّل يسمع كلام الإنسولين (Insulin Resistance)»), and only for the few terms (at most 5 in the whole script) that help the viewer search or talk to a doctor. Every other term is said in plain Egyptian only.
 
 6. SPOKEN EGYPTIAN ARABIC GRAMMAR & REGISTER (العامية المصرية المثقفة البيضاء المعتدلة):
    - Clear, dignified, highly articulate, effortless to understand and pronounce for any native speaker (واضحة، معتدلة، مفهومة للجميع، وسهلة النطق بدون تكلف).
@@ -41,12 +41,14 @@ REBUILD PRINCIPLES:
      * Never use: "قرصت عليها في التمرين" (use: "أجهدتها بزيادة", "حملت عليها في التمرين").
      * Never use mechanic jargon: "فيوزات تضرب", "فيوز", "تجنزر", "تصدي", "ماس كهربائي في الضفيرة", "تفرك".
    - Short clauses. Conversational stitching, not essay structure.
-   - IMPORTANT: keeping an English technical term per Rule 5 does NOT violate this rule. The failure mode this rule guards against is English *sentence structure* and *word order* leaking into the Arabic — not English *nouns* appearing where the Terminology Table calls for them.
+   - The failure mode this rule guards against is English *sentence structure* and *word order* leaking into the Arabic. English *nouns* follow Rule 6b (in parentheses after the plain meaning, at most 5).
 
 6b. PLAIN LANGUAGE — ENGLISH TERMS (MANDATORY):
    - Every English/medical term must come AFTER a plain Egyptian explanation of it, in parentheses, and only when it helps the viewer search for it or talk to a doctor.
    - At most 5 English terms in the whole script. Never leave a bare English word in an Arabic sentence.
    - Say «حساس صغير في الوتر — فرامل العضلة (Golgi Tendon Organ)» instead of a bare "Golgi Tendon Organ"; «أكبر مراجعات علمية (Cochrane)» instead of a bare "Cochrane"; «اضطراب في ضربات القلب (Arrhythmias)» instead of a bare "Arrhythmias".
+
+6d. ORDER INSIDE THE LAST CHAPTER (MANDATORY): the red flags / emergency signs and the payoff of the hook's open loop come BEFORE any secondary list (extra medicines, supplements, herbs, folk remedies, related conditions). The video must not end on a list; the last thing before the call to action is the payoff and the safety message.
 
 6c. EVIDENCE-STRENGTH & HEDGING (MANDATORY):
    - State how strong the evidence is ONCE per point, in plain words (one short line such as «أمانة علمية: الدراسات على الحالة دي لسه محدودة»). Do not repeat the caveat later.
