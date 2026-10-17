@@ -366,6 +366,8 @@ def _overlay_chapter_mode(state: PipelineState, system_prompt: str, blueprint: d
     outputs, titles, texts, keys = _run_per_chapter(state, "text_animation_overlay", spans, workers, generate)
     _rewrite_chapter_times(outputs, spans, keys, state)
     joined = _join_chapter_outputs(titles, [outputs.get(keys[i], "") for i in range(len(spans))])
+    joined = relocate_unfound_overlay_cues(restore_missing_headers(joined), state.get("refined_script", ""),
+                                           ew.blueprint_wpm(state.get("blueprint")))
     joined = ew.rewrite_cue_timestamps(joined, state.get("refined_script", ""),
                                        ew.blueprint_wpm(state.get("blueprint")))
     joined = fix_overlay_read_times(joined)
@@ -409,6 +411,8 @@ PRODUCTION CRITIQUE REPORT:
 {state.get("production_critique_output", "")}"""
 
     response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=7000)
+    response = relocate_unfound_overlay_cues(response, state.get("refined_script", ""),
+                                             ew.blueprint_wpm(state.get("blueprint")))
     response = ew.rewrite_cue_timestamps(response, state.get("refined_script", ""),
                                          ew.blueprint_wpm(state.get("blueprint")))
     return {"text_animation_overlay": fix_overlay_read_times(response)}
@@ -1739,9 +1743,118 @@ OVERLAY_READ_WORDS_PER_SECOND = 2.5   # comfortable on-screen Arabic reading rat
 OVERLAY_MAX_HOLD_SECONDS = 20.0
 
 
+_RELOCATE_MIN_SHARED = 3
+_RELOCATE_MIN_WEIGHT = 1.5        # sum of 1/(sentences containing the word)
+
+
+def relocate_unfound_overlay_cues(text: str, script: str, wpm: float) -> str:
+    """An overlay row whose START CUE is not in the script keeps the model's invented
+    timestamp (a red-flag warning card fired at 8:50 over the salt section; its cue
+    «لو فيه أعراض» was never spoken). Anchor such a row on the script sentence that
+    shares the most meaningful words with its cue + on-screen text (at least 3), so the
+    cue re-timing puts it where the line is really said. Rows with no such sentence are
+    left alone."""
+    if not text or not script:
+        return text
+    wpm = ew.blueprint_wpm({"words_per_minute": wpm})
+    sentences = _script_sentences(script, wpm)
+    norm_script = ew.normalize_ar(ew.spoken_text(script))
+    if not sentences:
+        return text
+
+    def stem(word):
+        for prefix in ("وبال", "وال", "بال", "فال", "كال", "لل", "ال", "و", "ب", "ف"):
+            if word.startswith(prefix) and len(word) - len(prefix) >= 3:
+                return word[len(prefix):]
+        return word
+
+    def words(value):
+        return {stem(w) for w in ew.normalize_ar(ew.spoken_text(value or "")).split() if len(w) >= 3}
+
+    sentence_words = [words(s["text"]) for s in sentences]
+    # Rare words identify a line; common ones ("فيه", "علامات") do not.
+    frequency = {}
+    for sw in sentence_words:
+        for w in sw:
+            frequency[w] = frequency.get(w, 0) + 1
+    lines = text.splitlines()
+    moved, i = 0, 0
+    while i < len(lines):
+        if not lines[i].strip().startswith("|"):
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and lines[j].strip().startswith("|"):
+            j += 1
+        upper = [c.upper() for c in _table_cells(lines[i])]
+        start_col = next((k for k, h in enumerate(upper) if "START" in h or "▶" in h), None)
+        end_col = next((k for k, h in enumerate(upper) if "END" in h or "⏹" in h), None)
+        content_col = next((k for k, h in enumerate(upper) if "CONTENT" in h), None)
+        if start_col is None or content_col is None or not any("ELEMENT" in h for h in upper):
+            i = j
+            continue
+        separator = i + 1 < j and chapters.is_separator_row(lines[i + 1])
+        for k in range(i + (2 if separator else 1), j):
+            cells = _table_cells(lines[k])
+            if len(cells) <= max(start_col, content_col):
+                continue
+            cue = cells[start_col]
+            if not cue.strip() or ew.cue_positions(cue, norm_script):
+                continue
+            wanted = words(cue) | words(cells[content_col])
+            if not wanted:
+                continue
+            scored = [(sum(1.0 / frequency[w] for w in wanted & sw), len(wanted & sw), n)
+                      for n, sw in enumerate(sentence_words)]
+            weight, shared, index = max(scored, key=lambda item: (item[0], item[1], -item[2]))
+            if shared < _RELOCATE_MIN_SHARED or weight < _RELOCATE_MIN_WEIGHT:
+                continue
+            sentence = sentences[index]
+            cells[start_col] = _sentence_cue(sentence, norm_script)
+            if end_col is not None and end_col < len(cells) and not ew.cue_positions(cells[end_col], norm_script):
+                cells[end_col] = " ".join(sentence["words"][-4:])
+            lines[k] = "| " + " | ".join(cells) + " |"
+            moved += 1
+        i = j
+    if not moved:
+        return text
+    print(f"  🔧 overlays: re-anchored {moved} rows whose cue was not in the script")
+    return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+
+
+def restore_missing_headers(text: str) -> str:
+    """Puts the header (+ separator) back on a table whose rows start with a number and
+    have the same column count as an earlier table header in the document. A chapter-mode
+    answer (or an older join) left chapters 2–4 of the transition map and overlay guide
+    without a header, so no code repair could see their rows."""
+    lines = (text or "").splitlines()
+    headers, out, i, changed = {}, [], 0, False
+    while i < len(lines):
+        if not lines[i].strip().startswith("|"):
+            out.append(lines[i])
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and lines[j].strip().startswith("|"):
+            j += 1
+        block = lines[i:j]
+        cells = _table_cells(block[0])
+        if len(block) > 1 and chapters.is_separator_row(block[1]):
+            headers.setdefault(len(cells), (block[0], block[1]))
+        elif cells and re.fullmatch(r"\d+", cells[0].strip()) and len(cells) in headers:
+            out.extend(headers[len(cells)])
+            changed = True
+        out.extend(block)
+        i = j
+    if not changed:
+        return text
+    return "\n".join(out) + ("\n" if (text or "").endswith("\n") else "")
+
+
 def fix_overlay_read_times(text: str) -> str:
     """Lengthens every overlay's Hold (s) to fit its words at ~2.5 words/second (at most
     20 s). A critique measured a 60-word red-flag card held 9 s, a 30-word card 5.5 s."""
+    text = restore_missing_headers(text)
     lines = (text or "").splitlines()
     changed, fixed, i = False, 0, 0
     while i < len(lines):
@@ -1893,7 +2006,7 @@ def sync_transition_map(state: PipelineState, transition_design: str, broll_tabl
     _sync_transition_once. Returns (transition_text, total_added). `map_out`, when given,
     receives the old→new transition number map (code-added rows have no old number)."""
     total = 0
-    text = transition_design
+    text = restore_missing_headers(transition_design)
     mapping = {} if map_out is not None else None
     for _ in range(3):
         holder = []
@@ -1953,6 +2066,14 @@ def rebuild_density_summary(text: str, script: str, wpm: float) -> str:
         return text
     lines.append(f"| **Entire Video Total** | 0:00–{_fmt_seconds(end)} | **{total}** | "
                  f"**{hard_all} ({round(100 * hard_all / total)}%)** | **{soft_all} ({round(100 * soft_all / total)}%)** |")
+    # Chapter mode has one summary per chapter: keep one whole-video summary (the first).
+    later = list(_DENSITY_HEAD_RE.finditer(text))[1:]
+    for extra in reversed(later):
+        tail = text[extra.end():]
+        table = re.search(r"\n((?:[ \t]*\|.*\n?)+)", tail)
+        stop = extra.end() + (table.end() if table and not tail[:table.start()].strip() else 0)
+        text = text[:extra.start()] + text[stop:]
+    head = _DENSITY_HEAD_RE.search(text)
     # Replace the first table after the heading (or insert one right under it).
     after = text[head.end():]
     table = re.search(r"\n((?:[ \t]*\|.*\n?)+)", after)

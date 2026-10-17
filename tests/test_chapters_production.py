@@ -183,10 +183,12 @@ class ProductionChapterModeTest(unittest.TestCase):
         self.assertIn("AC1", text)
         self.assertEqual(text.count("| # | Timestamp | ▶️ START CUE (Arabic) | From → To | "
                                     "Transition Type | Direction | Easing | Duration (ms) | "
-                                    "Range | Rationale |"), 1)
-        self.assertEqual(text.count("|---|---|---|---|---|---|---|---|---|---|"), 1)
+                                    "Range | Rationale |"), 2)      # one per chapter section
+        self.assertEqual(text.count("|---|---|---|---|---|---|---|---|---|---|"), 2)
         for number in ("| 1 |", "| 2 |", "| 3 |", "| 4 |"):
             self.assertIn(number, text)
+        # Every chapter's table is parseable, so the sync sees all four rows.
+        self.assertEqual(sum(len(b["rows"]) for b in production._transition_blocks(text)), 4)
         self.assertIn("=== الفصل الأول ===", text)
         self.assertIn("=== الفصل الثاني ===", text)
 

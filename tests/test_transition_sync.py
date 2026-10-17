@@ -268,3 +268,32 @@ class OverlayReadTimeTest(unittest.TestCase):
         self.assertIn("| 12 |", rows[0])                     # 30 words / 2.5 = 12 s
         self.assertIn("| 4s |", rows[1])                     # already long enough
         self.assertEqual(production.fix_overlay_read_times(out), out)
+
+
+class ChapterTableRepairTest(unittest.TestCase):
+    def test_headerless_chapter_table_gets_its_header_back(self):
+        text = (transition_table(transition_row(1, 0, "A → B"))
+                + "\n### Transition Density Summary\n\n## TRANSITION DESIGN MAP\n### Transition Table\n"
+                + transition_row(18, 6, "B → C"))
+        fixed = production.restore_missing_headers(text)
+        self.assertEqual(sum(len(b["rows"]) for b in production._transition_blocks(fixed)), 2)
+        self.assertEqual(production.restore_missing_headers(fixed), fixed)
+
+    def test_only_one_density_summary_remains(self):
+        summary = "\n### Transition Density Summary\n\n| Act | Total |\n|---|---|\n| x | 9 |\n"
+        text = (transition_table(transition_row(1, 0, "A → B")) + summary
+                + "\n" + transition_table(transition_row(2, 7, "B → C")) + summary)
+        out = production.rebuild_density_summary(text, script(), 60)
+        self.assertEqual(out.count("Transition Density Summary"), 1)
+        self.assertNotIn("| x | 9 |", out)
+
+    def test_overlay_cue_not_in_script_is_re_anchored_by_its_rare_words(self):
+        text_script = ("الضغط عالي شوية النهارده. خليك هادي واشرب مية. "
+                       "لو معاه وجع في الصدر او ضيق نفس او تنميل روح المستشفى. شكرا ليكم.")
+        row = ("| 1 | 8:50 | WARNING BOX | ألم بالصدر • ضيق نفس • تنميل | لو فيه أعراض | وطوارئ على طول. "
+               "| center | fade | 5 | fade | — | x |\n")
+        with mock.patch("builtins.print"):
+            out = production.relocate_unfound_overlay_cues(overlay_table(row), text_script, 60)
+        self.assertIn("| لو معاه وجع في الصدر", out)
+        found = overlay_table(row.replace("لو فيه أعراض", "الضغط عالي شوية"))
+        self.assertEqual(production.relocate_unfound_overlay_cues(found, text_script, 60), found)

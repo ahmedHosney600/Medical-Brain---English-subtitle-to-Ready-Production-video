@@ -364,7 +364,7 @@ def renumber_tables(text: str, row_callback=None) -> str:
     (header_signature, new_number, original_line_index) is called for every numbered
     data row, so callers can map global numbers back to their chapter."""
     lines = (text or "").splitlines()
-    out, next_num = [], {}
+    out, next_num, last_end = [], {}, {}
     i, n = 0, len(lines)
     while i < n:
         line = lines[i]
@@ -376,6 +376,10 @@ def renumber_tables(text: str, row_callback=None) -> str:
         while j < n and lines[j].strip().startswith("|"):
             j += 1
         block = lines[i:j]
+        # A header must stay when other text (headings, notes) separates this table from
+        # the previous one of the same shape: without it the table cannot be parsed (a
+        # chapter-mode run lost every chapter-2–4 transition and overlay table this way).
+        has_header = len(block) > 1 and is_separator_row(block[1])
         separator = len(block) > 1 and is_separator_row(block[1])
         data_start = 2 if separator else 1
         raw_cells = split_pipes(block[0])
@@ -388,6 +392,9 @@ def renumber_tables(text: str, row_callback=None) -> str:
         if first_seen:
             next_num[sig] = 1
             out.extend(block[:data_start])
+        elif has_header and any(l.strip() and not _HEADER_RE.match(l) for l in lines[last_end[sig]:i]):
+            out.extend(block[:data_start])
+        last_end[sig] = j
         for k in range(data_start, len(block)):
             row = block[k]
             if has_num and not is_separator_row(row):
