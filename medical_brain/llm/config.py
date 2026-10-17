@@ -87,7 +87,10 @@ DEFAULT_PROVIDERS = {
     # the default 32k cap in a 2026-10-17 run and fell back to another model.
     "deepseek": {"type": "openai", "label": "DeepSeek", "base_url": "https://api.deepseek.com",
                  "api_key_env": "DEEPSEEK_API_KEY", "balance_path": "/user/balance",
-                 "max_output_cap": 65536},
+                 # Start at the high ceiling: the doubled retry is skipped when the first
+                 # call already took over half the step timeout, which DeepSeek's long
+                 # thinking always does. Only the tokens actually produced are billed.
+                 "min_max_tokens": 65536, "max_output_cap": 65536},
     # OpenCode Go serves models through three different APIs (see opencode_endpoint).
     "opencode": {"type": "opencode_go", "label": "OpenCode Go", "base_url": "https://opencode.ai/zen/go/v1",
                  "api_key_env": "OPENCODE_API_KEY", "endpoints": {},
