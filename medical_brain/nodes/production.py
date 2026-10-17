@@ -495,10 +495,13 @@ def _broll_chapter_mode(state: PipelineState, system_prompt: str, blueprint: dic
         outputs[key] = finalize_broll_table(state, outputs.get(key, ""), after=after, repair=False)
     texts = [outputs.get(keys[i], "") for i in range(len(spans))]
     joined, mapping = _join_broll(titles, texts, keys)
+    state.pop("_broll_timeline_map", None)
     joined = finalize_broll_table(state, joined)
+    broll_map = state.pop("_broll_timeline_map", {})
     return _sync_after_broll(state, joined, {
         "broll_by_chapter": mapping,
-        "production_chapter_outputs": _store_step(state, "broll_prompts", outputs)})
+        "production_chapter_outputs": _store_step(state, "broll_prompts", outputs)},
+        broll_map=broll_map)
 
 
 def _broll_single_call(state: PipelineState, system_prompt: str) -> dict:
@@ -542,23 +545,48 @@ PRODUCTION CRITIQUE REPORT:
 {state.get("production_critique_output", "")}"""
 
     response = call_llm(system_prompt, user_prompt, temperature=0.6, max_tokens=9000)
-    return _sync_after_broll(state, finalize_broll_table(state, response))
+    state.pop("_broll_timeline_map", None)
+    table = finalize_broll_table(state, response)
+    broll_map = state.pop("_broll_timeline_map", {})
+    return _sync_after_broll(state, table, broll_map=broll_map)
 
 
-def _sync_after_broll(state: PipelineState, table: str, result: dict = None) -> dict:
+def _sync_after_broll(state: PipelineState, table: str, result: dict = None,
+                      broll_map=None) -> dict:
     """Stores the final B-roll table and syncs the transition map to it (the map's
-    designer ran before repair_broll_timeline added its gap-fill cuts)."""
+    designer ran before repair_broll_timeline added its gap-fill cuts). The two
+    renumbering maps are then applied to the other layers, so their links keep naming
+    the rows that still exist."""
     out = dict(result or {})
     transition = state.get("transition_design", "")
+    overlay = state.get("text_animation_overlay", "")
     script = state.get("refined_script", "")
+    broll_map = broll_map or {}
+
+    # B-roll references in the already-written layers must be fixed before the sync
+    # adds its code-generated cuts, otherwise a new B-roll number could be mistaken
+    # for an old one and rewritten twice.
+    if broll_map:
+        transition = relink_references(transition, "broll", broll_map)
+        overlay = relink_references(overlay, "broll", broll_map)
+
+    transition_map = {}
     if transition and table and script:
-        broll_changed = []
+        broll_changed, map_holder = [], []
         transition, _added = sync_transition_map(
             state, transition, table, script, ew.blueprint_wpm(state.get("blueprint")),
-            broll_out=broll_changed)
+            broll_out=broll_changed, map_out=map_holder)
         if broll_changed:
             table = broll_changed[-1]
-        out["transition_design"] = transition
+        if map_holder:
+            transition_map = map_holder[0]
+
+    if transition_map:
+        overlay = relink_references(overlay, "transition", transition_map)
+        table = relink_references(table, "transition", transition_map)
+
+    out["transition_design"] = transition
+    out["text_animation_overlay"] = overlay
     out["broll_prompts"] = table
     return out
 
@@ -624,6 +652,182 @@ MAX_GAP_FILLS = 6
 _MIN_BROLL_SPACING = 8
 _LEADING_GAP_SECONDS = 20
 _SEPARATOR_CELL = re.compile(r":?-{2,}:?")
+
+# Cross-layer reference patterns. A renumbered table keeps its own "#" column; only
+# text that names another row (and the "Linked to …" cells) is rewritten.
+_BROLL_REF = re.compile(r"(?i)\b(B[- ]?rolls?\s*#?\s*)(\d+)\b")
+_TRANSITION_REF = re.compile(r"(?i)(\b(?:T\s*#\s*|Transition\s*#\s*))(\d+)\b")
+_ANY_REF = re.compile(
+    r"(?i)\bB[- ]?rolls?\s*#?\s*\d+|\bT\s*#\s*\d+|\bTransition\s*#\s*\d+")
+_BARE_REF = re.compile(r"(?<![\w#])(#?)\s*(\d+)\b")
+
+_BROLL_MAP_KEYS = ("mapping", "map", "broll_map", "broll_number_map",
+                   "number_map", "old_to_new", "renumbered")
+
+
+class _BrollReport(dict):
+    """Timeline-repair counters plus the old→new B-roll number map.
+
+    The map is exposed as `report.mapping` and through the historical aliases above.
+    It is deliberately not a normal dict key so older callers that compare the report
+    to the four counter keys keep working unchanged."""
+
+    def __init__(self, data=None, mapping=None):
+        super().__init__(data or {})
+        self.mapping = dict(mapping or {})
+
+    def __getitem__(self, key):
+        if key in _BROLL_MAP_KEYS:
+            return self.mapping
+        if key == "moved_out_of_drawings" and not dict.__contains__(self, key):
+            return 0
+        return super().__getitem__(key)
+
+    def get(self, key, default=None):
+        if key in _BROLL_MAP_KEYS:
+            return self.mapping
+        if key == "moved_out_of_drawings" and not dict.__contains__(self, key):
+            return 0
+        return super().get(key, default)
+
+    def __contains__(self, key):
+        if key in _BROLL_MAP_KEYS or key == "moved_out_of_drawings":
+            return True
+        return super().__contains__(key)
+
+    def __eq__(self, other):
+        if not isinstance(other, dict):
+            return super().__eq__(other)
+
+        def value(source, key):
+            if key in _BROLL_MAP_KEYS:
+                return source.mapping if isinstance(source, _BrollReport) else source.get(key)
+            if key == "moved_out_of_drawings":
+                return source.get(key, 0)
+            return source.get(key)
+
+        for key in set(self) | set(other):
+            if value(self, key) != value(other, key):
+                return False
+        return True
+
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+
+def _number_value(value):
+    """An integer from a table number/mapping value; None for a non-number."""
+    digits = re.sub(r"\D", "", str(value or ""))
+    return int(digits) if digits else None
+
+
+def _normalized_number_map(mapping) -> dict:
+    out = {}
+    for old, new in (mapping or {}).items():
+        old_number = _number_value(old)
+        if old_number is None:
+            continue
+        out[old_number] = _number_value(new) if new is not None else None
+    return out
+
+
+def _replace_reference(match, mapping: dict) -> str:
+    number = int(match.group(2))
+    if number not in mapping:
+        return match.group(0)
+    new = mapping[number]
+    return "—" if new is None else f"{match.group(1)}{new}"
+
+
+def _link_column_kind(header: str) -> str:
+    upper = (header or "").upper()
+    if "LINKED" not in upper:
+        return ""
+    if "TRANSITION" in upper:
+        return "transition"
+    if "B-ROLL" in upper or "BROLL" in upper:
+        return "broll"
+    if "OVERLAY" in upper:
+        return "overlay"
+    return ""
+
+
+def _rewrite_link_cell(cell: str, kind: str, mapping: dict) -> str:
+    """A "Linked to …" cell holds a reference, not free text: also rewrite its bare
+    forms (#3 / 3 / After #3). Explicit B-roll/T# references elsewhere in the cell are
+    handled first, so their new numbers are never mapped a second time."""
+    pattern = _BROLL_REF if kind == "broll" else _TRANSITION_REF
+    cell = pattern.sub(lambda m: _replace_reference(m, mapping), cell)
+    if _ANY_REF.search(cell):
+        return cell
+
+    def bare(match):
+        number = int(match.group(2))
+        if number not in mapping:
+            return match.group(0)
+        new = mapping[number]
+        if new is None:
+            return "—"
+        return f"{match.group(1)}{new}"
+
+    return _BARE_REF.sub(bare, cell)
+
+
+def relink_references(text: str, kind: str, mapping) -> str:
+    """Rewrites references to old row numbers after a table has been renumbered.
+
+    `kind` is "broll" or "transition". B-roll references (`B-roll #3`, `B-Roll #3`,
+    `B-rolls #3`, `B-roll 3`) and T references (`T#3`, `T #3`, `Transition #3`) are
+    rewritten anywhere in the document; a link column named for `kind` also accepts
+    bare cells (`#3`, `3`, `After #3`). A reference to a dropped row becomes "—".
+    The renumbered table's own "#" column, timestamps and unrelated numbers are left
+    alone."""
+    kind = (kind or "").lower()
+    if not text or kind not in ("broll", "transition"):
+        return text
+    numbers = _normalized_number_map(mapping)
+    if not numbers:
+        return text
+    pattern = _BROLL_REF if kind == "broll" else _TRANSITION_REF
+    lines, header = [], None
+
+    def ending(raw):
+        for end in ("\r\n", "\n", "\r"):
+            if raw.endswith(end):
+                return raw[:-len(end)], end
+        return raw, ""
+
+    for raw in text.splitlines(keepends=True):
+        line, end = ending(raw)
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            header = None
+            lines.append(pattern.sub(lambda m: _replace_reference(m, numbers), line) + end)
+            continue
+        parts = re.split(r"(?<!\\)\|", line)
+        cells = [c.strip() for c in parts[1:-1]]
+        if cells and all(_SEPARATOR_CELL.fullmatch(c) for c in cells if c):
+            lines.append(raw)
+            continue
+        if header is None:
+            header = cells
+            lines.append(raw)
+            continue
+        number_col = next((i for i, c in enumerate(header) if c.strip() == "#"), None)
+        linked = {i for i, c in enumerate(header) if _link_column_kind(c) == kind}
+        for i in range(len(cells)):
+            if i == number_col or i + 1 >= len(parts) - 1:
+                continue
+            original = parts[i + 1]
+            content = original.strip()
+            if i in linked:
+                content = _rewrite_link_cell(content, kind, numbers)
+            else:
+                content = pattern.sub(lambda m: _replace_reference(m, numbers), content)
+            pad = re.match(r"^(\s*)(.*?)(\s*)$", original, re.S)
+            parts[i + 1] = pad.group(1) + content + pad.group(3)
+        lines.append("|".join(parts) + end)
+    return "".join(lines)
 
 
 def _table_cells(line: str) -> list:
@@ -817,8 +1021,222 @@ Return ONLY the markdown row (one line, same number of columns as the header).""
         return None
 
 
+DRAWING_WINDOW_SECONDS = 15
+
+
+def _cue_seconds_loose(cue: str, script: str, wpm: float):
+    """Seconds for a drawing's spoken cue, trying a shorter prefix when the quoted
+    build-step line carries a little extra wording around the real script words."""
+    cue = (cue or "").strip(" \"'“”«»`*.")
+    if not cue or not script:
+        return None
+    seconds = ew.cue_seconds(cue, script, wpm)
+    if seconds is not None:
+        return float(seconds)
+    words = cue.split()
+    for length in range(min(7, len(words)), 2, -1):
+        seconds = ew.cue_seconds(" ".join(words[:length]), script, wpm)
+        if seconds is not None:
+            return float(seconds)
+    return None
+
+
+def _drawing_duration(text: str):
+    """The seconds a drawing spec/row says it lasts (None when it does not say)."""
+    patterns = (
+        r"(?i)\b(?:total\s+)?duration\b[^:\n\d]{0,20}:\s*\**\s*(\d+(?:\.\d+)?)",
+        r"(?i)\bhold\b[^:\n\d]{0,20}:\s*\**\s*(\d+(?:\.\d+)?)",
+        r"(?i)(\d+(?:\.\d+)?)\s*(?:s\b|sec(?:ond)?s?)\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text or "")
+        if match:
+            try:
+                return float(match.group(1))
+            except ValueError:
+                continue
+    return None
+
+
+def _drawing_cues(block: str) -> list:
+    """Spoken cues of a prose drawing spec's build steps."""
+    cues = []
+    for match in re.finditer(r"(?i)\bcue\b\s*[:\-–]\s*[“\"«]?\s*([^”\"»\n)]+)", block or ""):
+        cue = match.group(1).strip(" \"'“”«»`*.-–—")
+        if cue:
+            cues.append(cue)
+    if not cues:
+        for line in (block or "").splitlines():
+            if not re.search(r"(?i)\bstep\b|^\s*(?:\d+[.)]|[-*•])\s+", line):
+                continue
+            quoted = re.search(r"[“\"«]([^”\"»]{3,})[”\"»]", line)
+            if quoted:
+                cues.append(quoted.group(1).strip())
+    return cues
+
+
+def _overlay_table_drawing_windows(guide: str, script: str, wpm: float) -> list:
+    """Drawing windows from the overlay table's DRAWING/WHITEBOARD rows."""
+    lines = (guide or "").splitlines()
+    windows, i = [], 0
+    while i < len(lines):
+        if not lines[i].strip().startswith("|"):
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and lines[j].strip().startswith("|"):
+            j += 1
+        header = _table_cells(lines[i])
+        upper = [c.upper() for c in header]
+        if not any("ELEMENT" in c for c in upper) or not any(
+                "START" in c or "▶" in c for c in upper):
+            i = j
+            continue
+
+        def col(*names):
+            return next((k for k, h in enumerate(upper) if any(n in h for n in names)), None)
+
+        element_col = col("ELEMENT")
+        start_col = col("START CUE", "START", "▶")
+        time_col = col("TIMESTAMP", "TIMECODE", "TIME", "⏱")
+        duration_col = col("HOLD", "DURATION")
+        separator = i + 1 < j and chapters.is_separator_row(lines[i + 1])
+        for k in range(i + (2 if separator else 1), j):
+            cells = _table_cells(lines[k])
+            if not cells or all(_SEPARATOR_CELL.fullmatch(c) for c in cells if c):
+                continue
+            element = cells[element_col].upper() if element_col is not None and element_col < len(cells) else ""
+            if "DRAWING" not in element and "WHITEBOARD" not in element:
+                continue
+            start = None
+            if start_col is not None and start_col < len(cells) and cells[start_col]:
+                start = _cue_seconds_loose(cells[start_col], script, wpm)
+            if start is None and time_col is not None and time_col < len(cells):
+                stamp = _seconds(cells[time_col])
+                start = float(stamp) if stamp is not None else None
+            if start is None:
+                for cue in _drawing_cues(" | ".join(cells)):
+                    start = _cue_seconds_loose(cue, script, wpm)
+                    if start is not None:
+                        break
+            if start is None:
+                continue
+            duration = None
+            if duration_col is not None and duration_col < len(cells):
+                duration = _number_value(cells[duration_col])
+            if not duration or duration <= 0:
+                duration = _drawing_duration(" | ".join(cells))
+            windows.append((start, start + float(duration or DRAWING_WINDOW_SECONDS)))
+        i = j
+    return windows
+
+
+def _prose_drawing_windows(guide: str, script: str, wpm: float) -> list:
+    """Drawing windows from the prose specs under "Drawing Animations"."""
+    anchors = [m.start() for m in re.finditer(
+        r"(?im)^[^\n]*whiteboard image prompt[^\n]*$", guide or "")]
+    if not anchors:
+        anchors = [m.start() for m in re.finditer(
+            r"(?im)^[^\n]*draw-on video prompt[^\n]*$", guide or "")]
+    if not anchors:
+        return []
+    section = re.search(r"(?im)^\s*#{2,6}\s*drawing animations\b", guide or "")
+    previous, windows = (section.start() if section else 0), []
+    for pos in anchors:
+        block = (guide or "")[previous:pos]
+        previous = pos
+        cues = _drawing_cues(block)
+        start, first = None, 0
+        for index, cue in enumerate(cues):
+            start = _cue_seconds_loose(cue, script, wpm)
+            if start is not None:
+                first = index
+                break
+        if start is None:
+            continue
+        duration = _drawing_duration(block)
+        if duration is None:
+            # Some specs put Duration after the image prompt (but before the next
+            # drawing/heading) instead of before it.
+            after = (guide or "")[pos:]
+            after = re.split(r"(?m)^\s*(?:-{3,}|#{1,6}\s+\S)", after, maxsplit=1)[0]
+            duration = _drawing_duration(after)
+        if duration and duration > 0:
+            end = start + float(duration)
+        else:
+            last = None
+            for cue in cues[first:]:
+                seconds = _cue_seconds_loose(cue, script, wpm)
+                if seconds is not None and seconds > start:
+                    last = seconds
+            end = last if last is not None else start + DRAWING_WINDOW_SECONDS
+        windows.append((start, end))
+    return windows
+
+
+def _drawing_windows(guide: str, script: str, wpm: float) -> list:
+    """[(start_s, end_s)] occupied by whiteboard drawings; [] when none/unknown."""
+    if not guide or not script:
+        return []
+    try:
+        windows = (_overlay_table_drawing_windows(guide, script, wpm)
+                   + _prose_drawing_windows(guide, script, wpm))
+    except Exception:
+        return []
+    valid = []
+    for start, end in windows:
+        if start is None:
+            continue
+        end = float(end) if end is not None and end > start else float(start) + DRAWING_WINDOW_SECONDS
+        valid.append((float(start), end))
+    return sorted(valid)
+
+
+def _inside_drawing_window(seconds, windows: list) -> bool:
+    return seconds is not None and any(start <= seconds < end for start, end in windows)
+
+
+def _move_brolls_out_of_drawings(rows: list, layout: dict, windows: list, sentences: list,
+                                 script: str, wpm: float, norm_script: str,
+                                 after: int = 0) -> tuple:
+    """Moves each B-roll starting inside a drawing window to the first sentence after
+    it, dropping it when the next B-roll leaves no room. Returns (rows, moved, dropped)."""
+    if not windows or not rows:
+        return rows, 0, 0
+    times = _running_row_times(rows, layout, script, wpm, after=after)
+    cols = layout["cols"]
+    kept, moved, dropped = [], 0, 0
+    for i, row in enumerate(rows):
+        t = times[i]
+        window = next((w for w in windows if t is not None and w[0] <= t < w[1]), None)
+        if window is None:
+            kept.append(row)
+            continue
+        next_time = times[i + 1] if i + 1 < len(times) else None
+        high = next_time - _MIN_BROLL_SPACING if next_time is not None else None
+        low = window[1]
+        sentence = None
+        while True:
+            sentence = _first_sentence(sentences, low, high, after)
+            if sentence is None:
+                break
+            blocking = next((w for w in windows
+                             if w[0] <= sentence["start_s"] < w[1]), None)
+            if blocking is None:
+                break
+            low = blocking[1]
+        if sentence is None or cols["start"] is None or cols["end"] is None:
+            dropped += 1
+            continue
+        row["cells"][cols["start"]] = _sentence_cue(sentence, norm_script)
+        row["cells"][cols["end"]] = " ".join(sentence["words"][-4:])
+        kept.append(row)
+        moved += 1
+    return kept, moved, dropped
+
+
 def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: float,
-                          after: int = 0) -> tuple:
+                          after: int = 0, map_out: list = None) -> tuple:
     """Code-repairs the B-roll timeline: clustered rows (<8 s apart) move to a later
     sentence (or are dropped when there is no room), and long stretches without B-roll
     get one model-written row each, with its cues forced to the chosen sentence. Runs on
@@ -826,17 +1244,33 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
 
     In chapter mode this runs once on the stitched table (not per chapter), where the
     whole table and the whole script are known, so gap-fills cannot fall outside a
-    chapter and row numbers are global. Returns (table, report)."""
-    report = {"moved": 0, "dropped": 0, "filled": 0, "gaps_left": 0}
+    chapter and row numbers are global. Returns (table, report); the report also carries
+    the old→new B-roll number map (`report.mapping`)."""
+    report = _BrollReport({"moved": 0, "dropped": 0, "filled": 0, "gaps_left": 0})
     layout = _broll_layout(table)
     if layout is None or not script:
+        if map_out is not None:
+            map_out.append({})
         return table, report
     wpm = ew.blueprint_wpm({"words_per_minute": wpm})
     sentences = _script_sentences(script, wpm)
     norm_script = ew.normalize_ar(ew.spoken_text(script))
     rows = layout["rows"]
     if not rows:
+        if map_out is not None:
+            map_out.append({})
         return table, report
+
+    num_col = layout["cols"]["num"]
+    original_map = {}
+    if num_col is not None:
+        for row in rows:
+            cells = row["cells"]
+            if num_col < len(cells):
+                row["_old_num"] = cells[num_col].strip()
+                old = _number_value(row["_old_num"])
+                if old is not None:
+                    original_map.setdefault(old, None)
 
     rows = _sorted_rows(rows, layout, script, wpm, after=after)
     kept, prev_time, prev_pos = [], None, after
@@ -869,6 +1303,17 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
                 prev_pos = later[0]
     rows = kept
 
+    # Whiteboard drawings own their windows: no B-roll starts under a drawing, and a
+    # gap-fill is never inserted inside one.
+    drawing_windows = _drawing_windows(state.get("text_animation_overlay", ""), script, wpm)
+    if drawing_windows:
+        rows, moved_out, dropped_out = _move_brolls_out_of_drawings(
+            rows, layout, drawing_windows, sentences, script, wpm, norm_script, after)
+        report["dropped"] += dropped_out
+        if moved_out:
+            report["moved_out_of_drawings"] = moved_out
+            print(f"🔧 moved {moved_out} B-rolls out of whiteboard windows")
+
     attempts, calls = set(), 0
     while rows and calls < MAX_GAP_FILLS:
         rows = _sorted_rows(rows, layout, script, wpm, after=after)
@@ -880,7 +1325,8 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
         attempts.add(gap["key"])
         middle = (gap["lo"] + gap["hi"]) / 2.0
         candidates = [(i, s) for i, s in enumerate(sentences)
-                      if s["start"] >= after and gap["lo"] < s["start_s"] < gap["hi"]]
+                      if s["start"] >= after and gap["lo"] < s["start_s"] < gap["hi"]
+                      and not _inside_drawing_window(s["start_s"], drawing_windows)]
         if not candidates:
             continue
         index, sentence = min(candidates, key=lambda item: abs(item[1]["start_s"] - middle))
@@ -896,6 +1342,17 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
 
     rows = _sorted_rows(rows, layout, script, wpm, after=after)
     report["gaps_left"] = len(_gap_list(rows, _running_row_times(rows, layout, script, wpm, after=after)))
+
+    # Old model number → final number (None for a row this repair dropped).
+    mapping = dict(original_map)
+    for i, row in enumerate(rows, 1):
+        old = _number_value(row.get("_old_num"))
+        if old is not None:
+            mapping[old] = i
+    report.mapping = mapping
+    if map_out is not None:
+        map_out.append(mapping)
+
     out = _render_broll_layout(layout, rows)
     out = ew.rewrite_broll_timestamps(out, script, wpm, after=after)
     layout = _broll_layout(out)
@@ -931,7 +1388,9 @@ def finalize_broll_table(state: PipelineState, table: str, after: int = 0,
     if table and script:
         table = ew.rewrite_broll_timestamps(table, script, wpm, after=after)
         if repair:
-            table, _ = repair_broll_timeline(state, table, script, wpm, after=after)
+            table, report = repair_broll_timeline(state, table, script, wpm, after=after)
+            if isinstance(state, dict):
+                state["_broll_timeline_map"] = dict(report.mapping)
     return table
 
 
@@ -1041,20 +1500,34 @@ def _row_cell(row: dict, cols: dict, name: str) -> str:
     return row["cells"][at] if at is not None and at < len(row["cells"]) else ""
 
 
-def _sort_transition_blocks(blocks: list, script: str, wpm: float) -> None:
+def _sort_transition_blocks(blocks: list, script: str, wpm: float,
+                            map_out: dict = None) -> None:
     """Sort rows by their script position, renumber 1..n and put each row back in the
-    chapter block whose time range contains it (single-table runs keep one block)."""
+    chapter block whose time range contains it (single-table runs keep one block).
+    `map_out` accumulates the old→new number map across repeated sorts."""
     flat, order = [], 0
     for bi, block in enumerate(blocks):
         for row in block["rows"]:
             t = _transition_row_time(row, block["cols"], script, wpm)
-            flat.append((t is None, t or 0.0, order, bi, row))
+            old = _number_value(_row_cell(row, block["cols"], "num"))
+            flat.append((t is None, t or 0.0, order, bi, row, old))
             order += 1
     flat.sort(key=lambda item: (item[0], item[1], item[2]))
+    step = {}
     for number, item in enumerate(flat, 1):
         num_col = blocks[item[3]]["cols"]["num"]
+        old = item[5]
+        if old is not None and old > 0:
+            step[old] = number
         if num_col is not None:
             item[4]["cells"][num_col] = str(number)
+
+    if map_out is not None:
+        if not map_out:
+            map_out.update(step)
+        else:
+            for old, current in list(map_out.items()):
+                map_out[old] = step.get(current, current)
 
     if len(blocks) == 1:
         blocks[0]["rows"] = [item[4] for item in flat]
@@ -1080,7 +1553,7 @@ def _sort_transition_blocks(blocks: list, script: str, wpm: float) -> None:
 
     assigned = [[] for _ in blocks]
     for item in flat:
-        _missing, t, order_no, original, row = item
+        _missing, t, order_no, original, row = item[:5]
         time = None if _missing else t
         block_index = original
         if time is not None:
@@ -1263,15 +1736,19 @@ def _move_out_of_warning_holds(state: PipelineState, text: str, broll_table: str
 
 
 def sync_transition_map(state: PipelineState, transition_design: str, broll_table: str,
-                        script: str, wpm: float, broll_out: list = None) -> tuple:
+                        script: str, wpm: float, broll_out: list = None,
+                        map_out: list = None) -> tuple:
     """Runs the sync pass until it changes nothing (at most 3 passes): moving a transition
     out of a warning hold can uncover a B-roll cut, which the next pass adds. See
-    _sync_transition_once. Returns (transition_text, total_added)."""
+    _sync_transition_once. Returns (transition_text, total_added). `map_out`, when given,
+    receives the old→new transition number map (code-added rows have no old number)."""
     total = 0
     text = transition_design
+    mapping = {} if map_out is not None else None
     for _ in range(3):
         holder = []
-        new_text, added, moved = _sync_transition_once(state, text, broll_table, script, wpm, holder)
+        new_text, added, moved = _sync_transition_once(
+            state, text, broll_table, script, wpm, holder, map_out=mapping)
         if holder:
             broll_table = holder[-1]
         total += added
@@ -1281,11 +1758,14 @@ def sync_transition_map(state: PipelineState, transition_design: str, broll_tabl
             break
     if broll_out is not None:
         broll_out.append(broll_table)
+    if map_out is not None:
+        map_out.append(mapping or {})
     return text, total
 
 
 def _sync_transition_once(state: PipelineState, transition_design: str, broll_table: str,
-                          script: str, wpm: float, broll_out: list = None) -> tuple:
+                          script: str, wpm: float, broll_out: list = None,
+                          map_out: dict = None) -> tuple:
     """Adds the final B-roll table's cuts to the transition map and keeps both layers on
     the script's clock. Run after repair_broll_timeline, because gap-fills add B-rolls the
     map's designer never saw.
@@ -1330,7 +1810,7 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
     if added:
         print(f"  🔧 transition map: added {added} B-roll cuts")
 
-    _sort_transition_blocks(blocks, script, wpm)
+    _sort_transition_blocks(blocks, script, wpm, map_out=map_out)
     text = _render_transition_blocks(transition_design, blocks)
     text = ew.rewrite_cue_timestamps(text, script, wpm)
 
@@ -1339,7 +1819,7 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
         print(f"  🔧 moved {moved} transitions out of warning-card holds")
         blocks = _transition_blocks(text)
         if blocks:
-            _sort_transition_blocks(blocks, script, wpm)
+            _sort_transition_blocks(blocks, script, wpm, map_out=map_out)
             text = _render_transition_blocks(text, blocks)
             text = ew.rewrite_cue_timestamps(text, script, wpm)
 
@@ -1486,22 +1966,96 @@ def broll_engagement_problems(broll_prompts: str, overlay_guide: str = "", minut
     return problems
 
 
+def _known_transition_numbers(text: str) -> set:
+    known = set()
+    for block in _transition_blocks(text or ""):
+        for row in block["rows"]:
+            number = re.sub(r"\D", "", _row_cell(row, block["cols"], "num"))
+            if number:
+                known.add(number)
+    return known
+
+
+def _link_cells(text: str):
+    """(kind, cell) for every "Linked to …" cell in markdown tables."""
+    lines = (text or "").splitlines()
+    header, i = None, 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line.startswith("|"):
+            header = None
+            i += 1
+            continue
+        cells = _table_cells(line)
+        if cells and all(_SEPARATOR_CELL.fullmatch(c) for c in cells if c):
+            i += 1
+            continue
+        if header is None:
+            header = cells
+            i += 1
+            continue
+        for k, name in enumerate(header):
+            kind = _link_column_kind(name)
+            if kind and k < len(cells):
+                yield kind, cells[k]
+        i += 1
+
+
+def _bare_link_numbers(cell: str, kind: str) -> list:
+    """Bare numbers in a link cell, after explicit refs of that kind are removed."""
+    pattern = _BROLL_REF if kind == "broll" else _TRANSITION_REF
+    rest = pattern.sub("", cell or "")
+    if _ANY_REF.search(rest):
+        return []
+    return re.findall(r"(?<![\w#])#?\s*(\d+)\b", rest)
+
+
 def broll_reference_problems(broll_prompts: str, transition_design: str = "",
                              overlay_guide: str = "") -> list:
-    """Rows of the transition map / overlay guide that name a B-roll number the B-roll
-    table does not contain (reporting only — the layers cannot be auto-renumbered safely)."""
-    known = {str(row.get("num", "")).strip() for row in ew.broll_rows(broll_prompts or "")}
-    known.discard("")
+    """Remaining cross-layer links that name a row which no longer exists: B-roll
+    references in the transition/overlay/B-roll documents, transition references in
+    them, and bare numbers in the matching "Linked to …" columns."""
+    known_broll = {str(row.get("num", "")).strip() for row in ew.broll_rows(broll_prompts or "")}
+    known_broll.discard("")
+    known_transition = _known_transition_numbers(transition_design)
     problems, seen = [], set()
-    for text in (transition_design, overlay_guide):
+    documents = (transition_design, overlay_guide, broll_prompts)
+
+    for text in documents:
         for line in (text or "").splitlines():
-            for match in re.finditer(r"\bB[- ]?rolls?\s*#?\s*(\d+)\b", line, re.IGNORECASE):
-                number = match.group(1)
-                if number in known or number in seen:
+            for match in _BROLL_REF.finditer(line):
+                number = match.group(2)
+                if number in known_broll or ("broll", number) in seen:
                     continue
-                seen.add(number)
+                seen.add(("broll", number))
                 problems.append(f"Transition/overlay row references B-roll #{number}, "
                                 "which does not exist in the B-roll table")
+            for match in _TRANSITION_REF.finditer(line):
+                number = match.group(2)
+                if number in known_transition or ("transition", number) in seen:
+                    continue
+                seen.add(("transition", number))
+                problems.append(f"Transition/overlay row references transition #{number}, "
+                                "which does not exist in the transition map")
+
+    for text in documents:
+        for kind, cell in _link_cells(text):
+            if kind == "broll":
+                known = known_broll
+            elif kind == "transition":
+                known = known_transition
+            else:
+                continue
+            for number in _bare_link_numbers(cell, kind):
+                if number in known or (kind, number) in seen:
+                    continue
+                seen.add((kind, number))
+                if kind == "broll":
+                    problems.append(f"Transition/overlay row references B-roll #{number}, "
+                                    "which does not exist in the B-roll table")
+                else:
+                    problems.append(f"Transition/overlay row references transition #{number}, "
+                                    "which does not exist in the transition map")
     return problems
 
 
