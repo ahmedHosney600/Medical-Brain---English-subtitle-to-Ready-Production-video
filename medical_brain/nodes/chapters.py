@@ -532,7 +532,9 @@ HEAVY_ENDING_RATIO = 1.6       # nor be > 1.6 × the average section
 def content_sections(script: str) -> list:
     """[(title, text)] for the "=== … ===" content sections, without the preamble and
     without a trailing CTA/OUTRO/CLOSING section (its title contains one of those)."""
-    titled = [(title, text) for title, text in split_by_chapters(script or "") if title]
+    # Production labels ("=== DISCLAIMER | Timestamp … ===") are not content chapters.
+    titled = [(title, text) for title, text in split_by_chapters(script or "")
+              if title and "|" not in title and not _PRODUCTION_LABEL_RE.search(title)]
     while titled and _CTA_TITLE_RE.search(titled[-1][0]):
         titled.pop()
     return titled
