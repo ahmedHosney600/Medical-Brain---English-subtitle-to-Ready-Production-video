@@ -1192,7 +1192,8 @@ def _soft_tighten_whole_script(script: str, target: int, quiet: bool = False) ->
     if not quiet:
         print(f"  ✂️ whole script: {current_words} words vs planned {target} — trimming padding")
     user_prompt = (f"TRIM this complete script: remove repetition, padding and side tangents only — keep "
-                   "the opening hook, the disclaimer, every medical point and red flag, the call to "
+                   "the opening hook, the disclaimer, every medical point and red flag, the open-loop plants "
+                   "and payoffs, the comment question, the number moment, the call to "
                    "action and the sign-off, and all [cues]/stage directions. Aim for about "
                    f"{target} spoken words, but never cut a real point to get there. "
                    f"Do not go below {int(target * 0.95)} words.\n\n"

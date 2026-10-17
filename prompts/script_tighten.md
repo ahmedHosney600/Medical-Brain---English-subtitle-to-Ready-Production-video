@@ -18,3 +18,5 @@ Do not add anything new. Do not change medical meaning. Keep [stage directions],
 The word target is real: the video is timed at ~135 spoken words per minute. Landing within ±10% of the target matters more than keeping every nice line.
 
 OUTPUT: only the shortened script, in the same format as the input — no commentary, no word counts, no notes.
+
+Also KEEP the engagement devices: the open-loop plants (questions the video promises to answer later), the mid-video reminder and the line that pays each loop off, the question that invites viewers to comment, the one shareable number moment, the honest evidence-strength lines («أمانة علمية: …»), and the callback closing with its "send it to someone at home" line — these are not padding.
