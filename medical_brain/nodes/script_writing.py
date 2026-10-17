@@ -627,6 +627,13 @@ PREVIOUS FULL BODY:
 
 TRANSLATION RISK / CONTEXTUAL ALIGNMENT REPORT:
 {state.get("translation_report", "")}"""
+    if state.get("translation_revision_count", 0):
+        # A revision restoring facts the auditor found missing used to append them all to
+        # the last chapter (a 280-word planned ending became 508 words in a real run).
+        user_prompt += ("\n\nREVISION PLACEMENT: put every restored or corrected point in the chapter "
+                        "where the blueprint/CHAPTER MAP puts that topic — never append fixes at the end. "
+                        "Keep each chapter within its share; when a chapter gains a point, tighten "
+                        "repetition in that same chapter.")
 
     llm_response = call_llm(system_prompt, user_prompt, temperature=0.75, max_tokens=9000)
     if target > 0:
