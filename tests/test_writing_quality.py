@@ -337,3 +337,19 @@ class EndingSecondToLastTest(unittest.TestCase):
                               "=== A4 ===\n" + words("d", 630), "=== A5 ===\n" + words("e", 166)])
         heavy = chapters.heavy_ending(script)
         self.assertEqual(heavy["title"], "A4")
+
+
+class ReworedDisclaimerTest(unittest.TestCase):
+    def test_a_reworded_disclaimer_counts_as_present(self):
+        # A real run: the frame said «… مش بديل عن استشارة طبيبك …», the polished script said
+        # «الكلام ده توعية وإنقاذ للحظة عارضة، مش بديل عن إن طبيبك يبص على حالتك».
+        from medical_brain.nodes import chapters as C
+        script = ("=== A ===\nالساعة تلاتة الفجر وسمانتك شدت. الكلام ده توعية، مش بديل عن إن طبيبك يبص على حالتك.\n"
+                  + "كلام عن الإطالة والوقاية. " * 30)
+        self.assertTrue(C.has_disclaimer(script, "قبل ما نغوص في الحكاية: الخطوات دي هدفها التوعية "
+                                                 "وإنقاذ الموقف العارض، مش بديل عن استشارة طبيبك خصوصاً لو بتاخد أدوية"))
+
+    def test_no_disclaimer_is_still_missing(self):
+        from medical_brain.nodes import chapters as C
+        self.assertFalse(C.has_disclaimer("=== A ===\n" + "كلام عن الإطالة والوقاية. " * 30,
+                                          "تنبيه: ده مش بديل عن الدكتور"))

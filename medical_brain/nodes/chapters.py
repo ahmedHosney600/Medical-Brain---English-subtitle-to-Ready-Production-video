@@ -675,9 +675,28 @@ def _best_disclaimer(script: str, disclaimer: str):
     return spans, lines, best, best_start
 
 
+# A reworded disclaimer still says "this is not a substitute for your doctor": the
+# polishing passes paraphrase the frame's wording, and a word-overlap check alone called
+# a present disclaimer "missing" and forced a revision round in a real run.
+_DISCLAIMER_GIST_RE = re.compile(r"(مش بديل|ليس بديل|لا يغني|مايغنيش|ما يغنيش|بديل عن)")
+_DISCLAIMER_WHO_RE = re.compile(r"(دكتور|طبيب|الكشف|استشار)")
+
+
 def has_disclaimer(script: str, disclaimer: str) -> bool:
-    """True when some paragraph matches the frame disclaimer (word-set Jaccard >= 0.4)."""
-    return _best_disclaimer(script, disclaimer)[2] is not None
+    """True when some paragraph matches the frame disclaimer (word-set Jaccard >= 0.4),
+    or a spoken sentence in the first half says it is not a substitute for a doctor."""
+    if _best_disclaimer(script, disclaimer)[2] is not None:
+        return True
+    text = spoken_text(script or "")
+    half = len(text.split()) / 2
+    position = 0
+    for sentence in re.split(r"(?<=[.!?؟…])\s+|\n+", text):
+        if position > half:
+            break
+        if _DISCLAIMER_GIST_RE.search(sentence) and _DISCLAIMER_WHO_RE.search(sentence):
+            return True
+        position += len(sentence.split())
+    return False
 
 
 def _is_spoken_line(line: str) -> bool:
