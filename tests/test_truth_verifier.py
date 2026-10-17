@@ -349,3 +349,29 @@ class HealedScriptPassTest(unittest.TestCase):
 
     def test_real_fabrications_still_fail(self):
         self.assertFalse(self.run_with(7, True)["truth_pass"])
+
+
+class PlainTermsFixTest(unittest.TestCase):
+    def test_bare_term_is_fixed_by_a_unique_edit(self):
+        script = "جرّب نظام الـ DASH في الأكل. ده مفيد."
+        fake = use(self, FakeJSON(lambda s, u: (
+            {"edits": [{"find": "نظام الـ DASH", "replace": "نظام أكل مخصوص للضغط (DASH)"}]}, "raw")))
+        with mock.patch("builtins.print"):
+            fixed, notes = quality._plain_terms_fix_pass(script)
+        self.assertIn("(DASH)", fixed)
+        self.assertEqual(len(notes), 1)
+        self.assertIn("DASH", fake.calls[0]["user"])
+
+    def test_clean_script_makes_no_call(self):
+        fake = use(self, FakeJSON(lambda s, u: ({"edits": []}, "raw")))
+        fixed, notes = quality._plain_terms_fix_pass("كلام مصري (Migraine) بس.")
+        self.assertEqual(fake.calls, [])
+        self.assertEqual(notes, [])
+
+    def test_a_failed_call_keeps_the_script(self):
+        def boom(s, u):
+            raise RuntimeError("down")
+        use(self, FakeJSON(boom))
+        with mock.patch("builtins.print"):
+            fixed, _ = quality._plain_terms_fix_pass("الـ NSAIDs خطر.")
+        self.assertEqual(fixed, "الـ NSAIDs خطر.")

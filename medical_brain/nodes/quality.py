@@ -290,6 +290,55 @@ def _overclaim_fix_pass(state: PipelineState, script: str, report: str) -> tuple
         return script, report
 
 
+MAX_ENGLISH_TERMS = 5
+
+
+def _plain_terms_fix_pass(script: str) -> tuple:
+    """A code-enforced pass on English terms: when the script has a bare English word in an
+    Arabic sentence or more than 5 English terms in brackets, ONE small call returns
+    find/replace edits (applied in code only when the find text is unique). Every
+    writer prompt states the rule, yet runs kept failing the judge's hard gate on it
+    ("الـ DASH", "الـ NSAIDs", 7 bracketed terms) and spent whole revision rounds.
+    Returns (script, note lines). Any failure keeps the script."""
+    bare, groups = chapters.english_terms(script)
+    if not bare and len(groups) <= MAX_ENGLISH_TERMS:
+        return script, []
+    sentences = [s for s in re.split(r"(?<=[.!?؟…])\s+|\n+", script)
+                 if re.search(r"[A-Za-z]{3,}", s) and not s.strip().startswith(("[", "===", "#", "|"))]
+    user_prompt = (
+        "Fix the English terms in this Egyptian-Arabic medical video script.\n"
+        "RULES: every English term comes AFTER its plain Egyptian meaning, in parentheses — "
+        "«نظام أكل مخصوص للضغط (DASH)» — and the whole script keeps at most "
+        f"{MAX_ENGLISH_TERMS} such bracketed terms (keep the ones that most help a viewer search or talk to a "
+        "doctor). Every other English word is said in plain Egyptian only, or in Arabic letters for a drug "
+        "or brand name («بروفين»). Change only the words needed; keep the dialect, meaning and medical "
+        "facts exactly.\n\n"
+        f"BARE ENGLISH WORDS (outside parentheses): {', '.join(sorted(set(bare))) or 'none'}\n"
+        f"BRACKETED TERMS ({len(groups)}): {', '.join(groups) or 'none'}\n\n"
+        "SENTENCES WITH ENGLISH:\n" + "\n".join(f"- {s.strip()}" for s in sentences[:40])
+        + '\n\nReturn ONLY JSON: {"edits": [{"find": "exact text copied from a sentence above", '
+          '"replace": "the fixed text"}]}')
+    try:
+        data, _ = call_llm_json("You fix English terms in Arabic scripts with minimal exact edits.",
+                                user_prompt, temperature=0.2, max_tokens=3000, required=["edits"])
+    except Exception as error:
+        print(f"  🔤 English terms fix: failed ({error}); keeping the script")
+        return script, []
+    fixed, applied, notes = script, 0, []
+    for edit in pick(data, "edits", default=[]) or []:
+        if not isinstance(edit, dict):
+            continue
+        find, replace = str(edit.get("find", "") or ""), str(edit.get("replace", "") or "")
+        if find and replace and fixed.count(find) == 1:
+            fixed = fixed.replace(find, replace, 1)
+            applied += 1
+            notes.append(f"- «{find}» → «{replace}»")
+    after_bare, after_groups = chapters.english_terms(fixed)
+    print(f"  🔤 English terms fix: {len(bare)} bare / {len(groups)} bracketed → "
+          f"{len(after_bare)} / {len(after_groups)} ({applied} edits)")
+    return fixed, notes
+
+
 def medical_truth_verifier(state: PipelineState) -> dict:
     system_prompt = load_prompt("medical_truth_verifier")
 
@@ -358,6 +407,9 @@ The ORIGINAL SOURCE above is a verified RESEARCH DOSSIER with citations [S#]. Ev
             verified_script if verified_script else state.get("refined_script", ""))
         if state.get("research_dossier"):
             final_script, report = _overclaim_fix_pass(state, final_script, report)
+        final_script, term_notes = _plain_terms_fix_pass(final_script)
+        if term_notes:
+            report = (report or "").rstrip() + "\n\n### English terms fix (code)\n" + "\n".join(term_notes)
         # A single-chapter script can still grow past its whole-video budget while being
         # verified/overclaim-fixed; re-apply the whole-script tightening. Chapter mode is
         # budgeted per chapter and is left untouched. In soft mode, trim only real padding
