@@ -7,6 +7,8 @@ Score every candidate 1–10 on:
 4. Curiosity / open loop (does it make the viewer need the answer?).
 5. Honesty (no overclaim, no invented urgency, no promise the source cannot keep).
 
+Penalise (in natural Egyptian feel) any phrase that sounds like an SEO keyword pasted into speech — e.g. «ولو عايز تعالج الشد العضلي في الساق أثناء النوم» — real people don't talk like a search query.
+
 Compare the candidates against each other, not against an ideal. Return ONLY valid JSON:
 ```json
 {"scores": {"H1": {"total": 8, "stopping_power": 8, "vividness": 8, "egyptian_feel": 8, "curiosity": 8, "honesty": 8}, "H2": {"total": 6, "stopping_power": 6, "vividness": 6, "egyptian_feel": 7, "curiosity": 6, "honesty": 8}}, "best": "H1"}
