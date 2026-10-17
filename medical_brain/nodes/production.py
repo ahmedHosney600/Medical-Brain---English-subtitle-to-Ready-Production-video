@@ -368,6 +368,7 @@ def _overlay_chapter_mode(state: PipelineState, system_prompt: str, blueprint: d
     joined = _join_chapter_outputs(titles, [outputs.get(keys[i], "") for i in range(len(spans))])
     joined = relocate_unfound_overlay_cues(restore_missing_headers(joined), state.get("refined_script", ""),
                                            ew.blueprint_wpm(state.get("blueprint")))
+    joined = retime_drawing_specs(joined, state.get("refined_script", ""), ew.blueprint_wpm(state.get("blueprint")))
     joined = ew.rewrite_cue_timestamps(joined, state.get("refined_script", ""),
                                        ew.blueprint_wpm(state.get("blueprint")))
     joined = fix_overlay_read_times(joined)
@@ -413,6 +414,7 @@ PRODUCTION CRITIQUE REPORT:
     response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=7000)
     response = relocate_unfound_overlay_cues(response, state.get("refined_script", ""),
                                              ew.blueprint_wpm(state.get("blueprint")))
+    response = retime_drawing_specs(response, state.get("refined_script", ""), ew.blueprint_wpm(state.get("blueprint")))
     response = ew.rewrite_cue_timestamps(response, state.get("refined_script", ""),
                                          ew.blueprint_wpm(state.get("blueprint")))
     return {"text_animation_overlay": fix_overlay_read_times(response)}
@@ -627,7 +629,8 @@ def _table_row_times(text: str, script: str, wpm: float, need: str) -> list:
             separator = i + 1 < j and chapters.is_separator_row(lines[i + 1])
             for k in range(i + (2 if separator else 1), j):
                 cells = _table_cells(lines[k])
-                if num_col is None or num_col >= len(cells) or not re.fullmatch(r"\d+", cells[num_col].strip()):
+                number = re.sub(r"[*_`\s]", "", cells[num_col]) if num_col is not None and num_col < len(cells) else ""
+                if not re.fullmatch(r"\d+", number):        # "**2**" is row 2
                     continue
                 seconds = None
                 cue = cells[cue_col] if cue_col is not None and cue_col < len(cells) else ""
@@ -640,7 +643,7 @@ def _table_row_times(text: str, script: str, wpm: float, need: str) -> list:
                     stamp = _seconds(cells[time_col])
                     seconds = float(stamp) if stamp is not None else None
                 if seconds is not None:
-                    out.append((cells[num_col].strip(), seconds))
+                    out.append((number, seconds))
         i = j
     return out
 
@@ -686,7 +689,7 @@ def recompute_link_columns(overlay: str, broll: str, transition: str, script: st
                 separator = i + 1 < j and chapters.is_separator_row(lines[i + 1])
                 for k in range(i + (2 if separator else 1), j):
                     cells = _table_cells(lines[k])
-                    when = times.get(cells[num_col].strip()) if num_col < len(cells) else None
+                    when = times.get(re.sub(r"[*_`\s]", "", cells[num_col])) if num_col < len(cells) else None
                     if when is None:
                         continue
                     for col, kind in links.items():
@@ -780,7 +783,8 @@ _BROLL_REF = re.compile(r"(?i)\b(B[- ]?rolls?\s*#?\s*)(\d+)\b")
 _TRANSITION_REF = re.compile(r"(?i)(\b(?:T\s*#\s*|Transition\s*#\s*))(\d+)\b")
 _ANY_REF = re.compile(
     r"(?i)\bB[- ]?rolls?\s*#?\s*\d+|\bT\s*#\s*\d+|\bTransition\s*#\s*\d+")
-_BARE_REF = re.compile(r"(?<![\w#])(#?)\s*(\d+)\b")
+# A bare number in a "Linked to …" cell; not a scale/duration ("settled at 107%", "400ms").
+_BARE_REF = re.compile(r"(?<![\w#.%])(#?)\s*(\d+)\b(?!\s*(?:%|ms\b|s\b|px\b|x\b|°)|[.:]\d)")
 
 _BROLL_MAP_KEYS = ("mapping", "map", "broll_map", "broll_number_map",
                    "number_map", "old_to_new", "renumbered")
@@ -1345,8 +1349,18 @@ def _drawing_windows(guide: str, script: str, wpm: float) -> list:
     if not guide or not script:
         return []
     try:
-        windows = (_overlay_table_drawing_windows(guide, script, wpm)
-                   + _prose_drawing_windows(guide, script, wpm))
+        heads = list(_DRAWING_HEADING_RE.finditer(guide))
+        if heads:
+            # One window per "Drawing Animation N" spec, read inside its own block (the
+            # spec's Duration/"(Ns total)" belongs to it) — the same windows the spec
+            # re-timing writes back.
+            prose = []
+            for n, head in enumerate(heads):
+                end = heads[n + 1].start() if n + 1 < len(heads) else len(guide)
+                prose += _prose_drawing_windows(guide[head.start():end], script, wpm)
+        else:
+            prose = _prose_drawing_windows(guide, script, wpm)
+        windows = _overlay_table_drawing_windows(guide, script, wpm) + prose
     except Exception:
         return []
     valid = []
@@ -1982,6 +1996,41 @@ def relocate_unfound_overlay_cues(text: str, script: str, wpm: float) -> str:
     return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
 
 
+_DRAWING_HEADING_RE = re.compile(r"(?im)^[^\n]*\bdrawing animation\s*#?\s*\d+[^\n]*$")
+_TIME_RANGE_RE = re.compile(r"(\d{1,2}:\d{2})\s*[–\-—]\s*(\d{1,2}:\d{2})(`?\s*\(\s*\d+\s*s(?:ec(?:onds)?)?\s*(?:total)?\s*\))?")
+
+
+def retime_drawing_specs(guide: str, script: str, wpm: float) -> str:
+    """Rewrites each drawing spec's first "M:SS – M:SS" range to the window measured from
+    its spoken cues. The model's own estimate went stale ("6:10 – 6:30" for a drawing
+    whose lines are spoken 6:24–6:36), and the editor and the critic both read it."""
+    if not guide or not script:
+        return guide
+    heads = list(_DRAWING_HEADING_RE.finditer(guide))
+    if not heads:
+        return guide
+    out, last, changed = [], 0, 0
+    for n, head in enumerate(heads):
+        end = heads[n + 1].start() if n + 1 < len(heads) else len(guide)
+        block = guide[head.start():end]
+        windows = _prose_drawing_windows(block, script, wpm)
+        if len(windows) == 1 and windows[0][0] is not None:
+            start, stop = windows[0]
+            stop = stop if stop is not None and stop > start else start + DRAWING_WINDOW_SECONDS
+            label = f"{_fmt_seconds(start)} – {_fmt_seconds(stop)} ({round(stop - start)}s total)"
+            new_block, k = _TIME_RANGE_RE.subn(
+                lambda m: label + ("`" if m.group(3) and m.group(3).startswith("`") else ""), block, count=1)
+            if k and new_block != block:
+                block, changed = new_block, changed + 1
+        out.append(guide[last:head.start()])
+        out.append(block)
+        last = end
+    out.append(guide[last:])
+    if changed:
+        print(f"  🔧 drawings: re-timed {changed} drawing specs from their spoken cues")
+    return "".join(out)
+
+
 def restore_missing_headers(text: str) -> str:
     """Puts the header (+ separator) back on a table whose rows start with a number and
     have the same column count as an earlier table header in the document. A chapter-mode
@@ -2105,7 +2154,8 @@ def _move_out_of_warning_holds(state: PipelineState, text: str, broll_table: str
     """Moves transition rows that would cut away during a warning card's hold to the
     first sentence at/after the hold's end. A code-added cut into B-roll moves that
     B-roll row's own START CUE instead, so the two layers stay on the same clock."""
-    warnings = _overlay_warning_holds(state.get("text_animation_overlay", ""), script, wpm)
+    warnings = sorted(_overlay_warning_holds(state.get("text_animation_overlay", ""), script, wpm)
+                      + _drawing_windows(state.get("text_animation_overlay", ""), script, wpm))
     blocks = _transition_blocks(text)
     if not warnings or not blocks:
         return text, broll_table, 0
@@ -2275,6 +2325,8 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
     # adding it inside and then moving it out uncovered the B-roll edge again, so the
     # passes ping-ponged (a real run: added 1 / moved 1 three times).
     holds = _overlay_warning_holds((state or {}).get("text_animation_overlay", ""), script, wpm)
+    # A whiteboard drawing owns its window too: a cut inside it loses the drawing's payoff.
+    holds = sorted(holds + _drawing_windows((state or {}).get("text_animation_overlay", ""), script, wpm))
     sentences = _script_sentences(script, wpm) if holds else []
     norm_script = ew.normalize_ar(ew.spoken_text(script)) if holds else ""
 
@@ -2355,7 +2407,7 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
                 if key in shifted and start_col < len(cells):
                     cells[start_col] = shifted[key]
             broll_table = ew.rewrite_broll_timestamps(_render_broll_layout(layout, layout["rows"]), script, wpm)
-            print(f"  🔧 moved {len(shifted)} B-rolls out of warning-card holds")
+            print(f"  🔧 moved {len(shifted)} B-rolls out of warning-card holds and drawing windows")
 
     _sort_transition_blocks(blocks, script, wpm, map_out=map_out)
     text = _render_transition_blocks(transition_design, blocks)
@@ -2363,7 +2415,7 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
 
     text, broll_table, moved = _move_out_of_warning_holds(state, text, broll_table, script, wpm)
     if moved:
-        print(f"  🔧 moved {moved} transitions out of warning-card holds")
+        print(f"  🔧 moved {moved} transitions out of warning-card holds and drawing windows")
         blocks = _transition_blocks(text)
         if blocks:
             _sort_transition_blocks(blocks, script, wpm, map_out=map_out)
@@ -2554,7 +2606,7 @@ def _bare_link_numbers(cell: str, kind: str) -> list:
     rest = pattern.sub("", cell or "")
     if _ANY_REF.search(rest):
         return []
-    return re.findall(r"(?<![\w#])#?\s*(\d+)\b", rest)
+    return [m.group(2) for m in _BARE_REF.finditer(rest)]
 
 
 def broll_reference_problems(broll_prompts: str, transition_design: str = "",

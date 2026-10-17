@@ -256,3 +256,15 @@ class MarkdownNarrationCueTest(unittest.TestCase):
         cues = production._drawing_cues(block)
         self.assertEqual(cues[0], "فكّرها زي زرار النور المشترك في الشقة")
         self.assertEqual(cues[1], "بتولّع معاها أعراض الأنف")
+
+
+class DrawingSpecRetimeTest(unittest.TestCase):
+    def test_spec_range_is_rewritten_from_the_cues(self):
+        guide = ("### Drawing Animations\n\nDrawing Animation 1: Switch\n"
+                 "* **Placement & Narrative Timing**: Chapter 1, `0:01 – 0:02` (20s total).\n"
+                 "  * Step 1: Narration Cue: «" + sentence(4) + "»\n"
+                 "* **Whiteboard Image Prompt**: a switch\n")
+        with mock.patch("builtins.print"):
+            out = production.retime_drawing_specs(guide, script(), 60)
+        self.assertIn("`0:20 – 0:40 (20s total)`.", out)          # sentence 4 starts at 20 s
+        self.assertEqual(out.count("total"), 1)
