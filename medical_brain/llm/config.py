@@ -82,8 +82,12 @@ DEFAULT_PROVIDERS = {
     # quota, not an API key; each call carries the agent's overhead (~12k tokens).
     "agy": {"type": "agy", "label": "Antigravity (agy CLI)", "free": True,
             "timeout_seconds": 900, "max_concurrency": 2},
+    # DeepSeek thinks before it answers and those tokens count against the limit: the
+    # truth verifier (report + whole verified script) and the production critique hit
+    # the default 32k cap in a 2026-10-17 run and fell back to another model.
     "deepseek": {"type": "openai", "label": "DeepSeek", "base_url": "https://api.deepseek.com",
-                 "api_key_env": "DEEPSEEK_API_KEY", "balance_path": "/user/balance"},
+                 "api_key_env": "DEEPSEEK_API_KEY", "balance_path": "/user/balance",
+                 "max_output_cap": 65536},
     # OpenCode Go serves models through three different APIs (see opencode_endpoint).
     "opencode": {"type": "opencode_go", "label": "OpenCode Go", "base_url": "https://opencode.ai/zen/go/v1",
                  "api_key_env": "OPENCODE_API_KEY", "endpoints": {},
