@@ -1284,6 +1284,56 @@ def _move_brolls_out_of_drawings(rows: list, layout: dict, windows: list, senten
     return kept, moved, dropped
 
 
+BROLL_CLIP_SECONDS = (3.0, 8.0)        # a generated clip is 3–8 s long
+
+
+def _fit_end_cues(rows: list, layout: dict, sentences: list, script: str, wpm: float,
+                  after: int = 0) -> int:
+    """When a B-roll's END CUE is missing, before its start, past the next B-roll or more
+    than 1.5× its clip length (Duration column, clamped to 3–8 s) after the start, puts it
+    at the sentence end closest to start + clip length and writes the real interval back
+    to Duration. A critique found 4-second clips whose END CUEs
+    were 11–20 s later: the clip would freeze or loop. Returns how many rows changed."""
+    cols = layout["cols"]
+    if cols["end"] is None or not rows or not sentences:
+        return 0
+    header = [c.strip().upper() for c in _table_cells(layout["header"])]
+    dur_col = next((k for k, h in enumerate(header) if "DUR" in h), None)
+    times = _running_row_times(rows, layout, script, wpm, after=after)
+    ends = [((s["start"] + len(s["words"])) / wpm * 60.0, s) for s in sentences if s["start"] >= after]
+    changed = 0
+    for i, row in enumerate(rows):
+        start = times[i]
+        if start is None:
+            continue
+        cells = row["cells"]
+        clip = BROLL_CLIP_SECONDS[1]
+        if dur_col is not None and dur_col < len(cells):
+            found = re.search(r"\d+(?:\.\d+)?", cells[dur_col])
+            if found:
+                clip = min(BROLL_CLIP_SECONDS[1], max(BROLL_CLIP_SECONDS[0], float(found.group(0))))
+        limit = next((t for t in times[i + 1:] if t is not None), None)
+        current = cells[cols["end"]].strip()
+        at = ew.cue_seconds(current, script, wpm, after=after) if current else None
+        if at is not None:
+            at += len(current.split()) / wpm * 60.0
+            # Long enough to fill and short enough not to freeze: leave the model's cue.
+            if start + BROLL_CLIP_SECONDS[0] * 0.66 < at <= start + clip * 1.5 and (limit is None or at <= limit + 0.5):
+                continue
+        options = [(end, s) for end, s in ends
+                   if end > start + BROLL_CLIP_SECONDS[0] * 0.66 and (limit is None or end <= limit + 0.5)]
+        if not options:
+            continue
+        end, sentence = min(options, key=lambda item: abs(item[0] - (start + clip)))
+        cue = " ".join(sentence["words"][-4:])
+        if ew.normalize_ar(cells[cols["end"]]).split() != cue.split():
+            cells[cols["end"]] = cue
+            changed += 1
+        if dur_col is not None and dur_col < len(cells):
+            cells[dur_col] = f"{max(1, round(end - start))}s"
+    return changed
+
+
 def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: float,
                           after: int = 0, map_out: list = None, fill_tail: bool = False) -> tuple:
     """Code-repairs the B-roll timeline: clustered rows (<8 s apart) move to a later
@@ -1396,6 +1446,7 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
         report["filled"] += 1
 
     rows = _sorted_rows(rows, layout, script, wpm, after=after)
+    _fit_end_cues(rows, layout, sentences, script, wpm, after)
     report["gaps_left"] = len(_gap_list(rows, _running_row_times(rows, layout, script, wpm, after=after),
                                         script_end))
 

@@ -100,6 +100,9 @@ OUTPUT FORMAT:
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | 1 | 0:08 | [exact first Arabic words from script at this moment] | [exact last Arabic words when B-roll ends] | Hook — dramatic medical scenario | 🎬 Video | "Cinematic close-up of a young athletic man's chest with ECG electrode patches attached, hospital emergency room setting, cool-tinted overhead fluorescent lighting, shallow depth of field at f/2.0, heart monitor in soft-focus background showing only a pulsing green line, his chest rising with a sharp breath as the line spikes, slow camera push-in toward the electrodes, tense atmosphere, teal-and-amber channel grade. Shot on 50mm cinema lens, natural film grain, realistic skin texture and electrode adhesive detail. Avoid: plastic skin, AI artifacts, hyper-symmetry, unnatural lighting, no text, no letters, no numbers on screens." | Focal point center-left (callout box upper-right at this timestamp); overlay "120 BPM" in Premiere | After T#2 (zoom-in) | Before I#1 | 4s |
 
+END CUE = the last words of the sentence where the clip ends: a generated clip lasts 3–8 seconds, so the END CUE must be spoken about Duration (s) seconds after the START CUE (never 10–20 s later — the clip would freeze or loop). For a longer spoken beat, plan a second B-roll or return to the presenter.
+
+
 ### B-Roll Density Summary
 | Act | Total B-Roll Moments | 🖼️ Images | 🎬 Videos | Talking Head % | B-Roll % |
 |---|---|---|---|---|---|

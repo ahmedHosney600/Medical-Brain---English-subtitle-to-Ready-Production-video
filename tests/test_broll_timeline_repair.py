@@ -208,3 +208,24 @@ class TrailingGapTest(unittest.TestCase):
             _, without = P.repair_broll_timeline({}, table, script, 135)
             _, with_tail = P.repair_broll_timeline({}, table, script, 135, fill_tail=True)
         self.assertGreater(with_tail["filled"], without["filled"])
+
+
+class EndCueFitTest(unittest.TestCase):
+    HEAD = ("| # | Timestamp | ▶️ START CUE | ⏹️ END CUE | Type | AI Generation Prompt | Duration |\n"
+            "|---|---|---|---|---|---|---|\n")
+
+    def row(self, number, start, end, duration="4s"):
+        return (f"| {number} | 9:59 | {sentence(start)} | {' '.join(sentence(end).split()[-4:])} | "
+                f"🎬 Video | a clinic, slow push-in | {duration} |\n")
+
+    def test_an_end_cue_20s_after_a_4s_clip_is_pulled_in(self):
+        table = self.HEAD + self.row(1, 0, 3) + self.row(2, 6, 6)       # #1 ends at 20 s
+        out, _ = repair(table)
+        rows = ew.broll_rows(out)
+        self.assertEqual(rows[0]["end"], " ".join(sentence(0).split()[-4:]))   # 5 s ≈ 4 s clip
+        self.assertIn("| 5s |", out)
+
+    def test_a_fitting_end_cue_is_kept(self):
+        table = self.HEAD + self.row(1, 0, 1, "8s") + self.row(2, 6, 6)       # 10 s for 8 s clip
+        out, _ = repair(table)
+        self.assertEqual(ew.broll_rows(out)[0]["end"], " ".join(sentence(1).split()[-4:]))
