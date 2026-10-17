@@ -1818,7 +1818,7 @@ class RepairScriptTest(unittest.TestCase):
     def test_whole_mode_script_refinement_dedupes_signoffs(self):
         cta = "اشتركوا في القناة وفعّلوا الجرس، واعملوا لايك. دمتم صحيين، وأشوفكم في الحلقة الجاية."
         new = "متنسوش تشتركوا في القناة وفعّلوا الجرس. دمتم صحيين، وأشوفكم في الحلقة الجاية على خير."
-        body = " ".join(f"ك{i}" for i in range(400))
+        body = " ".join(f"ك{i}" for i in range(400)) + " ابعت الفيديو ده لحد في البيت."
         script = "\n\n".join([body, cta, "---", new])
         use(self, script_writing, "call_llm", FakeLLM(lambda *a: script))
         with mock.patch("builtins.print"):
