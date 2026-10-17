@@ -947,9 +947,16 @@ def _sentence_cue(sentence: dict, norm_script: str) -> str:
     return " ".join(words[:last])
 
 
+# A B-roll anchored on a one- or two-word sentence ("ليه؟") illustrates nothing.
+_MIN_CUE_SENTENCE_WORDS = 3
+# A moved B-roll gets a new prompt for its new sentence (its old picture illustrated
+# the old one); at most this many small calls per table.
+MAX_MOVE_REWRITES = 6
+
+
 def _first_sentence(sentences: list, low: float, high, after: int = 0):
     for sentence in sentences:
-        if sentence["start"] < after:
+        if sentence["start"] < after or len(sentence["words"]) < _MIN_CUE_SENTENCE_WORDS:
             continue
         if sentence["start_s"] >= low and (high is None or sentence["start_s"] <= high):
             return sentence
@@ -994,6 +1001,31 @@ def _first_markdown_row(answer: str, ncols: int):
             continue                         # the answer repeated the header
         return (cells + [""] * ncols)[:ncols]
     return None
+
+
+def _rewrite_moved_row(layout: dict, row: dict, rows: list, sentence: dict, sentences: list,
+                       norm_script: str, budget: list) -> bool:
+    """Gives a moved row a prompt written for its new sentence. False (drop the row)
+    when the budget is spent or the call fails: a picture of the old sentence under
+    the new one is worse than no B-roll (a critique flagged sinus pressure shown over
+    «ليه في ناس عايشة عادي»)."""
+    if budget[0] <= 0:
+        return False
+    budget[0] -= 1
+    try:
+        index = sentences.index(sentence)
+    except ValueError:
+        return False
+    cells = _ask_gap_row(layout, rows, index, sentences)
+    if cells is None:
+        return False
+    cols = layout["cols"]
+    cells[cols["start"]] = _sentence_cue(sentence, norm_script)
+    cells[cols["end"]] = " ".join(sentence["words"][-4:])
+    if cols["num"] is not None and cols["num"] < len(cells) and cols["num"] < len(row["cells"]):
+        cells[cols["num"]] = row["cells"][cols["num"]]
+    row["cells"] = cells
+    return True
 
 
 def _ask_gap_row(layout: dict, rows: list, sentence_index: int, sentences: list):
@@ -1208,7 +1240,7 @@ def _inside_drawing_window(seconds, windows: list) -> bool:
 
 def _move_brolls_out_of_drawings(rows: list, layout: dict, windows: list, sentences: list,
                                  script: str, wpm: float, norm_script: str,
-                                 after: int = 0) -> tuple:
+                                 after: int = 0, budget: list = None) -> tuple:
     """Moves each B-roll starting inside a drawing window to the first sentence after
     it, dropping it when the next B-roll leaves no room. Returns (rows, moved, dropped)."""
     if not windows or not rows:
@@ -1236,6 +1268,10 @@ def _move_brolls_out_of_drawings(rows: list, layout: dict, windows: list, senten
                 break
             low = blocking[1]
         if sentence is None or cols["start"] is None or cols["end"] is None:
+            dropped += 1
+            continue
+        if budget is not None and not _rewrite_moved_row(layout, row, rows, sentence, sentences,
+                                                         norm_script, budget):
             dropped += 1
             continue
         row["cells"][cols["start"]] = _sentence_cue(sentence, norm_script)
@@ -1283,6 +1319,7 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
                     original_map.setdefault(old, None)
 
     rows = _sorted_rows(rows, layout, script, wpm, after=after)
+    budget = [MAX_MOVE_REWRITES]
     kept, prev_time, prev_pos = [], None, after
     for i, row in enumerate(rows):
         cols, cells = layout["cols"], row["cells"]
@@ -1295,9 +1332,11 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
             low = prev_time + _MIN_BROLL_SPACING
             high = next_time - _MIN_BROLL_SPACING if next_time is not None else None
             sentence = _first_sentence(sentences, low, high, after)
-            if sentence is None or cols["start"] is None or cols["end"] is None:
+            if sentence is None or cols["start"] is None or cols["end"] is None \
+                    or not _rewrite_moved_row(layout, row, rows, sentence, sentences, norm_script, budget):
                 report["dropped"] += 1
                 continue
+            cells = row["cells"]
             cells[cols["start"]] = _sentence_cue(sentence, norm_script)
             cells[cols["end"]] = " ".join(sentence["words"][-4:])
             prev_time, prev_pos = sentence["start_s"], max(prev_pos, sentence["start"])
@@ -1318,7 +1357,7 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
     drawing_windows = _drawing_windows(state.get("text_animation_overlay", ""), script, wpm)
     if drawing_windows:
         rows, moved_out, dropped_out = _move_brolls_out_of_drawings(
-            rows, layout, drawing_windows, sentences, script, wpm, norm_script, after)
+            rows, layout, drawing_windows, sentences, script, wpm, norm_script, after, budget)
         report["dropped"] += dropped_out
         if moved_out:
             report["moved_out_of_drawings"] = moved_out
@@ -1338,6 +1377,7 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
         middle = (gap["lo"] + gap["hi"]) / 2.0
         candidates = [(i, s) for i, s in enumerate(sentences)
                       if s["start"] >= after and gap["lo"] < s["start_s"] < gap["hi"]
+                      and len(s["words"]) >= _MIN_CUE_SENTENCE_WORDS
                       and not _inside_drawing_window(s["start_s"], drawing_windows)]
         if not candidates:
             continue

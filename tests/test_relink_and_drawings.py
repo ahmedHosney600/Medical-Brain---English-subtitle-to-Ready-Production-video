@@ -176,6 +176,11 @@ class DanglingLinkTest(unittest.TestCase):
 
 
 class DrawingWindowTest(unittest.TestCase):
+    def setUp(self):
+        # A moved B-roll gets a new prompt for its new sentence: never a real model call.
+        self.moved = use(self, production, "call_llm", FakeLLM(
+            lambda *a: "| 9 | 9:59 | WRONG | WRONG | 🎬 Video | NEW PICTURE, slow dolly |"))
+
     def test_a_broll_inside_a_prose_drawing_moves_after_the_window(self):
         table = BROLL_HEAD + broll_row(1, 0) + broll_row(2, 5) + broll_row(3, 14)
         output = io.StringIO()

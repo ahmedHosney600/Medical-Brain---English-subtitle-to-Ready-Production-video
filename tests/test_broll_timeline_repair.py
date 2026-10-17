@@ -51,6 +51,11 @@ def repair(table: str, text: str = None):
 
 
 class ClusterRepairTest(unittest.TestCase):
+    MOVED = "| 2 | 9:59 | WRONG CUE | WRONG END | 🎬 Video | NEW PICTURE for the new sentence, slow dolly |"
+
+    def setUp(self):
+        self.fake = use(self, production, "call_llm", FakeLLM(lambda *a: self.MOVED))
+
     def test_cluster_moves_to_the_next_sentence_at_least_8s_later(self):
         table = HEAD + row(1, 0) + row(2, 1) + row(3, 4)
         out, report = repair(table)
@@ -59,6 +64,16 @@ class ClusterRepairTest(unittest.TestCase):
         self.assertEqual([r["time"] for r in rows], ["0:00", "0:10", "0:20"])
         self.assertEqual(rows[1]["start"], sentence(2))       # first sentence >= 8s after #1
         self.assertEqual(rows[1]["end"], " ".join(sentence(2).split()[-4:]))
+        # The moved row's picture is rewritten for its new sentence.
+        self.assertIn("NEW PICTURE", out)
+        self.assertEqual(len(self.fake.calls), 1)
+        self.assertIn(sentence(2), self.fake.calls[0]["user"])
+
+    def test_a_one_word_sentence_is_never_a_cue(self):
+        text = "w0 w1 w2 w3 w4. w5 w6 w7 w8 w9. ليه. " + " ".join(sentence(i) + "." for i in range(3, 30))
+        table = HEAD + row(1, 0) + row(2, 1) + row(3, 6)
+        out, _ = repair(table, text)
+        self.assertNotIn("| ليه |", out)
 
     def test_cluster_with_no_room_is_dropped_and_rows_are_renumbered(self):
         table = HEAD + row(1, 0) + row(2, 1) + row(3, 2)
@@ -96,11 +111,12 @@ class GapFillTest(unittest.TestCase):
         use(self, production, "call_llm", FakeLLM(fail))
         out, report = repair(table)
         rows = ew.broll_rows(out)
-        self.assertEqual(report["moved"], 1)                  # the 5s cluster was still fixed
+        # With the model down the clustered row cannot get a matching picture: dropped.
+        self.assertEqual(report["moved"], 0)
+        self.assertEqual(report["dropped"], 1)
         self.assertEqual(report["filled"], 0)
         self.assertEqual(report["gaps_left"], 1)
-        self.assertEqual([r["start"] for r in rows],
-                         [sentence(0), sentence(2), sentence(14)])
+        self.assertEqual([r["start"] for r in rows], [sentence(0), sentence(14)])
 
     def test_repair_is_idempotent(self):
         table = HEAD + row(1, 0) + row(2, 14)
