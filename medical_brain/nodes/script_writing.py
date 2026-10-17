@@ -878,6 +878,21 @@ DIALECT_GROWTH_MAX = 1.1
 DIALECT_GROWTH_REVISING = 1.03
 # A single-script revision may grow a little while it fixes the critique, not more.
 WHOLE_DIALECT_GROWTH_REVISING = 1.15
+REVISION_GROWTH_LIMIT = 1.15      # a revision round may grow the assembled script by at most this
+_NOTES_LABEL_RE = re.compile(r"\n(?:#{2,4} |\*\*[A-Za-z][A-Za-z /&\-]{2,60}\*\*\s*:)")
+
+
+def _rewritten_script_only(output: str) -> str:
+    """The script part of the dialect pass's answer: after "### Rewritten Script" and
+    before its trailing notes ("**Remaining flags**:", "### Changes"…), which add ~400
+    words and made the growth guard fire on a rewrite that had not grown."""
+    text = output or ""
+    head = re.search(r"#{2,4}\s*Rewritten Script[^\n]*\n", text, re.IGNORECASE)
+    if not head:
+        return text
+    rest = text[head.end():]
+    tail = _NOTES_LABEL_RE.search(rest)
+    return rest[:tail.start()] if tail else rest
 
 
 def repair_script(state: PipelineState, script: str, *sources: str) -> str:
@@ -1059,14 +1074,14 @@ MEDICAL FIDELITY AUDIT:
         # Chapter mode already redoes a segment that grows; the single-script revision did
         # not, and one round took a 1,654-word script to ~2,240 words.
         before = chapters.spoken_words(length_source)
-        grown = chapters.spoken_words(chapters.clean_spoken_script(response))
+        grown = chapters.spoken_words(chapters.clean_spoken_script(_rewritten_script_only(response)))
         if before >= 200 and grown > before * WHOLE_DIALECT_GROWTH_REVISING:
             print(f"  🗣️ dialect revision grew {before} → {grown} words — asking again")
             retry = call_llm(system_prompt, user_prompt + (
                 f"\n\nYOUR LAST REWRITE WAS {grown} SPOKEN WORDS; THE SCRIPT HAS {before}. Rewrite it "
                 f"again in at most {int(before * 1.05)} words: fix what the critique flagged by rewording "
                 "or moving lines; add nothing new."), temperature=0.5, max_tokens=9000)
-            if chapters.spoken_words(chapters.clean_spoken_script(retry)) < grown:
+            if chapters.spoken_words(chapters.clean_spoken_script(_rewritten_script_only(retry))) < grown:
                 response = retry
     result = {"dialect_warmth_output": response}
     if frame:
@@ -1391,6 +1406,13 @@ AUDIT / CRITIQUE REPORT:
         response = _tighten_whole_script(blueprint, response, strict=True)
     else:
         response = _soft_trim_if_padded(state, blueprint, response)
+        before = chapters.spoken_words(state.get("refined_script", "")) if state.get("quality_revision_count", 0) > 0 else 0
+        after = chapters.spoken_words(response)
+        if before >= 200 and after > before * REVISION_GROWTH_LIMIT:
+            # A revision fixes what the critique flagged; it does not write a longer video.
+            # One round took a 1,795-word script to 2,291 words despite "within about 5%".
+            print(f"  ✂️ revision grew the script {before} → {after} words — trimming back")
+            response = _soft_tighten_whole_script(response, int(before * 1.05), quiet=True)
     _warn_if_refined_too_long(blueprint, response, strict=strict)
     response = chapters.strip_script_extras(repair_script(state, response, *repair_sources))
     return {"refined_script": response}

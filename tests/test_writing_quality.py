@@ -476,3 +476,45 @@ class TimedBracketHeaderTest(unittest.TestCase):
         self.assertIn("=== المقدمة والتعريف ===", out)
         for kept in ("[HOOK]", "[VISUAL NOTE: لافتة | 0:30]", "[وقفة — حزم]", "[TEXT OVERLAY: الفخ الأول]"):
             self.assertIn(kept, out)
+
+
+class RevisionGrowthTest(unittest.TestCase):
+    def test_rewritten_script_only_drops_trailing_notes(self):
+        from medical_brain.nodes.script_writing import _rewritten_script_only
+        out = ("## DIALECT\n### Register: x\n### Rewritten Script\n**د. أحمد حسني:**\nكلام كتير\n\n"
+               "**Remaining flags**:\n- ملاحظة طويلة\n")
+        body = _rewritten_script_only(out)
+        self.assertIn("كلام كتير", body)
+        self.assertIn("**د. أحمد حسني:**", body)
+        self.assertNotIn("ملاحظة", body)
+        self.assertEqual(_rewritten_script_only("بس سكريبت"), "بس سكريبت")
+
+    def test_single_script_revision_that_grows_is_trimmed_back(self):
+        from medical_brain.nodes import script_writing as sw
+        old = "=== أ ===\n" + "كلمة " * 1000
+        grown = "=== أ ===\n" + "كلمة " * 1400
+        trimmed = "=== أ ===\n" + "كلمة " * 1040
+        calls = []
+
+        def fake(system, user, **kw):
+            calls.append(user)
+            return trimmed if user.startswith("TRIM") else grown
+        state = {"blueprint": {}, "refined_script": old, "quality_revision_count": 1,
+                 "dialect_warmth_output": grown}
+        with mock.patch.object(sw, "call_llm", side_effect=fake), \
+                mock.patch.object(sw, "repair_script", side_effect=lambda st, s, *a: s), \
+                mock.patch("builtins.print"):
+            out = sw.script_refinement(state)
+        self.assertTrue(any(c.startswith("TRIM") for c in calls))
+        self.assertLess(sw.chapters.spoken_words(out["refined_script"]), 1100)
+
+    def test_first_pass_is_not_held_to_the_old_length(self):
+        from medical_brain.nodes import script_writing as sw
+        grown = "=== أ ===\n" + "كلمة " * 1400
+        state = {"blueprint": {}, "refined_script": "", "quality_revision_count": 0,
+                 "dialect_warmth_output": grown}
+        with mock.patch.object(sw, "call_llm", return_value=grown) as llm, \
+                mock.patch.object(sw, "repair_script", side_effect=lambda st, s, *a: s), \
+                mock.patch("builtins.print"):
+            sw.script_refinement(state)
+        self.assertEqual(llm.call_count, 1)
