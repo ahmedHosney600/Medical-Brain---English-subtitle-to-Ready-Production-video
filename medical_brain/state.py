@@ -94,6 +94,7 @@ class PipelineState(TypedDict):
     truth_verification_report: str
     truth_score: int
     truth_pass: bool
+    truth_input_score: int
 
     # Post-Production Editing Layers (Loop 3)
     transition_design: str

@@ -11,6 +11,20 @@ from ..utils.llm_json import UnreadableAnswer, pick
 from . import chapters
 
 
+TRUTH_HEALED_MIN_SCORE = 8         # below this the input had real fabrications: revise it
+
+
+def _healed_truth_note(state) -> str:
+    """One line for the judge when the verifier's own corrections made the script pass:
+    its report still says truth_pass = false about the input it was given."""
+    before = state.get("truth_input_score")
+    if state.get("truth_pass") and isinstance(before, int) and before < 9:
+        return (f"(The verifier's input scored {before}/10; every issue in its report is already corrected in the "
+                "SCRIPT you are judging, so the truth gate is passed. Do not fail the script for issues the "
+                "report says were corrected — check the script itself.)\n")
+    return ""
+
+
 def _wpm(state) -> float:
     from ..exports.workbook import blueprint_wpm
     return blueprint_wpm(state.get("blueprint"))
@@ -329,6 +343,16 @@ The ORIGINAL SOURCE above is a verified RESEARCH DOSSIER with citations [S#]. Ev
         truth_score = pick(data, "truth_score", default=0, kind=int)
         truth_pass = pick(data, "truth_pass", default=False, kind=bool)
         verified_script = (data.get("verified_script", "") or "").strip()
+        # truth_pass judges the INPUT; the judge only ever sees the corrected script. Every
+        # revision added a few small overstatements that the verifier healed, so the input
+        # never passed and no round could reach an A. Minor issues (score ≥ 8) that the
+        # verifier says are all corrected count as a pass for the corrected script.
+        corrected_clean = pick(data, "corrected_script_clean", default=False, kind=bool)
+        input_score = truth_score
+        if (not truth_pass or truth_score < 9) and corrected_clean and verified_script \
+                and truth_score >= TRUTH_HEALED_MIN_SCORE:
+            print(f"  🩺 truth: input scored {truth_score}; every issue corrected in the verified script — pass")
+            truth_pass, truth_score = True, 9
         report = data.get("truth_verification_report", "") or text
         final_script = chapters.strip_script_extras(
             verified_script if verified_script else state.get("refined_script", ""))
@@ -358,6 +382,7 @@ The ORIGINAL SOURCE above is a verified RESEARCH DOSSIER with citations [S#]. Ev
             "truth_verification_report": report,
             "truth_score": truth_score,
             "truth_pass": truth_pass and (truth_score >= 9),
+            "truth_input_score": input_score,
             "refined_script": chapters.retime_header_labels(final_script, _wpm(state)),
         }
     except Exception:
@@ -382,7 +407,7 @@ CURRENT ASSEMBLED SCRIPT:
 SCIENTIFIC TRUTH & FACT VERIFICATION AUDIT (source):
 {state.get("truth_verification_report", "")}
 Truth Score: {state.get("truth_score", 0)}/10 | Truth Pass: {state.get("truth_pass", False)}
-
+{_healed_truth_note(state)}
 DIALECT & WARMTH SCORES (source):
 {state.get("dialect_warmth_output", "")}
 

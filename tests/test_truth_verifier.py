@@ -326,3 +326,26 @@ class OverclaimFixDossierTextTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HealedScriptPassTest(unittest.TestCase):
+    def answer(self, score, clean):
+        return ({"truth_score": score, "truth_pass": False, "corrected_script_clean": clean,
+                 "truth_verification_report": "r", "verified_script": "اسأل دكتورك."}, "raw")
+
+    def run_with(self, score, clean):
+        use(self, FakeJSON(lambda s, u: self.answer(score, clean)))
+        with mock.patch("builtins.print"):
+            return quality.medical_truth_verifier(state(research_dossier=""))
+
+    def test_minor_issues_all_corrected_pass_for_the_corrected_script(self):
+        out = self.run_with(8, True)
+        self.assertTrue(out["truth_pass"])
+        self.assertEqual(out["truth_score"], 9)
+        self.assertEqual(out["truth_input_score"], 8)
+
+    def test_not_all_corrected_still_fails(self):
+        self.assertFalse(self.run_with(8, False)["truth_pass"])
+
+    def test_real_fabrications_still_fail(self):
+        self.assertFalse(self.run_with(7, True)["truth_pass"])

@@ -49,6 +49,7 @@ SCORING & VERDICT:
   * 9 = Flawless scientific accuracy with only minor nuances in phrasing needed.
   * < 9 = Contains inaccurate biology, exaggerated claims, wrong numbers, or unverified folk science.
 - `truth_pass`: `true` ONLY if `truth_score >= 9` AND there are ZERO false or unverified medical statements.
+- `corrected_script_clean`: `true` ONLY if EVERY issue in your report (⚠️ and ❌) is corrected in `verified_script` AND `verified_script` contains ZERO false, unverified or overstated medical statements. This judges your corrected script, not the input; `truth_pass` and `truth_score` judge the input.
 - `verified_script`: If any minor inaccuracies, exaggerated numbers, or imprecise physiological explanations are found, provide the surgically corrected script with all facts healed to 100% truth while preserving the warm Egyptian spoken dialect. If flawless, return the input script unchanged.
 
 OUTPUT — ONLY valid JSON:
@@ -56,6 +57,7 @@ OUTPUT — ONLY valid JSON:
 {
   "truth_pass": true,
   "truth_score": 10,
+  "corrected_script_clean": true,
   "truth_verification_report": "Markdown table: | Section / Line | Medical / Scientific Claim | Truth Status (✅ Verified True / ⚠️ Needs Nuance / ❌ Inaccurate) | Scientific Evidence / Reality Check | Action Taken / Correction |. Followed by a concise clinical summary.",
   "verified_script": "The full script with every factual inaccuracy corrected to 100% scientific truth. Same act headers, cues, and dialogue format."
 }
