@@ -5,7 +5,7 @@ AUDIT CRITERIA — score each (1–10), flag CRITICAL / WARNING / MINOR:
 1. HOOK QUALITY (Critical) — grabs attention fast, open loop, specific, works sound-off
 2. NARRATIVE ARC (Critical) — clear structure, no filler, matches the planned energy curve
 3. SPOKEN LANGUAGE (Critical) — natural aloud, no written/translated patterns
-4. REAL WORD COUNT & PACING (Critical) — Check the actual length of the spoken script. Do NOT trust the header label blindly. For an 8–10 minute video, the script must contain ~1,150–1,350 words of actual spoken dialogue across all acts. A ~700–800 word script is only ~5 minutes and is a severe failure of pacing and duration! If under-length, expand the physiological explanations, clinical nuances, and case study details in revised_script.
+4. LENGTH FITS THE MATERIAL & PACING (Critical) — there is NO fixed duration: the length comes from the source material. Use the CODE MEASUREMENTS given below (exact spoken word counts — never estimate). Flag PADDING (repetition, filler, a second analogy for the same idea) and CRAMMING (a section racing through too many points, a heavy ending) — never ask to expand or cut to reach a number. A script is "too thin" only when planned points from the blueprint are missing or a mechanism is left unexplained; then add exactly those points, nothing else.
 5. OPEN LOOP COMPLETION (Critical) — Confirm that the open loop planted in the hook (e.g. the 3cm hematoma case) is explicitly sustained/referenced in Act 3 before being resolved in Act 4. Both the plant, the mid-video reference, and the resolution must actually be present as spoken dialogue in the script text.
 6. DISCLAIMER (Critical) — present, adequate, appropriately placed and warmly phrased
 7. CTA QUALITY (Warning) — natural, after loop resolution, matches ctaGoal
@@ -29,7 +29,7 @@ HARD GATES — grade can only be "A" if ALL of the following hold:
 - medical_accuracy_pass = true AND fidelity_score >= 9
 - truth_pass = true AND truth_score >= 9 (Zero unverified, false, or exaggerated scientific claims)
 - strictly zero occurrences of prohibited sensationalist tropes ('بيخونك', 'غدر وخيانة', etc.), low-brow street slang ('كلبشت', 'قفشت', 'موضوع ناشف', 'بتغلس', 'بيتجنن', 'حتة لحمة', 'وجع رخم', 'مابتخرفش', 'قرصت عليها'), or mechanic-shop slang ('فيوزات', 'تجنزر', 'تصدي', etc.) in revised_script
-- actual spoken script length >= 85% of target (minimum 1,150 words for an 8–10 minute target video)
+- the length fits the material: no padding and no crammed section (judged from the CODE MEASUREMENTS, never against a fixed number of minutes or words)
 - open loop planted in hook is explicitly referenced in Act 3 and resolved in Act 4 in the script text
 - the final chapter is the lightest (≤ ~20% of the spoken words, ≤ 4 new points) and the loop payoff/red flags come before secondary lists
 - an early comment question (first ~40%) and at most 5 English terms (each explained in parentheses) are present
@@ -44,7 +44,7 @@ OUTPUT — ONLY valid JSON:
 {
   "critique_grade": "A",
   "critique_report": "Full audit in markdown — per-criterion table + CRITICAL/WARNING/MINOR issue list",
-  "revised_script": "The complete, improved script in the same ASSEMBLED SCRIPT FORMAT as Script Refinement. Full document. This is the safety-net version used if the loop exits before A.",
+  "revised_script": "The complete, improved script in the same ASSEMBLED SCRIPT FORMAT as Script Refinement. Full document. Fix issues by rewording or moving lines; keep the total length within about 5% (when you add, cut the same amount elsewhere). This is the safety-net version used if the loop exits before A.",
   "dialect_authenticity_score": 0,
   "warmth_score": 0,
   "fidelity_score": 0,

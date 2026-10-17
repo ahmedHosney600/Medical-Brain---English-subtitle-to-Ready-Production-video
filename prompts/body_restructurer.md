@@ -95,7 +95,7 @@ REBUILD PRINCIPLES:
    - You MUST fulfill the word count budget specified for each Act in the Strategy Plan.
    - Do NOT write brief, high-level summaries or rush through the explanation.
    - Dive deep into the medical nuances, physiological steps, and case studies so each act achieves its target word count (e.g., Act 1: 200–250 words, Act 2: 350–450 words, Act 3: 400–450 words, Act 4: 250–300 words).
-   - Total spoken dialogue across all acts must realistically match the target duration at ~135–145 words/minute (e.g., ~1,200–1,350 words for 9 minutes).
+   - Total spoken dialogue follows the blueprint's plan, which was sized from the source material (no fixed duration): cover every planned point fully, without padding and without compressing real points.
 
 11. DO NOT write the hook (already written) or the CTA (written next). Write the body only.
 

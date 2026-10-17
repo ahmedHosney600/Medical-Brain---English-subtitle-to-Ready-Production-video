@@ -851,7 +851,7 @@ then your scores and flags for this segment."""
 
 ## MODE: REVISION PASS (Pass #{state.get("quality_revision_count", 0)})
 
-Pay special attention to anything the critique flagged under DIALECT AUTHENTICITY or WARMTH/DE-CLINICALIZATION. Fix ONLY what's flagged. Never reintroduce a claim the truth verification or fidelity audit below corrected or flagged.
+Pay special attention to anything the critique flagged under DIALECT AUTHENTICITY or WARMTH/DE-CLINICALIZATION. Fix ONLY what's flagged. Never reintroduce a claim the truth verification or fidelity audit below corrected or flagged. Fix by rewording or moving lines; keep the total length within about 5% of the current script (when you add something, cut the same amount of repetition elsewhere).
 
 AUDIT / CRITIQUE REPORT:
 {state.get("self_critique_output", "")}
@@ -1024,7 +1024,7 @@ Rewrite every spoken line for both dialect authenticity and warmth. Keep all cue
 
 ## MODE: REVISION PASS (Pass #{state.get("quality_revision_count", 0)})
 
-Pay special attention to anything the critique flagged under DIALECT AUTHENTICITY or WARMTH/DE-CLINICALIZATION. Don't let the same issue survive into this pass. Fix ONLY what's flagged. Never reintroduce a claim the truth verification or fidelity audit below corrected or flagged.
+Pay special attention to anything the critique flagged under DIALECT AUTHENTICITY or WARMTH/DE-CLINICALIZATION. Don't let the same issue survive into this pass. Fix ONLY what's flagged. Never reintroduce a claim the truth verification or fidelity audit below corrected or flagged. Fix by rewording or moving lines; keep the total length within about 5% of the current script (when you add something, cut the same amount of repetition elsewhere).
 
 AUDIT / CRITIQUE REPORT:
 {state.get("self_critique_output", "")}
@@ -1354,7 +1354,7 @@ Assemble into one continuous, polished script.{_total_length_line(blueprint, str
 
 ## MODE: REVISION PASS (Pass #{state.get("quality_revision_count", 0)})
 
-Context only — don't re-litigate what upstream nodes already fixed in this pass. Address only structural assembly issues the critique flagged.
+Context only — don't re-litigate what upstream nodes already fixed in this pass. Address only structural assembly issues the critique flagged. Fix by rewording or moving lines; keep the total length within about 5% of the current script (when you add something, cut the same amount of repetition elsewhere).
 
 AUDIT / CRITIQUE REPORT:
 {state.get("self_critique_output", "")}"""
