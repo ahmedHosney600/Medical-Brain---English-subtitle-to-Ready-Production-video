@@ -375,3 +375,27 @@ class PlainTermsFixTest(unittest.TestCase):
         with mock.patch("builtins.print"):
             fixed, _ = quality._plain_terms_fix_pass("الـ NSAIDs خطر.")
         self.assertEqual(fixed, "الـ NSAIDs خطر.")
+
+
+class FidelityEditsTest(unittest.TestCase):
+    def run_audit(self, score, complete, edits, joined=""):
+        answer = {"fidelity_score": score, "medical_accuracy_pass": False, "fidelity_report": "| x |",
+                  "disclaimer_check": "ok", "edits": edits, "edits_fix_everything": complete}
+        use(self, FakeJSON(lambda s, u: (answer, "raw")))
+        st = {"dialect_warmth_output": "الدوا بيوقف النوبات من أصلها. وخلاص.", "dialect_script": joined,
+              "source_analysis": "", "video_analysis": "", "strategy_plan": "",
+              "medical_disclaimer_requirements": "", "avoid_list": ""}
+        with mock.patch("builtins.print"):
+            return quality.fidelity_auditor(st)
+
+    EDIT = [{"find": "بيوقف النوبات من أصلها", "replace": "ممكن يقلل عدد النوبات"}]
+
+    def test_all_minor_fixes_applied_pass(self):
+        out = self.run_audit(8, True, self.EDIT, joined="=== C1 ===\nالدوا بيوقف النوبات من أصلها.")
+        self.assertIn("ممكن يقلل عدد النوبات", out["dialect_warmth_output"])
+        self.assertIn("ممكن يقلل عدد النوبات", out["dialect_script"])
+        self.assertEqual((out["fidelity_score"], out["medical_accuracy_pass"]), (9, True))
+
+    def test_incomplete_or_serious_still_fails(self):
+        self.assertEqual(self.run_audit(8, False, self.EDIT)["fidelity_score"], 8)
+        self.assertEqual(self.run_audit(6, True, self.EDIT)["fidelity_score"], 6)

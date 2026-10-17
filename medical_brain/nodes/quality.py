@@ -254,12 +254,14 @@ Output ONLY the JSON object. Check every claim, every analogy, and the disclaime
         if data is None:
             raise ValueError("unreadable JSON answer")
         
-        return {
+        result = {
             "fidelity_audit_output": data.get("fidelity_report", ""),
             "medical_accuracy_pass": pick(data, "medical_accuracy_pass", default=False, kind=bool),
             "fidelity_score": pick(data, "fidelity_score", default=0, kind=int),
             "disclaimer_check": str(data.get("disclaimer_check", "")),
         }
+        result.update(_apply_fidelity_edits(state, data, result))
+        return result
     except Exception:
         return {
             "fidelity_audit_output": response,
@@ -267,6 +269,46 @@ Output ONLY the JSON object. Check every claim, every analogy, and the disclaime
             "fidelity_score": 0,
             "disclaimer_check": "Parse error — could not determine",
         }
+
+
+FIDELITY_HEALED_MIN_SCORE = 8
+
+
+def _apply_fidelity_edits(state: PipelineState, data: dict, result: dict) -> dict:
+    """Applies the auditor's find/replace edits to the dialect rewrite (the text the
+    polish starts from); edits whose find text is not unique are skipped. The score
+    judges the text BEFORE these fixes, and nothing else applied them, so a minor issue
+    blocked every round. When the auditor says its edits fix everything, all of them
+    applied and the score was ≥ 8, fidelity passes for the fixed text."""
+    edits = [e for e in (pick(data, "edits", default=[]) or []) if isinstance(e, dict)]
+    text = state.get("dialect_warmth_output", "") or ""
+    joined = state.get("dialect_script", "") or ""        # chapter mode polishes this one
+    if not edits or not text:
+        return {}
+    applied, notes = 0, []
+    for edit in edits:
+        find, replace = str(edit.get("find", "") or ""), str(edit.get("replace", "") or "")
+        if find and replace and find != replace and text.count(find) == 1 \
+                and (not joined or joined.count(find) == 1):
+            text = text.replace(find, replace, 1)
+            joined = joined.replace(find, replace, 1) if joined else joined
+            applied += 1
+            notes.append(f"- «{find}» → «{replace}»")
+    if not applied:
+        return {}
+    out = {"dialect_warmth_output": text,
+           "fidelity_audit_output": (result.get("fidelity_audit_output") or "").rstrip()
+           + "\n\n### Fidelity fixes applied (code)\n" + "\n".join(notes)}
+    if joined:
+        out["dialect_script"] = joined
+    score = result.get("fidelity_score") or 0
+    complete = pick(data, "edits_fix_everything", default=False, kind=bool) and applied == len(edits)
+    if complete and score >= FIDELITY_HEALED_MIN_SCORE and (score < 9 or not result.get("medical_accuracy_pass")):
+        print(f"  🩺 fidelity: scored {score}; all {applied} fixes applied to the rewrite — pass")
+        out.update(fidelity_score=9, medical_accuracy_pass=True, fidelity_input_score=score)
+    else:
+        print(f"  🩺 fidelity: applied {applied} of {len(edits)} fixes to the rewrite")
+    return out
 
 
 def _overclaim_fix_pass(state: PipelineState, script: str, report: str) -> tuple:

@@ -30,6 +30,10 @@ OUTPUT — ONLY valid JSON:
   "medical_accuracy_pass": true,
   "fidelity_score": 10,
   "fidelity_report": "Markdown table of every issue found: | Script line | Ledger item # | Issue type | Fix needed |. If none found, state that explicitly and list which high-risk (causal) claims were specifically re-verified.",
-  "disclaimer_check": "Present and adequate / Present but insufficient: [why] / Missing"
+  "disclaimer_check": "Present and adequate / Present but insufficient: [why] / Missing",
+  "edits": [{"find": "exact text copied from the script", "replace": "the corrected text at the ledger's strength, same Egyptian voice"}],
+  "edits_fix_everything": true
 }
 ```
+
+`edits`: one minimal edit per issue in your report (find = text copied EXACTLY from the script, short but unique; replace = the same words corrected to the ledger's claim and certainty, nothing added). `edits_fix_everything`: true only if applying these edits removes EVERY issue in the report.
