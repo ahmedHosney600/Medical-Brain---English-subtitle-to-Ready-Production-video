@@ -189,6 +189,18 @@ def _store_step(state: PipelineState, step_key: str, outputs: dict) -> dict:
     return all_outputs
 
 
+def _rewrite_chapter_times(outputs: dict, spans: list, keys: list, state: PipelineState) -> None:
+    """Puts every chapter's transition/overlay table on the script's clock, using the
+    chapter's start word position so a repeated cue resolves to the right occurrence."""
+    script = state.get("refined_script", "")
+    wpm = ew.blueprint_wpm(state.get("blueprint"))
+    if not script:
+        return
+    for i, key in enumerate(keys):
+        after = int(round(spans[i]["start_s"] * wpm / 60.0)) if wpm else 0
+        outputs[key] = ew.rewrite_cue_timestamps(outputs.get(key, ""), script, wpm, after=after)
+
+
 # --------------------------------------------------------------------------
 # step 1 — transitions
 # --------------------------------------------------------------------------
@@ -239,8 +251,11 @@ def _transition_chapter_mode(state: PipelineState, system_prompt: str, blueprint
                         temperature=0.4,
                         max_tokens=chapters.budget_for_words(len(span["text"].split())))
 
-    outputs, titles, texts, _ = _run_per_chapter(state, "transition_design", spans, workers, generate)
-    joined = _join_chapter_outputs(titles, texts)
+    outputs, titles, texts, keys = _run_per_chapter(state, "transition_design", spans, workers, generate)
+    _rewrite_chapter_times(outputs, spans, keys, state)
+    joined = _join_chapter_outputs(titles, [outputs.get(keys[i], "") for i in range(len(spans))])
+    joined = ew.rewrite_cue_timestamps(joined, state.get("refined_script", ""),
+                                       ew.blueprint_wpm(state.get("blueprint")))
     return {"transition_design": joined,
             "production_chapter_outputs": _store_step(state, "transition_design", outputs)}
 
@@ -278,6 +293,8 @@ PRODUCTION CRITIQUE REPORT:
 {state.get("production_critique_output", "")}"""
 
     response = call_llm(system_prompt, user_prompt, temperature=0.4, max_tokens=5000)
+    response = ew.rewrite_cue_timestamps(response, state.get("refined_script", ""),
+                                         ew.blueprint_wpm(state.get("blueprint")))
     return {"transition_design": response}
 
 
@@ -343,8 +360,11 @@ def _overlay_chapter_mode(state: PipelineState, system_prompt: str, blueprint: d
                         temperature=0.5,
                         max_tokens=chapters.budget_for_words(len(span["text"].split())))
 
-    outputs, titles, texts, _ = _run_per_chapter(state, "text_animation_overlay", spans, workers, generate)
-    joined = _join_chapter_outputs(titles, texts)
+    outputs, titles, texts, keys = _run_per_chapter(state, "text_animation_overlay", spans, workers, generate)
+    _rewrite_chapter_times(outputs, spans, keys, state)
+    joined = _join_chapter_outputs(titles, [outputs.get(keys[i], "") for i in range(len(spans))])
+    joined = ew.rewrite_cue_timestamps(joined, state.get("refined_script", ""),
+                                       ew.blueprint_wpm(state.get("blueprint")))
     return {"text_animation_overlay": joined,
             "production_chapter_outputs": _store_step(state, "text_animation_overlay", outputs)}
 
@@ -385,6 +405,8 @@ PRODUCTION CRITIQUE REPORT:
 {state.get("production_critique_output", "")}"""
 
     response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=7000)
+    response = ew.rewrite_cue_timestamps(response, state.get("refined_script", ""),
+                                         ew.blueprint_wpm(state.get("blueprint")))
     return {"text_animation_overlay": response}
 
 
@@ -465,7 +487,10 @@ def _broll_chapter_mode(state: PipelineState, system_prompt: str, blueprint: dic
     wpm = ew.blueprint_wpm(state.get("blueprint"))
     for i, key in enumerate(keys):
         after = int(round(spans[i]["start_s"] * wpm / 60.0)) if wpm else 0
-        outputs[key] = finalize_broll_table(state, outputs.get(key, ""), after=after)
+        # Only the mechanical per-table fixes here; timeline repair (moving clustered
+        # rows and filling gaps) runs once on the stitched table below, where the whole
+        # table and script are known.
+        outputs[key] = finalize_broll_table(state, outputs.get(key, ""), after=after, repair=False)
     texts = [outputs.get(keys[i], "") for i in range(len(spans))]
     joined, mapping = _join_broll(titles, texts, keys)
     joined = finalize_broll_table(state, joined)
@@ -574,13 +599,307 @@ def auto_repair_camera_moves(table: str) -> tuple:
     return "".join(lines), fixed
 
 
-def finalize_broll_table(state: PipelineState, table: str, after: int = 0) -> str:
+GAP_FILL_SECONDS = 45
+MAX_GAP_FILLS = 6
+_MIN_BROLL_SPACING = 8
+_LEADING_GAP_SECONDS = 20
+_SEPARATOR_CELL = re.compile(r":?-{2,}:?")
+
+
+def _table_cells(line: str) -> list:
+    return [c.strip() for c in re.split(r"(?<!\\)\|", line.strip())[1:-1]]
+
+
+def _broll_layout(table: str):
+    """The first markdown table with both START CUE and PROMPT columns: its header,
+    separator, column positions and data rows (as mutable cell lists). None when the
+    answer has no such table."""
+    lines = (table or "").splitlines()
+    for i, line in enumerate(lines):
+        if not line.strip().startswith("|"):
+            continue
+        header = _table_cells(line)
+        upper = [c.upper() for c in header]
+        if not any("START" in c for c in upper) or not any("PROMPT" in c for c in upper):
+            continue
+        j = i + 1
+        while j < len(lines) and lines[j].strip().startswith("|"):
+            j += 1
+        separator = lines[i + 1] if i + 1 < j and chapters.is_separator_row(lines[i + 1]) else None
+        data_start = i + (2 if separator is not None else 1)
+
+        def col(*names):
+            return next((k for k, c in enumerate(upper) if any(n in c for n in names)), None)
+
+        cols = {"num": next((k for k, c in enumerate(header) if c.strip() == "#"), None),
+                "time": col("TIMESTAMP", "TIME", "TIMECODE", "⏱"),
+                "start": col("START", "▶"), "end": col("END", "⏹"),
+                "type": col("TYPE", "LAYER"), "prompt": col("PROMPT")}
+        rows = []
+        for k in range(data_start, j):
+            cells = _table_cells(lines[k])
+            if not cells or all(_SEPARATOR_CELL.fullmatch(c) for c in cells if c):
+                continue
+            rows.append({"cells": (cells + [""] * len(header))[:len(header)]})
+        return {"lines": lines, "start": i, "end": j, "header": line, "separator": separator,
+                "cols": cols, "rows": rows}
+    return None
+
+
+def _render_broll_layout(layout: dict, rows: list) -> str:
+    lines = list(layout["lines"])
+    block = [layout["header"]]
+    if layout["separator"] is not None:
+        block.append(layout["separator"])
+    block.extend("| " + " | ".join(row["cells"]) + " |" for row in rows)
+    lines[layout["start"]:layout["end"]] = block
+    return "\n".join(lines)
+
+
+def _row_seconds(row: dict, layout: dict, script: str, wpm: float, after: int = 0):
+    """A row's start time from its START CUE (falling back to its Timestamp cell)."""
+    cols, cells = layout["cols"], row["cells"]
+    cue = cells[cols["start"]] if cols["start"] is not None and cols["start"] < len(cells) else ""
+    seconds = ew.cue_seconds(cue, script, wpm, after=after) if cue else None
+    if seconds is not None:
+        return float(seconds)
+    if cols["time"] is not None and cols["time"] < len(cells):
+        stamp = _seconds(cells[cols["time"]])
+        return float(stamp) if stamp is not None else None
+    return None
+
+
+def _running_row_times(rows: list, layout: dict, script: str, wpm: float, after: int = 0) -> list:
+    """Row start times in table order, resolving a repeated cue to its occurrence at/after
+    the previous row (the same rule the critique uses)."""
+    norm_script = ew.normalize_ar(ew.spoken_text(script))
+    pos, out = after, []
+    for row in rows:
+        cols, cells = layout["cols"], row["cells"]
+        cue = cells[cols["start"]] if cols["start"] is not None and cols["start"] < len(cells) else ""
+        seconds = ew.cue_seconds(cue, script, wpm, after=pos) if cue else None
+        if seconds is not None:
+            out.append(float(seconds))
+            later = [p for p in ew.cue_positions(cue, norm_script) if p >= pos]
+            if later:
+                pos = later[0]
+            continue
+        out.append(_row_seconds(row, layout, script, wpm, after=pos))
+    return out
+
+
+def _sorted_rows(rows: list, layout: dict, script: str, wpm: float, after: int = 0) -> list:
+    times = [_row_seconds(row, layout, script, wpm, after=after) for row in rows]
+    order = sorted(range(len(rows)), key=lambda i: (times[i] is None, times[i] or 0.0))
+    return [rows[i] for i in order]
+
+
+def _script_sentences(script: str, wpm: float) -> list:
+    """Spoken sentences with their absolute word start and time. Sentence starts use the
+    same normalized word positions as cue_seconds, so they line up with the cues."""
+    out, word_pos = [], 0
+    for chunk in re.split(r"[.!?؟…]+|\n+", ew.spoken_text(script)):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        words = ew.normalize_ar(chunk).split()
+        if not words:
+            continue
+        out.append({"text": chunk, "words": words, "start": word_pos,
+                    "start_s": word_pos / wpm * 60.0})
+        word_pos += len(words)
+    return out
+
+
+def _sentence_cue(sentence: dict, norm_script: str) -> str:
+    """The sentence's first words as a cue, extended to 6–8 words when the first five
+    are not unique in the script."""
+    words = sentence["words"]
+    last = min(8, len(words))
+    for k in range(min(5, last), last + 1):
+        cue = " ".join(words[:k])
+        if ew.find_cue(cue, norm_script) <= 1:
+            return cue
+    return " ".join(words[:last])
+
+
+def _first_sentence(sentences: list, low: float, high, after: int = 0):
+    for sentence in sentences:
+        if sentence["start"] < after:
+            continue
+        if sentence["start_s"] >= low and (high is None or sentence["start_s"] <= high):
+            return sentence
+    return None
+
+
+def _gap_list(rows: list, times: list) -> list:
+    gaps = []
+    if rows and times and times[0] is not None and times[0] > _LEADING_GAP_SECONDS:
+        gaps.append({"lo": 0.0, "hi": times[0], "index": 0, "leading": True,
+                     "key": ("start", id(rows[0]))})
+    for i in range(len(rows) - 1):
+        a, b = times[i], times[i + 1]
+        if a is None or b is None or b - a <= GAP_FILL_SECONDS:
+            continue
+        gaps.append({"lo": a, "hi": b, "index": i + 1, "leading": False,
+                     "key": (id(rows[i]), id(rows[i + 1]))})
+    return gaps
+
+
+def _first_markdown_row(answer: str, ncols: int):
+    """The first real data row of the model's answer, padded/trimmed to the header width."""
+    for line in (answer or "").splitlines():
+        line = line.strip()
+        if not line.startswith("|"):
+            continue
+        cells = _table_cells(line)
+        if not cells or all(_SEPARATOR_CELL.fullmatch(c) for c in cells if c):
+            continue
+        upper = [c.upper() for c in cells]
+        if any("START" in c for c in upper) and any("PROMPT" in c for c in upper):
+            continue                         # the answer repeated the header
+        return (cells + [""] * ncols)[:ncols]
+    return None
+
+
+def _ask_gap_row(layout: dict, rows: list, sentence_index: int, sentences: list):
+    """One small call for one B-roll row in a gap. Returns the parsed cells or None."""
+    cols = layout["cols"]
+    header = layout["header"]
+    examples = "\n".join("| " + " | ".join(row["cells"]) + " |" for row in rows[:2])
+    passage = " ".join(s["text"] for s in sentences[max(0, sentence_index - 1):sentence_index + 2])
+    prompt = f"""Add exactly ONE row to this B-roll prompt table for the passage below.
+
+TABLE HEADER:
+{header}
+
+FORMAT EXAMPLES (existing rows):
+{examples or "(the table has no rows yet)"}
+
+PASSAGE (spoken script around the missing moment):
+{passage}
+
+RULES:
+- Photoreal medical B-roll that illustrates the passage, same visual style as the examples.
+- 🎬 Video needs a visible subject action and a camera move (slow push-in, dolly, orbit, track…).
+- 🖼️ Still needs a Ken Burns move in Composition Notes.
+- No text, letters or numbers inside the generated image; put words in Composition Notes as a Premiere overlay.
+- Use the passage's first words as START CUE and its last four words as END CUE (code will correct them).
+Return ONLY the markdown row (one line, same number of columns as the header)."""
+    try:
+        answer = call_llm("You add one missing B-roll row to an existing production table.",
+                          prompt, temperature=0.6, max_tokens=1200)
+        cells = _first_markdown_row(answer, len(_table_cells(layout["header"])))
+        if cells is None or cols["start"] is None or cols["end"] is None:
+            return None
+        return cells
+    except Exception:
+        return None
+
+
+def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: float,
+                          after: int = 0) -> tuple:
+    """Code-repairs the B-roll timeline: clustered rows (<8 s apart) move to a later
+    sentence (or are dropped when there is no room), and long stretches without B-roll
+    get one model-written row each, with its cues forced to the chosen sentence. Runs on
+    the parsed table and re-renders the same header, then re-times and renumbers rows.
+
+    In chapter mode this runs once on the stitched table (not per chapter), where the
+    whole table and the whole script are known, so gap-fills cannot fall outside a
+    chapter and row numbers are global. Returns (table, report)."""
+    report = {"moved": 0, "dropped": 0, "filled": 0, "gaps_left": 0}
+    layout = _broll_layout(table)
+    if layout is None or not script:
+        return table, report
+    wpm = ew.blueprint_wpm({"words_per_minute": wpm})
+    sentences = _script_sentences(script, wpm)
+    norm_script = ew.normalize_ar(ew.spoken_text(script))
+    rows = layout["rows"]
+    if not rows:
+        return table, report
+
+    rows = _sorted_rows(rows, layout, script, wpm, after=after)
+    kept, prev_time, prev_pos = [], None, after
+    for i, row in enumerate(rows):
+        cols, cells = layout["cols"], row["cells"]
+        cue = cells[cols["start"]] if cols["start"] is not None else ""
+        seconds = ew.cue_seconds(cue, script, wpm, after=prev_pos) if cue else None
+        t = float(seconds) if seconds is not None else _row_seconds(row, layout, script, wpm, after=prev_pos)
+        if prev_time is not None and t is not None and t - prev_time < _MIN_BROLL_SPACING:
+            next_time = _row_seconds(rows[i + 1], layout, script, wpm, after=prev_pos) \
+                if i + 1 < len(rows) else None
+            low = prev_time + _MIN_BROLL_SPACING
+            high = next_time - _MIN_BROLL_SPACING if next_time is not None else None
+            sentence = _first_sentence(sentences, low, high, after)
+            if sentence is None or cols["start"] is None or cols["end"] is None:
+                report["dropped"] += 1
+                continue
+            cells[cols["start"]] = _sentence_cue(sentence, norm_script)
+            cells[cols["end"]] = " ".join(sentence["words"][-4:])
+            prev_time, prev_pos = sentence["start_s"], max(prev_pos, sentence["start"])
+            kept.append(row)
+            report["moved"] += 1
+            continue
+        kept.append(row)
+        if t is not None:
+            prev_time = t
+        if seconds is not None:
+            later = [p for p in ew.cue_positions(cue, norm_script) if p >= prev_pos]
+            if later:
+                prev_pos = later[0]
+    rows = kept
+
+    attempts, calls = set(), 0
+    while rows and calls < MAX_GAP_FILLS:
+        rows = _sorted_rows(rows, layout, script, wpm, after=after)
+        times = _running_row_times(rows, layout, script, wpm, after=after)
+        gaps = [g for g in _gap_list(rows, times) if g["key"] not in attempts]
+        if not gaps:
+            break
+        gap = max(gaps, key=lambda g: g["hi"] - g["lo"])
+        attempts.add(gap["key"])
+        middle = (gap["lo"] + gap["hi"]) / 2.0
+        candidates = [(i, s) for i, s in enumerate(sentences)
+                      if s["start"] >= after and gap["lo"] < s["start_s"] < gap["hi"]]
+        if not candidates:
+            continue
+        index, sentence = min(candidates, key=lambda item: abs(item[1]["start_s"] - middle))
+        calls += 1
+        cells = _ask_gap_row(layout, rows, index, sentences)
+        if cells is None:
+            continue
+        cols = layout["cols"]
+        cells[cols["start"]] = _sentence_cue(sentence, norm_script)
+        cells[cols["end"]] = " ".join(sentence["words"][-4:])
+        rows.insert(gap["index"], {"cells": cells})
+        report["filled"] += 1
+
+    rows = _sorted_rows(rows, layout, script, wpm, after=after)
+    report["gaps_left"] = len(_gap_list(rows, _running_row_times(rows, layout, script, wpm, after=after)))
+    out = _render_broll_layout(layout, rows)
+    out = ew.rewrite_broll_timestamps(out, script, wpm, after=after)
+    layout = _broll_layout(out)
+    if layout is not None and layout["cols"]["num"] is not None:
+        for i, row in enumerate(layout["rows"], 1):
+            row["cells"][layout["cols"]["num"]] = str(i)
+        out = _render_broll_layout(layout, layout["rows"])
+    if report["moved"] or report["dropped"] or report["filled"]:
+        print(f"  🔧 B-roll timeline: moved {report['moved']}, dropped {report['dropped']}, "
+              f"filled {report['filled']} gaps")
+    return out, report
+
+
+def finalize_broll_table(state: PipelineState, table: str, after: int = 0,
+                         repair: bool = True) -> str:
     """Code repairs the B-roll step's own table before it is stored: a camera move for
     every video row that lacks one, then real M:SS timestamps from the START CUES (see
     workbook.rewrite_broll_timestamps) so revision passes and the critique see the real
     timeline instead of the model's invented timestamps. `after` is the word position the
     table's first row starts at (0 for a whole-script table, the chapter's start word
-    position for a single chapter's table)."""
+    position for a single chapter's table).
+
+    `repair=False` skips the timeline repair for a single chapter's table; chapter mode
+    runs it once on the stitched table (see repair_broll_timeline)."""
     table, realigned = ew.realign_broll_table(table)
     if realigned:
         print(f"  🔧 realigned {realigned} B-roll rows with a missing column")
@@ -588,8 +907,11 @@ def finalize_broll_table(state: PipelineState, table: str, after: int = 0) -> st
     if fixed:
         print(f"  🔧 added a camera move to {fixed} video B-rolls")
     script = state.get("refined_script", "")
+    wpm = ew.blueprint_wpm(state.get("blueprint"))
     if table and script:
-        table = ew.rewrite_broll_timestamps(table, script, ew.blueprint_wpm(state.get("blueprint")), after=after)
+        table = ew.rewrite_broll_timestamps(table, script, wpm, after=after)
+        if repair:
+            table, _ = repair_broll_timeline(state, table, script, wpm, after=after)
     return table
 
 
@@ -734,6 +1056,25 @@ def broll_engagement_problems(broll_prompts: str, overlay_guide: str = "", minut
     return problems
 
 
+def broll_reference_problems(broll_prompts: str, transition_design: str = "",
+                             overlay_guide: str = "") -> list:
+    """Rows of the transition map / overlay guide that name a B-roll number the B-roll
+    table does not contain (reporting only — the layers cannot be auto-renumbered safely)."""
+    known = {str(row.get("num", "")).strip() for row in ew.broll_rows(broll_prompts or "")}
+    known.discard("")
+    problems, seen = [], set()
+    for text in (transition_design, overlay_guide):
+        for line in (text or "").splitlines():
+            for match in re.finditer(r"\bB[- ]?rolls?\s*#?\s*(\d+)\b", line, re.IGNORECASE):
+                number = match.group(1)
+                if number in known or number in seen:
+                    continue
+                seen.add(number)
+                problems.append(f"Transition/overlay row references B-roll #{number}, "
+                                "which does not exist in the B-roll table")
+    return problems
+
+
 def _video_minutes(state: PipelineState) -> float:
     m = re.search(r"\d+(?:\.\d+)?", str(state.get("target_duration") or ""))
     if m:
@@ -747,6 +1088,9 @@ def production_quality_critique(state: PipelineState) -> dict:
     code_problems = broll_engagement_problems(state.get("broll_prompts", ""), state.get("text_animation_overlay", ""),
                                               _video_minutes(state), script=state.get("refined_script", ""),
                                               wpm=ew.blueprint_wpm(state.get("blueprint")))
+    code_problems += broll_reference_problems(state.get("broll_prompts", ""),
+                                              state.get("transition_design", ""),
+                                              state.get("text_animation_overlay", ""))
     code_note = ("\n\n### Code checks — B-roll engagement (must fix)\n" + "\n".join(f"- {p}" for p in code_problems)
                  if code_problems else "")
 

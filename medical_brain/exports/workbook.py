@@ -760,7 +760,7 @@ def parse_storyboard(text: str) -> list:
 
 
 # Columns that carry a row's start time, and the cue it starts on.
-_TIME_COLUMN_NAMES = ("TIMECODE", "TIMESTAMP", "⏱")
+_TIME_COLUMN_NAMES = ("TIMECODE", "TIMESTAMP", "TIME", "⏱")
 _CUE_COLUMN_NAMES = ("START CUE", "START", "▶")
 
 
@@ -807,14 +807,24 @@ def _rewrite_time_column(text: str, section_key, script: str, wpm: float, after:
     return "".join(lines)
 
 
+def rewrite_cue_timestamps(text: str, script: str, wpm: float = 135, after: int = 0) -> str:
+    """Rewrites the time column (Timestamp / Time / ⏱️ Timecode / Timecode) of EVERY
+    markdown table that has a START CUE column to real M:SS from where that cue begins in
+    the spoken script. Rows whose cue is not found keep their original value; rows are
+    processed in script order, so a repeated cue resolves to its occurrence at/after the
+    previous row. Used on the transition map, the overlay guide and the B-roll table so
+    all three layers share the script's clock."""
+    if not text or not script:
+        return text
+    return _rewrite_time_column(text, None, script, wpm, after=after)
+
+
 def rewrite_broll_timestamps(text: str, script: str, wpm: float = 135, after: int = 0) -> str:
     """Rewrites the Timestamp column of the B-roll prompt table (wherever it sits, with
     no part heading needed) to real M:SS from where each row's START CUE begins in the
     spoken script. Called right after the B-roll step produces its table so its revision
     passes and the critique see the real timeline (same rewrite the final package runs)."""
-    if not text or not script:
-        return text
-    return _rewrite_time_column(text, None, script, wpm, after=after)
+    return rewrite_cue_timestamps(text, script, wpm, after=after)
 
 
 def rewrite_timecodes(text: str, script: str, wpm: float = 135) -> str:
