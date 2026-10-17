@@ -365,3 +365,11 @@ class ChapterMapTest(unittest.TestCase):
         self.assertIn("رابع: about 15% of the body", line)
         self.assertIn("FINAL chapter must stay the lightest", line)
         self.assertEqual(SW._chapter_map_line({"chapters": [{"id": "C1", "words": 300}]}), "")
+
+
+class MeasuredWordCountTest(unittest.TestCase):
+    def test_self_critique_gets_the_measured_word_count(self):
+        script = "=== الفصل الأول ===\n" + words("a", 300) + "\n\n=== الفصل الثاني ===\n" + words("b", 200)
+        prompt = critique_prompt(script)
+        self.assertIn("CODE MEASUREMENTS (exact", prompt)
+        self.assertIn("spoken words = 500", prompt)

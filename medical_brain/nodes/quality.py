@@ -396,6 +396,19 @@ AVOID LIST:
 
 Output ONLY the JSON object. Include the full revised script."""
 
+    # Word counts are measured, never estimated: a judge once failed a 2,421-word script
+    # as "about 1,020 spoken words, too short".
+    refined = state.get("refined_script", "") or ""
+    measured = chapters.spoken_words(refined)
+    plan_chapters = [c for c in ((state.get("blueprint") or {}).get("chapters") or []) if isinstance(c, dict)]
+    plan_words = sum(int(c.get("words") or 0) for c in plan_chapters)
+    sizes = ", ".join(f"«{t[:40]}» {chapters.spoken_words(x)}" for t, x in chapters.content_sections(refined))
+    user_prompt += (f"\n\nCODE MEASUREMENTS (exact — use these numbers, do not estimate word counts): "
+                    f"spoken words = {measured}"
+                    + (f"; blueprint plan = {plan_words} words (×{measured / plan_words:.2f})" if plan_words else "")
+                    + (f"; words per section: {sizes}" if sizes else "")
+                    + ". The length follows the material: judge padding or cramming, not a fixed number.")
+
     # A chapter the writers dropped is invisible to the judge unless it is told: a real
     # run shipped a video with no chapter 1 because the header had been deleted. Name
     # every blueprint chapter missing its "=== title ===" header and forbid a PASS.
