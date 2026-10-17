@@ -1034,8 +1034,9 @@ def _rewrite_moved_row(layout: dict, row: dict, rows: list, sentence: dict, sent
     return True
 
 
-def _ask_gap_row(layout: dict, rows: list, sentence_index: int, sentences: list):
-    """One small call for one B-roll row in a gap. Returns the parsed cells or None."""
+def _ask_gap_row(layout: dict, rows: list, sentence_index: int, sentences: list, avoid: str = ""):
+    """One small call for one B-roll row in a gap. Returns the parsed cells or None.
+    `avoid`: a prompt already used elsewhere in the table — the new image must differ."""
     cols = layout["cols"]
     header = layout["header"]
     examples = "\n".join("| " + " | ".join(row["cells"]) + " |" for row in rows[:2])
@@ -1057,6 +1058,7 @@ RULES:
 - 🖼️ Still needs a Ken Burns move in Composition Notes.
 - No text, letters or numbers inside the generated image; put words in Composition Notes as a Premiere overlay.
 - Use the passage's first words as START CUE and its last four words as END CUE (code will correct them).
+{("- ANOTHER ROW ALREADY SHOWS THIS — use a clearly different subject, setting and angle: " + avoid[:400]) if avoid else ""}
 Return ONLY the markdown row (one line, same number of columns as the header)."""
     try:
         answer = call_llm("You add one missing B-roll row to an existing production table.",
@@ -1288,6 +1290,46 @@ def _move_brolls_out_of_drawings(rows: list, layout: dict, windows: list, senten
     return kept, moved, dropped
 
 
+def _replace_duplicate_images(rows: list, layout: dict, sentences: list, script: str, wpm: float,
+                              after: int, norm_script: str, budget: list) -> int:
+    """The later of two near-identical B-roll prompts (≥ 50% shared content words, the
+    same rule as the duplicate code check) gets a new prompt for its own sentence that
+    must differ from the earlier one. A run showed the same father-and-son sofa shot
+    3.5 minutes apart. Shares the moved-row call budget; returns rows re-imaged."""
+    prompt_col = layout["cols"].get("prompt")
+    if prompt_col is None or len(rows) < 2:
+        return 0
+    words = [_broll_content_words(r["cells"][prompt_col]) if prompt_col < len(r["cells"]) else set() for r in rows]
+    times = _running_row_times(rows, layout, script, wpm, after=after)
+    starts = [s["start_s"] for s in sentences]
+    replaced = 0
+    for j in range(1, len(rows)):
+        twin = next((i for i in range(j) if _jaccard(words[i], words[j]) >= 0.5), None)
+        if twin is None or times[j] is None or budget[0] <= 0:
+            continue
+        index = max((k for k, t in enumerate(starts) if t <= times[j] + 0.5), default=None)
+        if index is None:
+            continue
+        budget[0] -= 1
+        cells = _ask_gap_row(layout, rows, index, sentences, avoid=rows[twin]["cells"][prompt_col])
+        if cells is None:
+            continue
+        cols = layout["cols"]
+        old = rows[j]["cells"]
+        for name in ("num", "start", "end", "time"):
+            at = cols.get(name)
+            if at is not None and at < len(cells) and at < len(old):
+                cells[at] = old[at]
+        new_words = _broll_content_words(cells[prompt_col]) if prompt_col < len(cells) else set()
+        if _jaccard(words[twin], new_words) >= 0.5:
+            continue
+        rows[j]["cells"], words[j] = cells, new_words
+        replaced += 1
+    if replaced:
+        print(f"  🔧 B-roll: re-imaged {replaced} near-duplicate shots")
+    return replaced
+
+
 BROLL_CLIP_SECONDS = (3.0, 8.0)        # a generated clip is 3–8 s long
 
 
@@ -1450,6 +1492,9 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
         report["filled"] += 1
 
     rows = _sorted_rows(rows, layout, script, wpm, after=after)
+    re_imaged = _replace_duplicate_images(rows, layout, sentences, script, wpm, after, norm_script, budget)
+    if re_imaged:
+        report["re_imaged"] = re_imaged
     _fit_end_cues(rows, layout, sentences, script, wpm, after)
     report["gaps_left"] = len(_gap_list(rows, _running_row_times(rows, layout, script, wpm, after=after),
                                         script_end))

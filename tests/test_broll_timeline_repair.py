@@ -39,7 +39,16 @@ HEAD = ("| # | Timestamp | ▶️ START CUE | ⏹️ END CUE | Type | AI Generat
         "|---|---|---|---|---|---|\n")
 
 
-def row(number: int, i: int, prompt: str = "a man in a clinic, slow push-in") -> str:
+SUBJECTS = ["nurse checking a monitor", "kettle boiling kitchen", "runner tying shoes park",
+            "pharmacist shelves boxes", "grandmother knitting balcony", "cyclist crossing bridge",
+            "chef slicing lemons", "child reading library", "doctor washing hands",
+            "fisherman casting river", "student typing laptop", "baker shaping dough",
+            "gardener watering roses", "driver adjusting mirror", "teacher writing chalkboard"]
+
+
+def row(number: int, i: int, prompt: str = None) -> str:
+    # Distinct pictures per row: identical prompts are near-duplicates and get re-imaged.
+    prompt = prompt or f"{SUBJECTS[i % len(SUBJECTS)]}, slow push-in"
     words = sentence(i).split()
     return (f"| {number} | 9:59 | {sentence(i)} | {' '.join(words[-4:])} | "
             f"🎬 Video | {prompt} |\n")
@@ -229,3 +238,17 @@ class EndCueFitTest(unittest.TestCase):
         table = self.HEAD + self.row(1, 0, 1, "8s") + self.row(2, 6, 6)       # 10 s for 8 s clip
         out, _ = repair(table)
         self.assertEqual(ew.broll_rows(out)[0]["end"], " ".join(sentence(1).split()[-4:]))
+
+
+class DuplicateImageTest(unittest.TestCase):
+    def test_the_later_of_two_identical_shots_is_re_imaged(self):
+        same = "elderly father and son on a sofa at night with a blood pressure cuff, slow push-in"
+        table = HEAD + row(1, 0, same) + row(2, 3) + row(3, 6, same)
+        fake = use(self, production, "call_llm", FakeLLM(
+            lambda *a: "| 9 | 9:59 | X | X | 🎬 Video | steady hand smoothing a deflated cuff on a kitchen table, dolly |"))
+        out, report = repair(table)
+        self.assertEqual(report["re_imaged"], 1)
+        self.assertIn("kitchen table", out)
+        self.assertEqual(out.count("sofa at night"), 1)
+        self.assertIn("sofa at night", fake.calls[0]["user"])          # told what to avoid
+        self.assertIn(sentence(6), out)                               # keeps its own cue
