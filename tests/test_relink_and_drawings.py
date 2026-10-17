@@ -126,6 +126,9 @@ class RenumberMapTest(unittest.TestCase):
 
 class NodeRelinkTest(unittest.TestCase):
     def test_node_result_carries_the_relinked_documents(self):
+        # This test is about relinking; keep the tail gap-fill (separately tested) out of it.
+        mock.patch.object(production, "_TRAILING_ALLOW_SECONDS", 10 ** 6).start()
+        self.addCleanup(mock.patch.stopall)
         transition = (
             "## TRANSITION DESIGN MAP\n"
             + TRANS_HEAD

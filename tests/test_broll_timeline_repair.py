@@ -178,3 +178,17 @@ class DanglingReferenceTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TrailingGapTest(unittest.TestCase):
+    def test_the_tail_after_the_last_broll_is_filled_when_asked(self):
+        # A real run's B-roll table stopped at 12:27 of a 16:23 script.
+        from medical_brain.nodes import production as P
+        script = ". ".join(" ".join(f"w{i * 10 + j}" for j in range(10)) for i in range(60)) + "."
+        table = ("| # | Timestamp | ▶️ START CUE | ⏹️ END CUE | Type | AI Generation Prompt |\n|---|---|---|---|---|---|\n"
+                 "| 1 | 0:00 | w0 w1 w2 w3 w4 | w5 w6 w7 w8 | 🎬 Video | close-up of a calf, slow push-in camera move |\n")
+        row = "| 9 | 0:00 | x | y | 🎬 Video | a clinic hallway, slow dolly camera move, no text |"
+        with mock.patch.object(P, "call_llm", lambda *a, **k: row), mock.patch("builtins.print"):
+            _, without = P.repair_broll_timeline({}, table, script, 135)
+            _, with_tail = P.repair_broll_timeline({}, table, script, 135, fill_tail=True)
+        self.assertGreater(with_tail["filled"], without["filled"])

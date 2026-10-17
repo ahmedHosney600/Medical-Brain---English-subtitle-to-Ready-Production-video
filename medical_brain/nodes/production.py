@@ -648,7 +648,7 @@ def auto_repair_camera_moves(table: str) -> tuple:
 
 
 GAP_FILL_SECONDS = 45
-MAX_GAP_FILLS = 6
+MAX_GAP_FILLS = 8
 _MIN_BROLL_SPACING = 8
 _LEADING_GAP_SECONDS = 20
 _SEPARATOR_CELL = re.compile(r":?-{2,}:?")
@@ -956,7 +956,11 @@ def _first_sentence(sentences: list, low: float, high, after: int = 0):
     return None
 
 
-def _gap_list(rows: list, times: list) -> list:
+# The closing (CTA + sign-off) may run without B-roll; a longer bare tail is a gap.
+_TRAILING_ALLOW_SECONDS = 20
+
+
+def _gap_list(rows: list, times: list, end: float = None) -> list:
     gaps = []
     if rows and times and times[0] is not None and times[0] > _LEADING_GAP_SECONDS:
         gaps.append({"lo": 0.0, "hi": times[0], "index": 0, "leading": True,
@@ -967,6 +971,12 @@ def _gap_list(rows: list, times: list) -> list:
             continue
         gaps.append({"lo": a, "hi": b, "index": i + 1, "leading": False,
                      "key": (id(rows[i]), id(rows[i + 1]))})
+    # After the last B-roll: a real run's table stopped at 12:27 of a 16:23 script.
+    if rows and end and times and times[-1] is not None:
+        tail_hi = end - _TRAILING_ALLOW_SECONDS
+        if tail_hi - times[-1] > GAP_FILL_SECONDS:
+            gaps.append({"lo": times[-1], "hi": tail_hi, "index": len(rows), "leading": False,
+                         "key": ("end", id(rows[-1]))})
     return gaps
 
 
@@ -1236,7 +1246,7 @@ def _move_brolls_out_of_drawings(rows: list, layout: dict, windows: list, senten
 
 
 def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: float,
-                          after: int = 0, map_out: list = None) -> tuple:
+                          after: int = 0, map_out: list = None, fill_tail: bool = False) -> tuple:
     """Code-repairs the B-roll timeline: clustered rows (<8 s apart) move to a later
     sentence (or are dropped when there is no room), and long stretches without B-roll
     get one model-written row each, with its cues forced to the chosen sentence. Runs on
@@ -1314,11 +1324,13 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
             report["moved_out_of_drawings"] = moved_out
             print(f"🔧 moved {moved_out} B-rolls out of whiteboard windows")
 
+    # Whole-script tables (after == 0) also cover the tail after the last B-roll.
+    script_end = (len(ew.spoken_text(script).split()) / wpm * 60.0) if (fill_tail and after == 0 and wpm) else None
     attempts, calls = set(), 0
     while rows and calls < MAX_GAP_FILLS:
         rows = _sorted_rows(rows, layout, script, wpm, after=after)
         times = _running_row_times(rows, layout, script, wpm, after=after)
-        gaps = [g for g in _gap_list(rows, times) if g["key"] not in attempts]
+        gaps = [g for g in _gap_list(rows, times, script_end) if g["key"] not in attempts]
         if not gaps:
             break
         gap = max(gaps, key=lambda g: g["hi"] - g["lo"])
@@ -1341,7 +1353,8 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
         report["filled"] += 1
 
     rows = _sorted_rows(rows, layout, script, wpm, after=after)
-    report["gaps_left"] = len(_gap_list(rows, _running_row_times(rows, layout, script, wpm, after=after)))
+    report["gaps_left"] = len(_gap_list(rows, _running_row_times(rows, layout, script, wpm, after=after),
+                                        script_end))
 
     # Old model number → final number (None for a row this repair dropped).
     mapping = dict(original_map)
@@ -1388,7 +1401,7 @@ def finalize_broll_table(state: PipelineState, table: str, after: int = 0,
     if table and script:
         table = ew.rewrite_broll_timestamps(table, script, wpm, after=after)
         if repair:
-            table, report = repair_broll_timeline(state, table, script, wpm, after=after)
+            table, report = repair_broll_timeline(state, table, script, wpm, after=after, fill_tail=True)
             if isinstance(state, dict):
                 state["_broll_timeline_map"] = dict(report.mapping)
     return table
