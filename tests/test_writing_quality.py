@@ -452,3 +452,14 @@ class RetimeHeaderLabelsTest(unittest.TestCase):
         self.assertIn("=== OUTRO | Timestamp: 3:00 | Energy: 2/5 ===", out)
         self.assertIn("=== ACT 1 — بداية ===", out)
         self.assertEqual(out.replace("3:00", "11:35"), script)
+
+
+class HookTieBreakTest(unittest.TestCase):
+    def test_tie_goes_to_the_main_writer(self):
+        from medical_brain.nodes.script_writing import _contest_hook
+        cands = [("H1", "agy hook"), ("H2", "deepseek hook")]
+        writers = {"H1": "agy:x", "H2": "deepseek:y"}
+        hook, _ = _contest_hook(cands, {"H1": 18.89, "H2": 18.89}, writers, prefer="deepseek:y")
+        self.assertTrue(hook.split("\n\n")[1] == "deepseek hook")
+        hook, _ = _contest_hook(cands, {"H1": 19, "H2": 18.89}, writers, prefer="deepseek:y")
+        self.assertTrue(hook.split("\n\n")[1] == "agy hook")

@@ -128,10 +128,12 @@ def _hook_judge_totals(state: PipelineState, candidates: list) -> tuple:
     return totals, judged
 
 
-def _contest_hook(candidates: list, totals: dict, writers: dict) -> tuple:
+def _contest_hook(candidates: list, totals: dict, writers: dict, prefer: str = "") -> tuple:
     """(hook text for the state, hook_contest log dict). The winner is first under a
-    line, then a short score table, then every candidate labelled H1…Hn."""
-    ordered = sorted(candidates, key=lambda item: (-totals.get(item[0], 0), item[0]))
+    line, then a short score table, then every candidate labelled H1…Hn. A tie goes to
+    the `prefer` writer (the main writer, who also writes the body: one voice)."""
+    ordered = sorted(candidates, key=lambda item: (-round(totals.get(item[0], 0), 6),
+                                                   writers.get(item[0]) != prefer, item[0]))
     winner, winner_text = ordered[0]
     winner_score = totals.get(winner, 0)
     parts = [f"🏆 CONTEST WINNER (score {winner_score:g})", winner_text,
@@ -200,7 +202,7 @@ Write three distinct hooks, each a different type, written directly in Egyptian 
         print("  ⚠️ hook contest: both judges failed; keeping the main model's recommendation")
         return {"hook": response, "hook_contest": {}}
 
-    hook, contest = _contest_hook(labelled, totals, writers)
+    hook, contest = _contest_hook(labelled, totals, writers, prefer=main_spec)
     winner = min(contest, key=lambda label: (-contest[label]["score"], label))
     scores = ", ".join(f"{label}={contest[label]['score']}" for label in sorted(contest))
     print(f"🏆 hook contest: winner by {contest[winner]['writer']} (scores {scores})")
