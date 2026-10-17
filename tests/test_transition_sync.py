@@ -297,3 +297,19 @@ class ChapterTableRepairTest(unittest.TestCase):
         self.assertIn("| لو معاه وجع في الصدر", out)
         found = overlay_table(row.replace("لو فيه أعراض", "الضغط عالي شوية"))
         self.assertEqual(production.relocate_unfound_overlay_cues(found, text_script, 60), found)
+
+
+class LinkRecomputeTest(unittest.TestCase):
+    def test_links_follow_the_clock_and_dead_refs_go(self):
+        transition = transition_table(transition_row(1, 0, "A → B"), transition_row(2, 6, "B → C"))
+        overlay = overlay_table(
+            f"| 1 | 9:59 | POPUP | نص | {sentence(6)} | {end_cue(6)} | top | fade | 3 | fade | T#77 | DO NOT OVERLAP T#36 |\n",
+            f"| 2 | 9:59 | POPUP | نص | {sentence(3)} | {end_cue(3)} | top | fade | 3 | fade | T#1 | x |\n")
+        broll = broll_table(broll_row(1, 0, 1))
+        with mock.patch("builtins.print"):
+            ov, b, t = production.recompute_link_columns(overlay, broll, transition, script(), 60)
+        rows = [line for line in ov.splitlines() if line.startswith("| 1 ") or line.startswith("| 2 ")]
+        self.assertIn("| T#2 |", rows[0])                  # same moment as transition 2 (sentence 6)
+        self.assertIn("| — |", rows[1])                    # nothing within ±3 s of sentence 3
+        self.assertNotIn("T#36", ov)                       # dead inline reference removed
+        self.assertNotIn("T#77", ov)

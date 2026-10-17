@@ -591,10 +591,125 @@ def _sync_after_broll(state: PipelineState, table: str, result: dict = None,
         overlay = relink_references(overlay, "transition", transition_map)
         table = relink_references(table, "transition", transition_map)
 
+    if script:
+        overlay, table, transition = recompute_link_columns(
+            overlay, table, transition, script, ew.blueprint_wpm(state.get("blueprint")))
+
     out["transition_design"] = transition
     out["text_animation_overlay"] = overlay
     out["broll_prompts"] = table
     return out
+
+
+LINK_TOLERANCE_SECONDS = 3.0
+
+
+def _table_row_times(text: str, script: str, wpm: float, need: str) -> list:
+    """[(number, seconds)] for the rows of every table whose header contains `need`
+    (e.g. "ELEMENT" for the overlay guide), timed by START CUE (running position) or
+    Timestamp."""
+    norm_script = ew.normalize_ar(ew.spoken_text(script))
+    out, pos = [], 0
+    lines = (text or "").splitlines()
+    i = 0
+    while i < len(lines):
+        if not lines[i].strip().startswith("|"):
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and lines[j].strip().startswith("|"):
+            j += 1
+        upper = [c.upper() for c in _table_cells(lines[i])]
+        if any(need in h for h in upper):
+            num_col = next((k for k, h in enumerate(upper) if h.strip() == "#"), None)
+            cue_col = next((k for k, h in enumerate(upper) if "START" in h or "▶" in h), None)
+            time_col = next((k for k, h in enumerate(upper) if "TIMESTAMP" in h or h.strip() == "TIME"), None)
+            separator = i + 1 < j and chapters.is_separator_row(lines[i + 1])
+            for k in range(i + (2 if separator else 1), j):
+                cells = _table_cells(lines[k])
+                if num_col is None or num_col >= len(cells) or not re.fullmatch(r"\d+", cells[num_col].strip()):
+                    continue
+                seconds = None
+                cue = cells[cue_col] if cue_col is not None and cue_col < len(cells) else ""
+                if cue:
+                    seconds = ew.cue_seconds(cue, script, wpm, after=pos)
+                    later = [p for p in ew.cue_positions(cue, norm_script) if p >= pos]
+                    if later:
+                        pos = later[0]
+                if seconds is None and time_col is not None and time_col < len(cells):
+                    stamp = _seconds(cells[time_col])
+                    seconds = float(stamp) if stamp is not None else None
+                if seconds is not None:
+                    out.append((cells[num_col].strip(), seconds))
+        i = j
+    return out
+
+
+def recompute_link_columns(overlay: str, broll: str, transition: str, script: str, wpm: float) -> tuple:
+    """Rewrites every "Linked to Transition / Overlay / B-roll #" cell from the shared
+    script clock: the row of that layer that starts within ±3 s of this row's start, or
+    "—". Model-written links used per-chapter numbers that never matched the final tables
+    (a run linked overlays to T#77–T#85 in a 75-row map). Inline references to rows that
+    do not exist ("DO NOT OVERLAP T#36") become "—". Returns (overlay, broll, transition)."""
+    wpm = ew.blueprint_wpm({"words_per_minute": wpm})
+    layers = {
+        "TRANSITION": ("T#", [(n, t) for n, t in zip(
+            [re.sub(r"\D", "", _row_cell(r, b["cols"], "num")) for b in _transition_blocks(transition) for r in b["rows"]],
+            _transition_row_times(_transition_blocks(transition), script, wpm)) if n and t is not None]),
+        "OVERLAY": ("#", _table_row_times(overlay, script, wpm, "ELEMENT")),
+        "B-ROLL": ("B-roll #", _table_row_times(broll, script, wpm, "PROMPT")),
+    }
+    known_transitions = {n for n, _ in layers["TRANSITION"][1]}
+    known_brolls = {n for n, _ in layers["B-ROLL"][1]}
+
+    def nearest(kind, when):
+        prefix, rows = layers[kind]
+        close = [(abs(t - when), n) for n, t in rows if abs(t - when) <= LINK_TOLERANCE_SECONDS]
+        return f"{prefix}{min(close)[1]}" if close else "—"
+
+    def rewrite(text, need):
+        times = dict(_table_row_times(text, script, wpm, need))
+        lines = (text or "").splitlines()
+        i, changed = 0, 0
+        while i < len(lines):
+            if not lines[i].strip().startswith("|"):
+                i += 1
+                continue
+            j = i
+            while j < len(lines) and lines[j].strip().startswith("|"):
+                j += 1
+            upper = [c.upper() for c in _table_cells(lines[i])]
+            links = {k: kind for k, h in enumerate(upper) if "LINKED" in h
+                     for kind in ("TRANSITION", "OVERLAY", "B-ROLL") if kind in h.replace("BROLL", "B-ROLL")}
+            num_col = next((k for k, h in enumerate(upper) if h.strip() == "#"), None)
+            if links and num_col is not None and any(need in h for h in upper):
+                separator = i + 1 < j and chapters.is_separator_row(lines[i + 1])
+                for k in range(i + (2 if separator else 1), j):
+                    cells = _table_cells(lines[k])
+                    when = times.get(cells[num_col].strip()) if num_col < len(cells) else None
+                    if when is None:
+                        continue
+                    for col, kind in links.items():
+                        if col < len(cells):
+                            value = nearest(kind, when)
+                            if cells[col].strip() != value:
+                                cells[col] = value
+                                changed += 1
+                    lines[k] = "| " + " | ".join(cells) + " |"
+            i = j
+        text = "\n".join(lines) + ("\n" if (text or "").endswith("\n") else "") if changed else text
+        # Inline mentions of rows that do not exist.
+        text = _TRANSITION_REF.sub(lambda m: m.group(0) if m.group(2) in known_transitions else "—", text or "")
+        text = _BROLL_REF.sub(lambda m: m.group(0) if m.group(2) in known_brolls else "—", text)
+        return text, changed
+
+    overlay, a = rewrite(overlay, "ELEMENT")
+    broll, b = rewrite(broll, "PROMPT")
+    if transition:
+        transition = _BROLL_REF.sub(lambda m: m.group(0) if m.group(2) in known_brolls else "—", transition)
+    if a + b:
+        print(f"  🔧 cross-layer links: re-derived {a + b} link cells from the script clock")
+    return overlay, broll, transition
 
 
 def broll_prompt_generator(state: PipelineState) -> dict:
