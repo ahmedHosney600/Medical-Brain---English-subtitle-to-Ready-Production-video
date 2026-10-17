@@ -1809,11 +1809,59 @@ def sync_transition_map(state: PipelineState, transition_design: str, broll_tabl
         text = new_text
         if (not added and not moved) or unchanged:
             break
+    text = rebuild_density_summary(text, script, wpm)
     if broll_out is not None:
         broll_out.append(broll_table)
     if map_out is not None:
         map_out.append(mapping or {})
     return text, total
+
+
+_DENSITY_HEAD_RE = re.compile(r"^#{2,4}\s*Transition Density Summary.*$", re.IGNORECASE | re.MULTILINE)
+
+
+def rebuild_density_summary(text: str, script: str, wpm: float) -> str:
+    """Replaces the model's "Transition Density Summary" table with counts from the final
+    table, per script section: the model's summary predates the code-added cuts and its
+    own act times (a real one said 46 transitions over 0:00–12:35 for an 84-row table on a
+    17-minute script)."""
+    head = _DENSITY_HEAD_RE.search(text or "")
+    blocks = _transition_blocks(text or "")
+    if not head or not blocks or not script:
+        return text
+    wpm = ew.blueprint_wpm({"words_per_minute": wpm})
+    rows = [(block, row) for block in blocks for row in block["rows"]]
+    times = _transition_row_times(blocks, script, wpm)
+    marks, words = [], 0
+    for title, part in chapters.split_by_chapters(chapters.normalize_section_headers(script)):
+        marks.append((words / wpm * 60.0, title or "Opening"))
+        words += len(ew.spoken_text(part).split())
+    end = words / wpm * 60.0
+    counts = [[0, 0] for _ in marks]
+    for t, (block, row) in zip(times, rows):
+        if t is None:
+            continue
+        k = max(i for i, (start, _) in enumerate(marks) if start <= t or i == 0)
+        kind = _row_cell(row, block["cols"], "type").lower()
+        counts[k][0 if ("cut" in kind and "dissolve" not in kind) else 1] += 1
+    lines = ["| Section | Time | Total Transitions | Hard Cuts | Soft Transitions |", "|---|---|---|---|---|"]
+    for i, ((start, title), (hard, soft)) in enumerate(zip(marks, counts)):
+        if hard + soft == 0:
+            continue
+        stop = marks[i + 1][0] if i + 1 < len(marks) else end
+        lines.append(f"| {title[:60]} | {_fmt_seconds(start)}–{_fmt_seconds(stop)} | {hard + soft} | {hard} | {soft} |")
+    hard_all, soft_all = sum(c[0] for c in counts), sum(c[1] for c in counts)
+    total = hard_all + soft_all
+    if not total:
+        return text
+    lines.append(f"| **Entire Video Total** | 0:00–{_fmt_seconds(end)} | **{total}** | "
+                 f"**{hard_all} ({round(100 * hard_all / total)}%)** | **{soft_all} ({round(100 * soft_all / total)}%)** |")
+    # Replace the first table after the heading (or insert one right under it).
+    after = text[head.end():]
+    table = re.search(r"\n((?:[ \t]*\|.*\n?)+)", after)
+    if table and not after[:table.start()].strip():
+        return text[:head.end()] + "\n\n" + "\n".join(lines) + "\n" + after[table.end():]
+    return text[:head.end()] + "\n\n" + "\n".join(lines) + "\n" + after
 
 
 def _sync_transition_once(state: PipelineState, transition_design: str, broll_table: str,
@@ -1841,7 +1889,10 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
 
     target = next((block for block in blocks if block["cols"]["cue"] is not None), blocks[0])
     starts, ends = _broll_row_times(brolls, script, wpm)
-    existing = [t for t in _transition_row_times(blocks, script, wpm) if t is not None]
+    row_refs = [(block, row) for block in blocks for row in block["rows"]]
+    timed = [(t, block, row) for t, (block, row) in zip(_transition_row_times(blocks, script, wpm), row_refs)
+             if t is not None]
+    existing = [t for t, _, _ in timed]
     # A cut needed inside a warning card's hold is placed at the hold's end instead:
     # adding it inside and then moving it out uncovered the B-roll edge again, so the
     # passes ping-ponged (a real run: added 1 / moved 1 three times).
@@ -1861,6 +1912,30 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
         return any(abs(t - when) <= TRANSITION_TOLERANCE_SECONDS for t in existing) or any(
             low < when < high for low, high in holds)
 
+    relabelled = [0]
+
+    def relabel(when, number, entering):
+        """A model row already at this B-roll edge that names no B-roll (e.g. "A-roll →
+        2D Animation" where B-roll #5 starts) contradicts the shot list: point it at the
+        B-roll, keeping its transition type. Rows naming some B-roll are left alone."""
+        near = [(abs(t - when), block, row) for t, block, row in timed
+                if abs(t - when) <= TRANSITION_TOLERANCE_SECONDS]
+        if not near or not number:
+            return
+        _, block, row = min(near, key=lambda item: item[0])
+        at = block["cols"].get("from_to")
+        if at is None or at >= len(row["cells"]):
+            return
+        current = row["cells"][at]
+        if re.search(r"b-?\s?roll", current, re.IGNORECASE):
+            return
+        parts = re.split(r"\s*(?:→|->)\s*", current, maxsplit=1)
+        side_from = parts[0].strip() or "Talking Head"
+        side_to = parts[1].strip() if len(parts) > 1 and parts[1].strip() else "Talking Head"
+        row["cells"][at] = (f"{side_from} → B-roll #{number}" if entering
+                            else f"B-roll #{number} → {side_to}")
+        relabelled[0] += 1
+
     added = 0
     shifted = {}                    # B-roll number -> new START CUE (moved out of a hold)
     for row, start, end in zip(brolls, starts, ends):
@@ -1875,6 +1950,8 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
                     f"Code-added: cut to B-roll #{number}", start_at))
                 existing.append(start_at)
                 added += 1
+            else:
+                relabel(start_at, number, entering=True)
         if row.get("end") and end is not None:
             end_at, end_cue = out_of_hold(end, row.get("end", ""))
             if not covered(end_at):
@@ -1883,9 +1960,13 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
                     "Code-added: back to the presenter", end_at))
                 existing.append(end_at)
                 added += 1
+            else:
+                relabel(end_at, number, entering=False)
 
     if added:
         print(f"  🔧 transition map: added {added} B-roll cuts")
+    if relabelled[0]:
+        print(f"  🔧 transition map: pointed {relabelled[0]} rows at the B-roll that plays there")
     if shifted:
         layout = _broll_layout(realigned)
         num_col, start_col = layout["cols"]["num"], layout["cols"]["start"]
@@ -2163,7 +2244,7 @@ def script_clock(script: str, wpm: float) -> str:
     if not script or not wpm:
         return ""
     marks, words = [], 0
-    for title, text in chapters.split_by_chapters(script):
+    for title, text in chapters.split_by_chapters(chapters.normalize_section_headers(script)):
         if title:
             marks.append(f"{_fmt_seconds(words / wpm * 60.0)} «{title[:50]}»")
         words += len(ew.spoken_text(text).split())

@@ -228,3 +228,29 @@ class NodeSyncTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RelabelAndDensityTest(unittest.TestCase):
+    def test_a_row_at_a_broll_edge_that_names_no_broll_is_pointed_at_it(self):
+        transition = transition_table(transition_row(1, 0, "A-roll → 2D Animation", "graphic"),
+                                      transition_row(2, 3, "B-roll #9 → Talking Head", "back"))
+        broll = broll_table(broll_row(1, 0, 2))
+        with mock.patch("builtins.print"):
+            out, added = sync(transition, broll)
+        froms = [r["cells"][3] for r in transition_rows(out)]
+        self.assertIn("A-roll → B-roll #1", froms)
+        self.assertIn("B-roll #9 → Talking Head", froms)       # names a B-roll: left alone
+        with mock.patch("builtins.print"):
+            again, _ = sync(out, broll)
+        self.assertEqual(again, out)
+
+    def test_density_summary_is_rebuilt_from_the_table(self):
+        text = ("=== أ ===\n" + script(6) + "\n=== ب ===\n" + " ".join(sentence(i) + "." for i in range(6, 12)))
+        transition = (transition_table(transition_row(1, 0, "A → B"), transition_row(2, 7, "B → C"))
+                      + "\n### Transition Density Summary\n\n| Act | Total |\n|---|---|\n| all | 46 |\n\nafter")
+        out = production.rebuild_density_summary(transition, text, 60)
+        self.assertNotIn("| all | 46 |", out)
+        self.assertIn("| أ | 0:00–0:30 | 1 | 1 | 0 |", out)
+        self.assertIn("| ب | 0:30–1:00 | 1 | 1 | 0 |", out)
+        self.assertIn("**2**", out)
+        self.assertTrue(out.rstrip().endswith("after"))
