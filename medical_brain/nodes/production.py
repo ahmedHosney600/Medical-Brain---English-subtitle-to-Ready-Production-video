@@ -1789,26 +1789,61 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
     target = next((block for block in blocks if block["cols"]["cue"] is not None), blocks[0])
     starts, ends = _broll_row_times(brolls, script, wpm)
     existing = [t for t in _transition_row_times(blocks, script, wpm) if t is not None]
+    # A cut needed inside a warning card's hold is placed at the hold's end instead:
+    # adding it inside and then moving it out uncovered the B-roll edge again, so the
+    # passes ping-ponged (a real run: added 1 / moved 1 three times).
+    holds = _overlay_warning_holds((state or {}).get("text_animation_overlay", ""), script, wpm)
+    sentences = _script_sentences(script, wpm) if holds else []
+    norm_script = ew.normalize_ar(ew.spoken_text(script)) if holds else ""
+
+    def out_of_hold(when, cue):
+        for low, high in holds:
+            if when is not None and low < when < high:
+                sentence = _first_sentence(sentences, high, None)
+                if sentence is not None:
+                    return sentence["start_s"], _sentence_cue(sentence, norm_script)
+        return when, cue
+
+    def covered(when):
+        return any(abs(t - when) <= TRANSITION_TOLERANCE_SECONDS for t in existing) or any(
+            low < when < high for low, high in holds)
+
     added = 0
+    shifted = {}                    # B-roll number -> new START CUE (moved out of a hold)
     for row, start, end in zip(brolls, starts, ends):
         number = str(row.get("num", "")).strip()
-        if start is not None and not any(abs(t - start) <= TRANSITION_TOLERANCE_SECONDS
-                                         for t in existing):
-            target["rows"].append(_new_transition_row(
-                target, row.get("start", ""), f"Talking Head → B-roll #{number}",
-                f"Code-added: cut to B-roll #{number}", start))
-            existing.append(start)
-            added += 1
-        if (row.get("end") and end is not None
-                and not any(abs(t - end) <= TRANSITION_TOLERANCE_SECONDS for t in existing)):
-            target["rows"].append(_new_transition_row(
-                target, row.get("end", ""), f"B-roll #{number} → Talking Head",
-                "Code-added: back to the presenter", end))
-            existing.append(end)
-            added += 1
+        if start is not None:
+            start_at, start_cue = out_of_hold(start, row.get("start", ""))
+            if start_at != start and number:
+                shifted[number] = start_cue      # one visual owner: the B-roll waits too
+            if not covered(start_at):
+                target["rows"].append(_new_transition_row(
+                    target, start_cue, f"Talking Head → B-roll #{number}",
+                    f"Code-added: cut to B-roll #{number}", start_at))
+                existing.append(start_at)
+                added += 1
+        if row.get("end") and end is not None:
+            end_at, end_cue = out_of_hold(end, row.get("end", ""))
+            if not covered(end_at):
+                target["rows"].append(_new_transition_row(
+                    target, end_cue, f"B-roll #{number} → Talking Head",
+                    "Code-added: back to the presenter", end_at))
+                existing.append(end_at)
+                added += 1
 
     if added:
         print(f"  🔧 transition map: added {added} B-roll cuts")
+    if shifted:
+        layout = _broll_layout(realigned)
+        num_col, start_col = layout["cols"]["num"], layout["cols"]["start"]
+        if num_col is not None and start_col is not None:
+            for brow in layout["rows"]:
+                cells = brow["cells"]
+                key = cells[num_col].strip() if num_col < len(cells) else ""
+                if key in shifted and start_col < len(cells):
+                    cells[start_col] = shifted[key]
+            broll_table = ew.rewrite_broll_timestamps(_render_broll_layout(layout, layout["rows"]), script, wpm)
+            print(f"  🔧 moved {len(shifted)} B-rolls out of warning-card holds")
 
     _sort_transition_blocks(blocks, script, wpm, map_out=map_out)
     text = _render_transition_blocks(transition_design, blocks)
