@@ -254,3 +254,17 @@ class RelabelAndDensityTest(unittest.TestCase):
         self.assertIn("| ب | 0:30–1:00 | 1 | 1 | 0 |", out)
         self.assertIn("**2**", out)
         self.assertTrue(out.rstrip().endswith("after"))
+
+
+class OverlayReadTimeTest(unittest.TestCase):
+    def test_short_holds_grow_to_reading_time(self):
+        long_text = " ".join(["كلمة"] * 30)
+        table = overlay_table(
+            f"| 1 | 0:10 | WARNING BOX | {long_text} | {sentence(1)} | {end_cue(1)} | center | fade | 5.5 | fade | — | x |\n",
+            f"| 2 | 0:20 | LOWER THIRD | د. أحمد | {sentence(3)} | {end_cue(3)} | bottom | fade | 4s | fade | — | x |\n")
+        with mock.patch("builtins.print"):
+            out = production.fix_overlay_read_times(table)
+        rows = [line for line in out.splitlines() if line.startswith("| 1 ") or line.startswith("| 2 ")]
+        self.assertIn("| 12 |", rows[0])                     # 30 words / 2.5 = 12 s
+        self.assertIn("| 4s |", rows[1])                     # already long enough
+        self.assertEqual(production.fix_overlay_read_times(out), out)

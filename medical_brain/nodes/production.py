@@ -6,6 +6,7 @@ Long videos (a blueprint with >=2 chapters) run the three design steps chapter b
 chapter, join the results under "=== chapter title ===" separators and renumber the
 tables globally; a one-chapter blueprint keeps the original single-call behaviour."""
 
+import math
 import re
 
 from ..exports import workbook as ew
@@ -367,6 +368,7 @@ def _overlay_chapter_mode(state: PipelineState, system_prompt: str, blueprint: d
     joined = _join_chapter_outputs(titles, [outputs.get(keys[i], "") for i in range(len(spans))])
     joined = ew.rewrite_cue_timestamps(joined, state.get("refined_script", ""),
                                        ew.blueprint_wpm(state.get("blueprint")))
+    joined = fix_overlay_read_times(joined)
     return {"text_animation_overlay": joined,
             "production_chapter_outputs": _store_step(state, "text_animation_overlay", outputs)}
 
@@ -409,7 +411,7 @@ PRODUCTION CRITIQUE REPORT:
     response = call_llm(system_prompt, user_prompt, temperature=0.5, max_tokens=7000)
     response = ew.rewrite_cue_timestamps(response, state.get("refined_script", ""),
                                          ew.blueprint_wpm(state.get("blueprint")))
-    return {"text_animation_overlay": response}
+    return {"text_animation_overlay": fix_overlay_read_times(response)}
 
 
 def text_animation_overlay_designer(state: PipelineState) -> dict:
@@ -1103,7 +1105,8 @@ def _drawing_duration(text: str):
 def _drawing_cues(block: str) -> list:
     """Spoken cues of a prose drawing spec's build steps."""
     cues = []
-    for match in re.finditer(r"(?i)\bcue\b\s*[:\-–]\s*[“\"«]?\s*([^”\"»\n)]+)", block or ""):
+    # "Cue: «…»", and the markdown form "*Narration Cue*: *«…»*".
+    for match in re.finditer(r"(?i)\bcue\b\s*\**\s*[:\-–]\s*\**\s*[“\"«]?\s*([^”\"»\n)]+)", block or ""):
         cue = match.group(1).strip(" \"'“”«»`*.-–—")
         if cue:
             cues.append(cue)
@@ -1679,6 +1682,49 @@ def _broll_row_times(rows: list, script: str, wpm: float) -> tuple:
         end_seconds = ew.cue_seconds(end, script, wpm) if end else None
         ends.append(end_seconds)
     return starts, ends
+
+
+OVERLAY_READ_WORDS_PER_SECOND = 2.5   # comfortable on-screen Arabic reading rate
+OVERLAY_MAX_HOLD_SECONDS = 20.0
+
+
+def fix_overlay_read_times(text: str) -> str:
+    """Lengthens every overlay's Hold (s) to fit its words at ~2.5 words/second (at most
+    20 s). A critique measured a 60-word red-flag card held 9 s, a 30-word card 5.5 s."""
+    lines = (text or "").splitlines()
+    changed, fixed, i = False, 0, 0
+    while i < len(lines):
+        if not lines[i].strip().startswith("|"):
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and lines[j].strip().startswith("|"):
+            j += 1
+        upper = [c.upper() for c in _table_cells(lines[i])]
+        hold_col = next((k for k, h in enumerate(upper) if "HOLD" in h), None)
+        content_col = next((k for k, h in enumerate(upper) if "CONTENT" in h or h.startswith("TEXT")), None)
+        if hold_col is None or content_col is None or not any("ELEMENT" in h for h in upper):
+            i = j
+            continue
+        separator = i + 1 < j and chapters.is_separator_row(lines[i + 1])
+        for k in range(i + (2 if separator else 1), j):
+            cells = _table_cells(lines[k])
+            if len(cells) <= max(hold_col, content_col):
+                continue
+            hold = re.search(r"\d+(?:\.\d+)?", cells[hold_col])
+            words = len(re.findall(r"[\w\u0600-\u06FF]+", cells[content_col]))
+            if not hold or words == 0:
+                continue
+            need = min(OVERLAY_MAX_HOLD_SECONDS, math.ceil(words / OVERLAY_READ_WORDS_PER_SECOND * 2) / 2)
+            if float(hold.group(0)) >= need:
+                continue
+            cells[hold_col] = cells[hold_col][:hold.start()] + f"{need:g}" + cells[hold_col][hold.end():]
+            lines[k] = "| " + " | ".join(cells) + " |"
+            changed, fixed = True, fixed + 1
+        i = j
+    if fixed:
+        print(f"  🔧 overlays: lengthened {fixed} holds to their reading time")
+    return "\n".join(lines) + ("\n" if (text or "").endswith("\n") else "") if changed else text
 
 
 def _overlay_warning_holds(text: str, script: str, wpm: float) -> list:

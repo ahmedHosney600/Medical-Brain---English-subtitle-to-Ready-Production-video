@@ -244,3 +244,15 @@ class ScriptClockTest(unittest.TestCase):
     def test_empty_script(self):
         from medical_brain.nodes.production import script_clock
         self.assertEqual(script_clock("", 135), "")
+
+
+class MarkdownNarrationCueTest(unittest.TestCase):
+    def test_star_wrapped_narration_cues_are_read(self):
+        block = ("* **Build Sequence**:\n"
+                 "  * **Step 1 (2:12 – 2:17)**: marker sketches.\n"
+                 "    *Narration Cue*: *«فكّرها زي زرار النور المشترك في الشقة»*\n"
+                 "  * **Step 2**: wire.\n"
+                 "    *Narration Cue*: *«...بتولّع معاها أعراض الأنف»*\n")
+        cues = production._drawing_cues(block)
+        self.assertEqual(cues[0], "فكّرها زي زرار النور المشترك في الشقة")
+        self.assertEqual(cues[1], "بتولّع معاها أعراض الأنف")
