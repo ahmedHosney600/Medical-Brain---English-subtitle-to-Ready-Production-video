@@ -46,6 +46,9 @@ def spoken_text(script: str) -> str:
     s = re.sub(r"=+[^=\n]*=+", " ", s)
     s = re.sub(r"\*\*[^*\n]{1,40}:\*\*", " ", s)      # speaker labels like **د. أحمد حسني:**
     s = re.sub(r"[*#>]+", " ", s)                       # leftover markdown markers
+    # Punctuation-only tokens ("—", "---", "…") are not words: counted, they ran the script
+    # clock ~26 s ahead of the cue timer (which never counted them) by the end of a video.
+    s = re.sub(r"(?<!\S)[—–\-_…]+(?!\S)", " ", s)
     return s
 
 

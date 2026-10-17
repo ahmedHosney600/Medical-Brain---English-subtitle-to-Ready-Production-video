@@ -551,3 +551,12 @@ class HookLoopTest(unittest.TestCase):
         self.assertIn("الحركة الغلط في السرير", prompt)
         self.assertIn("plants_loop", prompt)
         self.assertNotIn("PLANNED HOOK LOOP", _hook_judge_user({"medical_topic": "x"}, [("H1", "هوك")]))
+
+
+class HeaderPipeTimeTest(unittest.TestCase):
+    def test_bare_pipe_time_is_retimed_and_dashes_are_not_words(self):
+        from medical_brain.nodes.chapters import retime_header_labels
+        from medical_brain.exports.workbook import spoken_text
+        script = "كلمة " * 135 + "— — —\n=== CTA | 11:00 | Energy: 3/5 ===\nاشترك\n"
+        self.assertIn("=== CTA | 1:00 | Energy: 3/5 ===", retime_header_labels(script, 135))
+        self.assertEqual(len(spoken_text("كلام — تاني --- و… خلاص").split()), 4)

@@ -784,7 +784,7 @@ _TRANSITION_REF = re.compile(r"(?i)(\b(?:T\s*#\s*|Transition\s*#\s*))(\d+)\b")
 _ANY_REF = re.compile(
     r"(?i)\bB[- ]?rolls?\s*#?\s*\d+|\bT\s*#\s*\d+|\bTransition\s*#\s*\d+")
 # A bare number in a "Linked to …" cell; not a scale/duration ("settled at 107%", "400ms").
-_BARE_REF = re.compile(r"(?<![\w#.%])(#?)\s*(\d+)\b(?!\s*(?:%|ms\b|s\b|px\b|x\b|°)|[.:]\d)")
+_BARE_REF = re.compile(r"(?<![\w#.%:])(#?)\s*(\d+)\b(?!\s*(?:%|ms\b|s\b|px\b|x\b|°)|[.:]\d)")
 
 _BROLL_MAP_KEYS = ("mapping", "map", "broll_map", "broll_number_map",
                    "number_map", "old_to_new", "renumbered")

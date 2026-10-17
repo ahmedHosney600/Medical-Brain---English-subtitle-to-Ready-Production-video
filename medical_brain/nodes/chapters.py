@@ -536,7 +536,9 @@ HEAVY_ENDING_SHARE = 0.30      # the last content section may not hold > 30% of 
 HEAVY_ENDING_RATIO = 1.6       # nor be > 1.6 × the average section
 
 
-_HEADER_TIME_RE = re.compile(r"(Timestamp\s*:\s*)~?\d{1,2}:\d{2}(?:\s*[–-]\s*\d{1,2}:\d{2})?", re.IGNORECASE)
+# "Timestamp: 11:35" or a bare "| 11:00 |" / "| 0:00–3:00 |" field inside a header.
+_HEADER_TIME_RE = re.compile(r"((?:Timestamp\s*:|\|)\s*)~?\d{1,2}:\d{2}(?:\s*[–-]\s*\d{1,2}:\d{2})?(?=\s*(?:\||===|$))",
+                             re.IGNORECASE)
 
 
 def retime_header_labels(script: str, wpm: float = 135) -> str:
