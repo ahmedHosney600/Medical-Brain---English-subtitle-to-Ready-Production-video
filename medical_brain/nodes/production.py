@@ -1537,7 +1537,7 @@ def _replace_repeated_families(rows: list, layout: dict, sentences: list, script
     for n in sorted(drawing_repeats):
         jobs.setdefault(n, "the whiteboard drawing already shows this: "
                         + " | ".join(drawings or []))
-    replaced = 0
+    planned = []
     for n in sorted(jobs):
         if budget[0] <= 0:
             break
@@ -1548,7 +1548,13 @@ def _replace_repeated_families(rows: list, layout: dict, sentences: list, script
         if index is None:
             continue
         budget[0] -= 1
-        cells = _ask_gap_row(layout, rows, index, sentences, avoid=jobs[n])
+        planned.append((j, index, jobs[n]))
+    # The rows are independent: ask for their new pictures in parallel (a run spent 16
+    # minutes in the B-roll step, mostly on these small calls one after another).
+    answers = chapters.parallel_map(
+        lambda job: _ask_gap_row(layout, rows, job[1], sentences, avoid=job[2]), planned, workers=4)
+    replaced = 0
+    for (j, _, _), cells in zip(planned, answers):
         if cells is None:
             continue
         old = rows[j]["cells"]
