@@ -48,7 +48,7 @@ REBUILD PRINCIPLES:
    - At most 5 English terms in the whole script. Never leave a bare English word in an Arabic sentence.
    - Say «حساس صغير في الوتر — فرامل العضلة (Golgi Tendon Organ)» instead of a bare "Golgi Tendon Organ"; «أكبر مراجعات علمية (Cochrane)» instead of a bare "Cochrane"; «اضطراب في ضربات القلب (Arrhythmias)» instead of a bare "Arrhythmias".
 
-6d. ORDER INSIDE THE LAST CHAPTER (MANDATORY): the red flags / emergency signs and the payoff of the hook's open loop come BEFORE any secondary list (extra medicines, supplements, herbs, folk remedies, related conditions). The video must not end on a list; the last thing before the call to action is the payoff and the safety message.
+6d. ORDER INSIDE THE LAST CHAPTER (MANDATORY): the red flags / emergency signs and the payoff of the hook's open loop come BEFORE any secondary list (extra medicines, supplements, herbs, folk remedies, related conditions). The video must not end on a list; the last thing before the call to action is the payoff and the safety message. No extra section of quick tips after the final chapter («كام كلمة سريعة قبل ما نقفل»): every point lives in its planned chapter.
 
 6c. EVIDENCE-STRENGTH & HEDGING (MANDATORY):
    - State how strong the evidence is ONCE per point, in plain words (one short line such as «أمانة علمية: الدراسات على الحالة دي لسه محدودة»). Do not repeat the caveat later.
