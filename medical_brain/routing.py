@@ -46,7 +46,7 @@ def route_packaging_quality(state: PipelineState) -> str:
     hit_max = state.get("packaging_revision_count", 0) >= max_iterations
 
     if packaging_pass or hit_max:
-        return "transition_designer"
+        return "text_animation_overlay_designer"
     else:
         return "packaging_generator"
 
@@ -61,7 +61,7 @@ def route_production_quality(state: PipelineState) -> str:
     if production_pass or hit_max:
         return "final_script_package"
     else:
-        return "transition_designer"
+        return "text_animation_overlay_designer"
 
 
 MAX_SHORTS_ITERATIONS = 2

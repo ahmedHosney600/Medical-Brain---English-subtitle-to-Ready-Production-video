@@ -231,6 +231,7 @@ TARGET PLATFORM: {state.get("target_platform", "")}
 Read through this chapter's script section by section, noting every scene change inside it, and design a transition for each, following the principles above.
 
 Every Transition Table row must include the ▶️ START CUE (Arabic) column: 4–8 consecutive spoken words copied exactly from this chapter's script where the transition happens. Code re-times every row from that cue, so it is the shared clock for all layers."""
+    prompt += visual_events_block(state, spans[i].get("start_s"), spans[i].get("end_s"))
     if style:
         prompt += f"""
 
@@ -276,6 +277,7 @@ B-ROLL AVAILABILITY: {state.get("broll_availability", "")}
 TARGET PLATFORM: {state.get("target_platform", "")}
 
 Read through the script section by section, noting every scene change (talking head → B-roll, section → section, energy shift). Design a transition for each, following the principles above."""
+    user_prompt += visual_events_block(state)
 
     # Only include revision mode block when we're actually revising
     if state.get("production_revision_count", 0) > 0:
@@ -301,12 +303,48 @@ PRODUCTION CRITIQUE REPORT:
     return {"transition_design": response}
 
 
+def visual_events_block(state: PipelineState, low: float = None, high: float = None) -> str:
+    """The visuals already on the timeline when transitions are designed (they come last):
+    every B-roll start/end, whiteboard drawing and warning card, with its script time and
+    cue, so the transition map cuts exactly to them instead of guessing."""
+    script = state.get("refined_script", "") or ""
+    if not script:
+        return ""
+    wpm = ew.blueprint_wpm(state.get("blueprint"))
+    events = []
+    rows = ew.broll_rows(ew.realign_broll_table(state.get("broll_prompts", "") or "")[0])
+    starts, ends = _broll_row_times(rows, script, wpm)
+    for row, start, end in zip(rows, starts, ends):
+        if start is not None:
+            events.append((start, f"B-roll #{row.get('num', '')} starts — cue «{row.get('start', '')}»"))
+        if end is not None:
+            events.append((end, f"B-roll #{row.get('num', '')} ends — cue «{row.get('end', '')}» (back to the presenter)"))
+    guide = state.get("text_animation_overlay", "") or ""
+    for n, (a, b) in enumerate(_drawing_windows(guide, script, wpm), 1):
+        events.append((a, f"Whiteboard Drawing {n} on screen until {_fmt_seconds(b)} (full screen — no other cut inside)"))
+    for a, b in _overlay_warning_holds(guide, script, wpm):
+        events.append((a, f"Warning card on screen until {_fmt_seconds(b)} (never cut away mid-card)"))
+    events = sorted((t, e) for t, e in events if (low is None or t >= low - 1) and (high is None or t < high + 1))
+    if not events:
+        return ""
+    return ("\n\nVISUAL EVENTS ALREADY ON THE TIMELINE (designed before you — cut INTO and OUT OF these "
+            "exactly, at their cues; add your own transitions only between them, never a second visual on top "
+            "of a drawing or B-roll):\n" + "\n".join(f"- {_fmt_seconds(t)} {e}" for t, e in events))
+
+
 def transition_designer(state: PipelineState) -> dict:
     system_prompt = load_prompt("transition_designer")
     blueprint = state.get("blueprint") or {}
     if chapters.chapter_mode_on(blueprint):
-        return _transition_chapter_mode(state, system_prompt, blueprint)
-    return _transition_single_call(state, system_prompt)
+        result = _transition_chapter_mode(state, system_prompt, blueprint)
+    else:
+        result = _transition_single_call(state, system_prompt)
+    # The B-roll table and overlays exist already: sync the new map to them and re-derive
+    # every cross-layer link now (the B-roll step used to do this before a map existed).
+    merged = dict(state)
+    merged.update(result)
+    return _sync_after_broll(merged, merged.get("broll_prompts", ""), result,
+                             broll_map=merged.get("_broll_timeline_map"))
 
 
 # --------------------------------------------------------------------------

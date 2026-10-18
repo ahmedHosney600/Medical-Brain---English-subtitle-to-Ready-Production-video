@@ -27,9 +27,9 @@ NODES = [
     ("packaging_creative_director", packaging.packaging_creative_director),
     ("packaging_generator", packaging.packaging_generator),
     ("packaging_honesty_ctr_auditor", packaging.packaging_honesty_ctr_auditor),
-    ("transition_designer", production.transition_designer),
     ("text_animation_overlay_designer", production.text_animation_overlay_designer),
     ("broll_prompt_generator", production.broll_prompt_generator),
+    ("transition_designer", production.transition_designer),
     ("production_quality_critique", production.production_quality_critique),
     ("final_script_package", final_package.final_script_package),
     ("shorts_moment_identifier", shorts.shorts_moment_identifier),
@@ -53,9 +53,11 @@ _STATIC_NEXT = {
     "medical_truth_verifier": "self_critique",
     "packaging_creative_director": "packaging_generator",
     "packaging_generator": "packaging_honesty_ctr_auditor",
-    "transition_designer": "text_animation_overlay_designer",
+    # Transitions are designed LAST, from the B-rolls, drawings and cards already on the
+    # timeline: designed first, they guessed at visuals that did not exist yet.
     "text_animation_overlay_designer": "broll_prompt_generator",
-    "broll_prompt_generator": "production_quality_critique",
+    "broll_prompt_generator": "transition_designer",
+    "transition_designer": "production_quality_critique",
     "final_script_package": "shorts_moment_identifier",
     "shorts_moment_identifier": "shorts_script_extractor",
     "shorts_script_extractor": "shorts_caption_packager",
@@ -125,19 +127,19 @@ def build_app(entry=None):
         "packaging_honesty_ctr_auditor",
         route_packaging_quality,
         {
-            "transition_designer": "transition_designer",
+            "text_animation_overlay_designer": "text_animation_overlay_designer",
             "packaging_generator": "packaging_generator",
         }
     )
-    workflow.add_edge("transition_designer", "text_animation_overlay_designer")
     workflow.add_edge("text_animation_overlay_designer", "broll_prompt_generator")
-    workflow.add_edge("broll_prompt_generator", "production_quality_critique")
+    workflow.add_edge("broll_prompt_generator", "transition_designer")
+    workflow.add_edge("transition_designer", "production_quality_critique")
     workflow.add_conditional_edges(
         "production_quality_critique",
         route_production_quality,
         {
             "final_script_package": "final_script_package",
-            "transition_designer": "transition_designer",
+            "text_animation_overlay_designer": "text_animation_overlay_designer",
         }
     )
     workflow.add_edge("final_script_package", "shorts_moment_identifier")

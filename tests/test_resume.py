@@ -172,13 +172,13 @@ class VideoNextAfterTest(unittest.TestCase):
                          "truth_score": 9}), "packaging_creative_director")
         self.assertEqual(video_next_after("self_critique", {"quality_grade": "FAIL"}), "cta_retention_writer")
         self.assertEqual(video_next_after("packaging_honesty_ctr_auditor", {"packaging_grade": "PASS"}),
-                         "transition_designer")
+                         "text_animation_overlay_designer")
         self.assertEqual(video_next_after("packaging_honesty_ctr_auditor", {"packaging_grade": "NO"}),
                          "packaging_generator")
         self.assertEqual(video_next_after("production_quality_critique", {"production_grade": "PASS"}),
                          "final_script_package")
         self.assertEqual(video_next_after("production_quality_critique", {"production_grade": "NO"}),
-                         "transition_designer")
+                         "text_animation_overlay_designer")
         self.assertEqual(video_next_after("shorts_quality_gate", {"shorts_quality_grade": "PASS"}), END)
         self.assertEqual(video_next_after("shorts_quality_gate", {"shorts_quality_grade": "NO"}),
                          "shorts_script_extractor")

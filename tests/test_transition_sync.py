@@ -410,3 +410,25 @@ class ZeroLengthFlashTest(unittest.TestCase):
         froms = [r["cells"][3] for r in transition_rows(out)]
         self.assertNotIn("Split-Screen → Drawing 2", froms)
         self.assertEqual(len(froms), 2)
+
+
+class TransitionsDesignedLastTest(unittest.TestCase):
+    def test_prompt_lists_the_brolls_and_drawings_already_planned(self):
+        guide = ("### Drawing Animations\nDrawing Animation 1: Gate\n"
+                 f"* Step 1: Narration Cue: «{sentence(6)}»\n* **Total: 12s**\n* **Whiteboard Image Prompt**: gate\n")
+        state = {"refined_script": script(), "blueprint": {"words_per_minute": 60},
+                 "broll_prompts": broll_table(broll_row(1, 2, 3)), "text_animation_overlay": guide}
+        block = production.visual_events_block(state)
+        self.assertIn("B-roll #1 starts", block)
+        self.assertIn("Whiteboard Drawing 1 on screen", block)
+        fake = use(self, production, "call_llm", FakeLLM(lambda *a: transition_table(transition_row(1, 0, "A → B"))))
+        with mock.patch("builtins.print"):
+            out = production.transition_designer(state)
+        self.assertIn("VISUAL EVENTS ALREADY ON THE TIMELINE", fake.calls[0]["user"])
+        self.assertIn("B-roll #1", out["transition_design"])            # synced to the B-roll table
+
+    def test_production_runs_overlays_then_broll_then_transitions(self):
+        from medical_brain.graph import _STATIC_NEXT
+        self.assertEqual(_STATIC_NEXT["text_animation_overlay_designer"], "broll_prompt_generator")
+        self.assertEqual(_STATIC_NEXT["broll_prompt_generator"], "transition_designer")
+        self.assertEqual(_STATIC_NEXT["transition_designer"], "production_quality_critique")
