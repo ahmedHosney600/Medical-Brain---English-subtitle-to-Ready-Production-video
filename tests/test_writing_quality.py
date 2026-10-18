@@ -710,3 +710,16 @@ class ClosingSectionTest(unittest.TestCase):
         self.assertIn("=== CLOSING — الخاتمة ===", out)
         self.assertEqual([spoken_words(t) for _, t in content_sections(out)], [300, 250])
         self.assertEqual(ensure_closing_section(out), (out, False))
+
+
+class UnwrapScriptTest(unittest.TestCase):
+    def test_json_wrapped_and_escaped_scripts_are_unwrapped(self):
+        import json
+        from medical_brain.nodes.chapters import unwrap_script_text, strip_script_extras, english_terms
+        script = "[HOOK]\n\nكلام عربي.\n\n=== الفصل الأول ===\n" + "سطر عربي.\n" * 30
+        wrapped = json.dumps({"type": "json_object", "script": script}, ensure_ascii=False)
+        self.assertEqual(unwrap_script_text(wrapped), script)
+        escaped = script.replace("\n", "\\n")
+        self.assertEqual(unwrap_script_text(escaped), script)
+        self.assertEqual(english_terms(strip_script_extras(wrapped))[0], [])
+        self.assertEqual(unwrap_script_text(script), script)

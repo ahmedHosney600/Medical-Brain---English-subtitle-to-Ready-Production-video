@@ -485,7 +485,7 @@ The ORIGINAL SOURCE above is a verified RESEARCH DOSSIER with citations [S#]. Ev
         
         truth_score = pick(data, "truth_score", default=0, kind=int)
         truth_pass = pick(data, "truth_pass", default=False, kind=bool)
-        verified_script = (data.get("verified_script", "") or "").strip()
+        verified_script = chapters.unwrap_script_text((data.get("verified_script", "") or "").strip()).strip()
         # A degenerate answer (looping / drifting into English) must never become the
         # script: a run's verified_script came back 11,034 words for a 1,794-word input,
         # ~6,750 of them English. Keep the input and let the next round verify again.

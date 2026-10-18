@@ -714,6 +714,37 @@ def normalize_section_headers(text: str) -> str:
     return "\n".join(lines) if changed else text
 
 
+_SCRIPT_KEYS = ("script", "verified_script", "revised_script", "refined_script", "text", "content", "output")
+
+
+def unwrap_script_text(text: str) -> str:
+    """The script inside a double-encoded answer. A verifier once returned
+    '{"type":"json_object","script":"[HOOK]\\n\\n…"}' as its corrected script: the escaped
+    "\\n" read as thousands of English words and the script lost every line break and
+    header. JSON objects give back their script field; text full of literal "\\n" with
+    almost no real line breaks is decoded. Anything else comes back unchanged."""
+    raw = text or ""
+    stripped = raw.strip()
+    if stripped.startswith("```"):
+        stripped = re.sub(r"^```[\w-]*\s*|\s*```$", "", stripped).strip()
+    if stripped.startswith("{") and stripped.endswith("}"):
+        try:
+            data = json.loads(stripped)
+        except ValueError:
+            data = None
+        if isinstance(data, dict):
+            for key in _SCRIPT_KEYS:
+                value = data.get(key)
+                if isinstance(value, str) and value.strip():
+                    return unwrap_script_text(value)
+                if isinstance(value, dict):
+                    return unwrap_script_text(json.dumps(value, ensure_ascii=False))
+    literal = raw.count("\\n")
+    if literal >= 20 and raw.count("\n") * 4 < literal:
+        return raw.replace("\\n", "\n").replace('\\"', '"').replace("\\t", "\t")
+    return raw
+
+
 def strip_script_extras(text: str) -> str:
     """Drop the non-spoken wrapper a polishing pass may add: a leading metadata block
     ("SCRIPT: …", "Word Count: …" up to the first ---) and a trailing
@@ -722,6 +753,9 @@ def strip_script_extras(text: str) -> str:
     original = text or ""
     if not original.strip():
         return original
+    unwrapped = unwrap_script_text(original)
+    if unwrapped != original:
+        return strip_script_extras(unwrapped)
     raw = original.replace("\r\n", "\n").replace("\r", "\n").strip()
     lines = raw.split("\n")
     changed = False
