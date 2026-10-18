@@ -428,6 +428,7 @@ def _overlay_chapter_mode(state: PipelineState, system_prompt: str, blueprint: d
                                        ew.blueprint_wpm(state.get("blueprint")))
     joined = move_overlays_out_of_drawings(fix_overlay_read_times(joined), state.get("refined_script", ""),
                                            ew.blueprint_wpm(state.get("blueprint")))
+    joined = order_overlay_cards(joined, state.get("refined_script", ""), ew.blueprint_wpm(state.get("blueprint")))
     return {"text_animation_overlay": joined,
             "production_chapter_outputs": _store_step(state, "text_animation_overlay", outputs)}
 
@@ -473,8 +474,9 @@ PRODUCTION CRITIQUE REPORT:
     response = retime_drawing_specs(response, state.get("refined_script", ""), ew.blueprint_wpm(state.get("blueprint")))
     response = ew.rewrite_cue_timestamps(response, state.get("refined_script", ""),
                                          ew.blueprint_wpm(state.get("blueprint")))
-    return {"text_animation_overlay": move_overlays_out_of_drawings(
-        fix_overlay_read_times(response), state.get("refined_script", ""), ew.blueprint_wpm(state.get("blueprint")))}
+    wpm = ew.blueprint_wpm(state.get("blueprint"))
+    response = move_overlays_out_of_drawings(fix_overlay_read_times(response), state.get("refined_script", ""), wpm)
+    return {"text_animation_overlay": order_overlay_cards(response, state.get("refined_script", ""), wpm)}
 
 
 def text_animation_overlay_designer(state: PipelineState) -> dict:
@@ -2352,6 +2354,18 @@ def retime_drawing_specs(guide: str, script: str, wpm: float) -> str:
             start, stop = windows[0]
             stop = stop if stop is not None and stop > start else start + DRAWING_WINDOW_SECONDS
             label = f"{_fmt_seconds(start)} – {_fmt_seconds(stop)} ({round(stop - start)}s total)"
+            # Every other time in the spec (step times, "the editor cuts at 01:36 and back
+            # at 01:56") moves by the same offset and stays inside the window: a critique
+            # found three different windows in one spec.
+            first = _TIME_RANGE_RE.search(block)
+            old_start = _seconds(first.group(1)) if first else None
+            if old_start is not None:
+                delta = start - old_start
+
+                def shift(m):
+                    value = min(max(int(m.group(1)) * 60 + int(m.group(2)) + delta, start), stop)
+                    return _fmt_seconds(value)
+                block = re.sub(r"(?<![\d:])(\d{1,2}):(\d{2})(?![\d:])", shift, block)
             new_block, k = _TIME_RANGE_RE.subn(
                 lambda m: label + ("`" if m.group(3) and m.group(3).startswith("`") else ""), block, count=1)
             if k and new_block != block:
@@ -2510,6 +2524,101 @@ def move_overlays_out_of_drawings(text: str, script: str, wpm: float) -> str:
     if not moved and not cut:
         return text
     print(f"  🔧 overlays: moved {moved} cards off whiteboard drawings, shortened {cut} to end at one")
+    text = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+    return ew.rewrite_cue_timestamps(text, script, wpm)
+
+
+def _overlay_slot(position: str) -> str:
+    """The screen zone a card occupies: full-width/centre cards share one zone."""
+    p = (position or "").lower()
+    if "full" in p or "center" in p or "centre" in p or "middle" in p:
+        return "center"
+    if "top" in p or "upper" in p:
+        return "top-left" if "left" in p else "top-right"
+    if "bottom" in p or "lower" in p:
+        return "bottom"
+    return "center"
+
+
+def order_overlay_cards(text: str, script: str, wpm: float) -> str:
+    """Sorts each overlay table by spoken time and renumbers 1..n across the guide (a
+    critique found rows 38 (9:39) above 39 (9:30)); a card overlapping an earlier card in
+    the same screen zone waits for it (two full-width titles fired on one frame at 5:22);
+    a second section TITLE within 10 s of another is dropped. Runs before the B-roll and
+    transition steps read the overlay numbers."""
+    if not text or not script:
+        return text
+    sentences = _script_sentences(script, wpm)
+    norm_script = ew.normalize_ar(ew.spoken_text(script))
+    lines = text.splitlines()
+    number, queued, dropped, reordered = 0, 0, 0, False
+    i = 0
+    while i < len(lines):
+        if not lines[i].strip().startswith("|"):
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and lines[j].strip().startswith("|"):
+            j += 1
+        upper = [c.upper() for c in _table_cells(lines[i])]
+
+        def col(*names):
+            return next((k for k, h in enumerate(upper) if any(n in h for n in names)), None)
+
+        element_col, start_col, end_col = col("ELEMENT"), col("START CUE", "▶"), col("END CUE", "⏹")
+        hold_col, pos_col = col("HOLD"), col("POSITION")
+        num_col = next((k for k, h in enumerate(upper) if h.strip() == "#"), None)
+        if element_col is None or start_col is None:
+            i = j
+            continue
+        separator = i + 1 < j and chapters.is_separator_row(lines[i + 1])
+        first = i + (2 if separator else 1)
+        rows, pos = [], 0
+        for k in range(first, j):
+            cells = _table_cells(lines[k])
+            if len(cells) <= max(element_col, start_col):
+                continue
+            t = ew.cue_seconds(cells[start_col], script, wpm, after=max(0, pos - 400))
+            rows.append([t if t is not None else float("inf"), len(rows), cells])
+        if [r[1] for r in sorted(rows, key=lambda r: (r[0], r[1]))] != [r[1] for r in rows]:
+            reordered = True
+        rows.sort(key=lambda r: (r[0], r[1]))
+        kept, busy, last_title = [], {}, None
+        for t, _, cells in rows:
+            element = cells[element_col].upper()
+            hold = re.search(r"\d+(?:\.\d+)?", cells[hold_col]) if hold_col is not None and hold_col < len(cells) else None
+            length = float(hold.group(0)) if hold else 4.0
+            if "DRAWING" in element or "WHITEBOARD" in element or t == float("inf"):
+                kept.append(cells)
+                continue
+            if "TITLE" in element:
+                if last_title is not None and t - last_title < 10.0:
+                    dropped += 1
+                    continue
+                last_title = t
+            slot = _overlay_slot(cells[pos_col] if pos_col is not None and pos_col < len(cells) else "")
+            if busy.get(slot, -1.0) > t + 0.25:
+                sentence = _first_sentence(sentences, busy[slot], None)
+                if sentence is not None:
+                    cells[start_col] = _sentence_cue(sentence, norm_script)
+                    if end_col is not None and end_col < len(cells):
+                        cells[end_col] = " ".join(sentence["words"][-4:])
+                    t = sentence["start_s"]
+                    queued += 1
+            busy[slot] = t + length
+            kept.append(cells)
+        out = []
+        for cells in kept:
+            number += 1
+            if num_col is not None and num_col < len(cells):
+                cells[num_col] = str(number)
+            out.append("| " + " | ".join(cells) + " |")
+        lines[first:j] = out
+        i = first + len(out)
+    if not (queued or dropped or reordered):
+        return text
+    print(f"  🔧 overlays: time-ordered the cards, queued {queued} that overlapped in one screen zone, "
+          f"dropped {dropped} duplicate section titles")
     text = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
     return ew.rewrite_cue_timestamps(text, script, wpm)
 

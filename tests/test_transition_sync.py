@@ -587,3 +587,19 @@ class SelfCutTest(unittest.TestCase):
         self.assertNotIn("| self |", out)
         self.assertIn("push", out)
         self.assertIn("B-roll #3 (Props) → Talking Head (Medium)", out)
+
+
+class DrawingSpecShiftTest(unittest.TestCase):
+    def test_every_time_in_the_spec_moves_with_the_window(self):
+        guide = ("#### Drawing Animation 1: Pump\n- **Timing**: `0:27 – 0:39` (12s total)\n"
+                 f"  - *Step 1 (0:27 – 0:31)*: pump\n    *Exact spoken line*: «{sentence(2)}»\n"
+                 f"  - *Step 2 (0:31 – 0:39)*: payoff\n    *Exact spoken line*: «{sentence(3)}»\n"
+                 "- **Placement**: the editor cuts in at 0:27 and back at 0:39\n"
+                 "- **Whiteboard image prompt**: a pump\n")
+        with mock.patch("builtins.print"):
+            out = production.retime_drawing_specs(guide, script(), 60)
+        self.assertIn("0:10 – 0:22 (12s total)", out)
+        self.assertIn("Step 1 (0:10 – 0:14)", out)
+        self.assertIn("cuts in at 0:10 and back at 0:22", out)
+        with mock.patch("builtins.print"):
+            self.assertEqual(production.retime_drawing_specs(out, script(), 60), out)
