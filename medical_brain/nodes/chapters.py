@@ -670,6 +670,8 @@ _WRAPPED_HEADER_RE = re.compile(r"^\s*===\s*\[\s*(.*?)\s*\](?:\s*\|[^=\[\]]*)?\s
 _SECTION_WORD_RE = re.compile(r"^(?:الفصل|المقدمة|الخاتمة|المقدّمة|ACT\b|CHAPTER\b|PART\b|INTRO|OUTRO)", re.IGNORECASE)
 # A bold cue line ("**[VISUAL NOTE: …]**", "**[نبرة واثقة]**", "**SFX: …**") is not a title.
 BOLD_TITLE_MAX = 12
+_LABEL_LINE_RE = re.compile(r"^\s*\**\s*(?:HOOK|BODY|INTRO|OUTRO|CTA|CLOSING|BRIDGE|DISCLAIMER)"
+                            r"(?:\s*[+&/،,—–-]\s*(?:HOOK|BODY|INTRO|OUTRO|CTA|CLOSING|BRIDGE|DISCLAIMER))*\s*\**\s*$")
 _BOLD_CUE_RE = re.compile(r"^(?:\[|\(|[A-Z][A-Z0-9 \-/&+]*:|(?:نبرة|وقفة|طاقة|نظرة|ميل|ابتسامة|صوت|حركة)\b)")
 _BOLD_TITLE_RE = re.compile(r"^\s*\*\*([^*\n]{3,110}?)\*\*\s*$")
 _TIME_OR_ENERGY_RE = re.compile(r"^(?:timestamp\s*:\s*)?~?\d{1,2}:\d{2}|^energy\b|^\d+(?:\.\d+)?\s*/\s*5$", re.IGNORECASE)
@@ -689,6 +691,12 @@ def normalize_section_headers(text: str) -> str:
         del lines[k]
     bold_converted = []
     for i, line in enumerate(lines):
+        if _LABEL_LINE_RE.match(line):
+            # A bare production label line ("CTA + OUTRO", "BODY") is a section marker,
+            # not spoken English.
+            lines[i] = f"=== {line.strip().strip('*').strip()} ==="
+            changed = True
+            continue
         m = _WRAPPED_HEADER_RE.match(line) or (_HEADER_RE.match(line) if "|" in line else None)
         if m:
             title = m.group(1).strip()

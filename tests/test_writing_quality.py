@@ -755,3 +755,24 @@ class RewordedTitleTest(unittest.TestCase):
             self.assertEqual(missing_chapters(bp, script), [])
             self.assertEqual(missing_chapters(bp, "=== كذبة المغنيسيوم والموز ===\nنص\n"),
                              ["إزاي العضلة بتفك ميكانيكياً في ثواني؟"])
+
+
+class LabelLineAndCueTest(unittest.TestCase):
+    def test_bare_label_line_becomes_header(self):
+        from medical_brain.nodes.chapters import normalize_section_headers, english_terms
+        out = normalize_section_headers("كلام\n\nCTA + OUTRO\n\nاشترك\n")
+        self.assertIn("=== CTA + OUTRO ===", out)
+        self.assertEqual(english_terms(out)[0], [])
+
+    def test_english_fix_never_sends_cue_text(self):
+        from medical_brain.nodes import quality
+        script = ("[VISUAL NOTE: Medium shot — Dr. Ahmed,\nwarm practical light.]\n"
+                  "الـ DASH نظام أكل مفيد للضغط.\n")
+        calls = []
+        def fake(system, user, **kw):
+            calls.append(user)
+            return ({"edits": []}, "raw")
+        with mock.patch.object(quality, "call_llm_json", side_effect=fake), mock.patch("builtins.print"):
+            quality._plain_terms_fix_pass(script)
+        self.assertIn("DASH", calls[0])
+        self.assertNotIn("warm practical light", calls[0])

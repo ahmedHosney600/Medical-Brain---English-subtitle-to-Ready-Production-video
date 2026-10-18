@@ -397,8 +397,10 @@ def _plain_terms_fix_pass(script: str) -> tuple:
     bare, groups = chapters.english_terms(script)
     if not bare and len(groups) <= MAX_ENGLISH_TERMS:
         return script, []
-    sentences = [s for s in re.split(r"(?<=[.!?؟…])\s+|\n+", script)
-                 if re.search(r"[A-Za-z]{3,}", s) and not s.strip().startswith(("[", "===", "#", "|"))]
+    # Spoken sentences only: editor notes inside [cues] (even multi-line ones) are the
+    # editor's language and are never sent — a run translated its camera directions.
+    sentences = [s for s in re.split(r"(?<=[.!?؟…])\s+|\n+", chapters.spoken_text(script))
+                 if re.search(r"[A-Za-z]{3,}", s) and s.strip() in script]
     user_prompt = (
         "Fix the English terms in this Egyptian-Arabic medical video script.\n"
         "RULES: every English term comes AFTER its plain Egyptian meaning, in parentheses — "
