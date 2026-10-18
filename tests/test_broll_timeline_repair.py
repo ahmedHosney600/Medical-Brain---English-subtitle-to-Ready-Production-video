@@ -272,3 +272,17 @@ class RepeatedFamilyTest(unittest.TestCase):
         out, report = repair(table)
         self.assertNotIn("re_imaged", report)
         self.assertEqual(fake.calls, [])
+
+
+class DrawingRepeatTest(unittest.TestCase):
+    def test_broll_repeating_a_drawings_metaphor_is_re_imaged(self):
+        table = HEAD + row(1, 0) + row(2, 3) + row(3, 6) + row(4, 9)
+        guide = ("### Drawing Animations\nDrawing Animation 1: The switchboard\n"
+                 "- **Subject Description**: a drawn electrical switchboard with two circuits\n")
+        use(self, production, "call_llm_json", FakeLLM(lambda *a: ({"repeats": [], "repeats_drawing": [3]}, "raw")))
+        fake = use(self, production, "call_llm", FakeLLM(
+            lambda *a: "| 9 | 9:59 | X | X | 🎬 Video | woman stretching at sunrise, dolly |"))
+        with mock.patch("builtins.print"):
+            out, report = production.repair_broll_timeline({"text_animation_overlay": guide}, table, script(30), 60)
+        self.assertEqual(report["re_imaged"], 1)
+        self.assertIn("switchboard", fake.calls[0]["user"])
