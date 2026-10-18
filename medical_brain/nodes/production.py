@@ -1309,20 +1309,31 @@ def _drawing_duration(text: str):
 
 
 def _drawing_cues(block: str) -> list:
-    """Spoken cues of a prose drawing spec's build steps."""
-    cues = []
-    # "Cue: «…»", and the markdown form "*Narration Cue*: *«…»*".
-    for match in re.finditer(r"(?i)\bcue\b\s*\**\s*[:\-–]\s*\**\s*[“\"«]?\s*([^”\"»\n)]+)", block or ""):
-        cue = match.group(1).strip(" \"'“”«»`*.-–—")
-        if cue:
-            cues.append(cue)
-    if not cues:
+    """Spoken (Arabic) cues of a prose drawing spec's build steps, in order: "Cue: «…»",
+    "*Narration Cue*: *«…»*", "*Exact spoken line*: `«…»`", "*Spoken beat*: «…»", and any
+    «…» quote. The caller tries them in order, so an English caption that is not in the
+    script no longer hides the real lines (a real spec's only "cue" was an English
+    caption, and its drawing got no window)."""
+    found = []
+    for match in re.finditer(r"(?i)\b(?:cue|spoken line|spoken beat|narration|line|beat)\b\s*\**\s*[:\-–]\s*[*`\s]*"
+                             r"[“\"«]?\s*([^”\"»\n)`]+)", block or ""):
+        found.append((match.start(1), match.group(1)))
+    for match in re.finditer(r"«([^»\n]{3,})»", block or ""):
+        found.append((match.start(1), match.group(1)))
+    if not found:
         for line in (block or "").splitlines():
             if not re.search(r"(?i)\bstep\b|^\s*(?:\d+[.)]|[-*•])\s+", line):
                 continue
-            quoted = re.search(r"[“\"«]([^”\"»]{3,})[”\"»]", line)
+            quoted = re.search(r"[“\"]([^”\"]{3,})[”\"]", line)
             if quoted:
-                cues.append(quoted.group(1).strip())
+                found.append((0, quoted.group(1)))
+    cues, seen = [], set()
+    for _, raw in sorted(found, key=lambda item: item[0]):
+        cue = raw.strip(" \"'“”«»`*.-–—")
+        if len(cue.split()) < 2 or cue in seen:      # unfound captions are skipped by the caller
+            continue
+        seen.add(cue)
+        cues.append(cue)
     return cues
 
 
@@ -1396,7 +1407,11 @@ def _prose_drawing_windows(guide: str, script: str, wpm: float) -> list:
             r"(?im)^[^\n]*draw-on video prompt[^\n]*$", guide or "")]
     if not anchors:
         return []
-    section = re.search(r"(?im)^\s*#{2,6}\s*drawing animations\b", guide or "")
+    # Only a "Drawing Animations" heading BEFORE the first spec counts: a block cut at the
+    # next spec's heading can hold the next chapter's section heading, and starting there
+    # (after every anchor) found no drawing at all in a real run.
+    section = next((m for m in re.finditer(r"(?im)^\s*#{2,6}\s*drawing animations\b", guide or "")
+                    if m.start() < anchors[0]), None)
     previous, windows = (section.start() if section else 0), []
     for pos in anchors:
         block = (guide or "")[previous:pos]

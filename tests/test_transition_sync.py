@@ -542,3 +542,19 @@ class MoveOnCutTest(unittest.TestCase):
             out = production.drop_moves_on_cuts(transition, script(), 60)
         self.assertNotIn("punch-in", out)
         self.assertIn("reframe later", out)
+
+
+class ProseDrawingFormatTest(unittest.TestCase):
+    def test_exact_spoken_line_format_and_next_chapter_heading(self):
+        guide = ("### Drawing Animations\n\n#### Drawing Animation 1: Pump\n- **Build sequence**:\n"
+                 "  - *Step 1 (0:10 – 0:15)*: hand draws a pump\n"
+                 f"    *Spoken beat*: `«Pain is muted outside»`\n"
+                 f"    *Exact spoken line*: `«{sentence(2)}»`\n"
+                 f"  - *Step 2*: payoff\n    *Exact spoken line*: `«{sentence(3)}»`\n"
+                 "- **Whiteboard image prompt**: a pump\n\n=== Chapter 2 ===\n### Drawing Animations\n\n"
+                 f"#### Drawing Animation 2: Switch\n    *Exact spoken line*: `«{sentence(8)}»`\n"
+                 "- **Whiteboard image prompt**: a switch\n")
+        windows = production._drawing_windows(guide, script(), 60)
+        self.assertEqual(len(windows), 2)
+        self.assertEqual(windows[0][0], 10.0)
+        self.assertEqual(windows[1][0], 40.0)
