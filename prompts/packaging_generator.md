@@ -18,6 +18,7 @@ THUMBNAIL CONSTRAINTS (non-negotiable):
   * BRIGHT & HIGH-CONTRAST: a well-lit face and subject on a simple, clean background with ONE saturated accent colour; it must read in YouTube's dark mode. No dark, moody, low-key grading.
   * ONE BIG REAL OBJECT: the focal prop is large (about a quarter of the frame), sharp and instantly recognisable (the actual pill strip, the calf, the cuff reading) — the story in one glance.
   * TEXT PLACEMENT FOR ARABIC READERS: the text block sits top-RIGHT (where an Arabic reader's eye lands first) and the face on the LEFT third, never over the face or the object. Give the editor the font (bold Arabic display font such as Cairo / Tajawal ExtraBold), colour (white or yellow) and a dark outline/shadow.
+  * NO TEXT OR NUMBERS INSIDE THE GENERATED IMAGE: image tools garble them. A device screen, label or calendar is shown blank or blurred in the AI prompt; the reading («170/100», «10») is added by the editor as an overlay — say so in Focal Element.
   * VARIETY: the 5 concepts use at least 3 DIFFERENT compositions, e.g. close-up face + big object; split frame «X ولا Y»; macro of the object with the presenter small in a corner; the everyday scene from the script; a simple visual contrast (before/after, right/wrong way) — not five versions of one layout.
 
 {{FACE_RULES}}

@@ -213,6 +213,13 @@ Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B tes
         if absolute and absolute.group(0) not in script:
             code_issues.append(f"TITLE CERTAINTY: «{title}» says «{absolute.group(0)}», which the script never says "
                                "with that certainty — keep the script's strength (a question, «ممكن», «أحياناً»).")
+    for prompt in re.findall(r"(?is)AI Image Generation Prompt\**:?\**\s*(.+?)(?=\n\s*\*\s+\*\*Concept|\n---|\Z)",
+                             state.get("thumbnail_concepts", "")):
+        positive = re.split(r"(?i)negative prompts?", prompt)[0]
+        shown = re.search(r"\b\d{2,3}\s*/\s*\d{2,3}\b|(?:display(?:s|ing)?|reading|showing|written|text)\s+[\"“«'][^\"”»']{1,30}[\"”»']", positive)
+        if shown:
+            code_issues.append(f"THUMBNAIL IMAGE TEXT: the AI prompt asks for «{shown.group(0)[:40]}» inside the image — "
+                               "image tools garble text and numbers; keep the screen/label blank and add it as an overlay.")
     for overlay in thumbnail_texts(state.get("thumbnail_concepts", "")):
         if len(overlay.split()) > 4:
             code_issues.append(f"THUMBNAIL TEXT: «{overlay}» is {len(overlay.split())} words; use 2–4 words in the "

@@ -7,6 +7,7 @@ SCORE EACH FINALIST TITLE 1-10 ON:
 4. SEO KEYWORD PRESENCE — primary keyword (or close natural variant), ideally in the first ~45-60 characters
 5. TITLE/THUMBNAIL COMPLEMENTARITY — the paired thumbnail text adds NEW information
 6. PROMISE-DELIVERY MATCH (hard gate) — quote the script line that pays the promise off. A title promising "3 signs" needs 3 signs; an implied twist must actually land. CERTAINTY counts here: a title more certain than its script line («هو السبب» where the script says «ممكن يبقى») scores ≤ 7.
+DIRECTION MATCH (part of promise-delivery): a title built on the viewer's search phrase must point the same way as the video's answer. If the video's answer is "don't do X" (don't push the pressure down fast, don't stop the drug), the title must say so or clearly signal the twist («إزاي تنزل الضغط بسرعة؟ وليه ده ممكن يضرك») — never promise the very thing the video warns against. A title that does scores ≤ 7 on promise-delivery.
 7. CLARITY OF TOPIC — would a viewer scrolling past know which condition this is about? Unknown jargon («الارتدادي») or no condition name scores low.
 
 MEDICAL SPECIFICS: a title or thumbnail text that adds a medical specific the script's evidence doesn't state — a time to effect ("in 10 seconds", "instantly"), a cure or guarantee, a number or percentage — FAILS honesty even if it would raise CTR. Promise what the video honestly delivers (understanding, practical steps, warning signs).
