@@ -1512,12 +1512,19 @@ def _replace_repeated_families(rows: list, layout: dict, sentences: list, script
         return 0
     header = [c.strip().upper() for c in _table_cells(layout["header"])]
     cue_col = next((k for k, h in enumerate(header) if "MAIN CUE" in h), None)
+    times = _running_row_times(rows, layout, script, wpm, after=after)
+    starts = [s["start_s"] for s in sentences]
     listing = []
     for i, row in enumerate(rows, 1):
         cells = row["cells"]
         text = cells[cue_col] if cue_col is not None and cue_col < len(cells) and cells[cue_col].strip() \
             else (cells[prompt_col][:160] if prompt_col < len(cells) else "")
-        listing.append(f"{i}. {text}")
+        spoken = ""
+        if times[i - 1] is not None:
+            k = max((n for n, t in enumerate(starts) if t <= times[i - 1] + 0.5), default=None)
+            if k is not None:
+                spoken = sentences[k]["text"][:140]
+        listing.append(f"{i}. SAID: «{spoken}» — SHOWS: {text}")
     drawing_note, drawing_ask = "", ""
     if drawings:
         drawing_note = ("\n\nWHITEBOARD DRAWINGS IN THE SAME VIDEO (they already show these ideas):\n"
@@ -1531,7 +1538,10 @@ def _replace_repeated_families(rows: list, layout: dict, sentences: list, script
             + "\n\nGroup shots that repeat the same SUBJECT doing the same ACTION (e.g. several 'man in bed "
               "clutching his temple beside pills'), even if worded differently. Different angles of different "
               "ideas are NOT repeats." + drawing_ask
-            + " Return ONLY JSON: {\"repeats\": [[3, 11, 20], [14, 19]], \"repeats_drawing\": [4]} — [] when none.",
+            + " Also list in \"misfit\" the shots whose picture does NOT show what is SAID at that moment (it "
+              "illustrates a neighbouring sentence or another idea)."
+            + " Return ONLY JSON: {\"repeats\": [[3, 11, 20], [14, 19]], \"repeats_drawing\": [4], \"misfit\": [2, 3]}"
+              " — [] when none.",
             temperature=0.1, max_tokens=800, required=["repeats"])
     except Exception:
         return 0
@@ -1539,6 +1549,8 @@ def _replace_repeated_families(rows: list, layout: dict, sentences: list, script
     # A B-roll repeating a drawing's metaphor is re-imaged; it has no earlier shot to keep.
     drawing_repeats = {int(n) for n in (pick(data, "repeats_drawing", default=[]) or [])
                        if str(n).isdigit() and 1 <= int(n) <= len(rows)}
+    misfits = {int(n) for n in (pick(data, "misfit", default=[]) or [])
+               if str(n).isdigit() and 1 <= int(n) <= len(rows)}
     times = _running_row_times(rows, layout, script, wpm, after=after)
     starts = [s["start_s"] for s in sentences]
     jobs = {}                                   # row number -> what its new picture must avoid
@@ -1554,6 +1566,9 @@ def _replace_repeated_families(rows: list, layout: dict, sentences: list, script
         if prompt_col < len(row["cells"]) and _STAND_IN_DOCTOR_RE.search(row["cells"][prompt_col]):
             jobs.setdefault(n, "a doctor or physician figure — the presenter is the doctor; show the patient, "
                                "the object or the mechanism instead, no doctor in the frame")
+    for n in sorted(misfits):
+        # Its new picture is written for the sentence actually spoken at its start.
+        jobs.setdefault(n, "this picture illustrated a different sentence: " + rows[n - 1]["cells"][prompt_col][:200])
     for n in sorted(drawing_repeats):
         jobs.setdefault(n, "the whiteboard drawing already shows this: "
                         + " | ".join(drawings or []))

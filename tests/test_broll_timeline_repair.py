@@ -296,3 +296,17 @@ class DirectAddressTest(unittest.TestCase):
         windows = production._direct_address_windows(sentences)
         self.assertEqual(len(windows), 1)
         self.assertLess(windows[0][0], sentences[1]["start_s"] + 0.01)
+
+
+class MisfitTest(unittest.TestCase):
+    def test_misfit_shot_is_re_imaged_for_its_own_sentence(self):
+        table = HEAD + row(1, 0) + row(2, 3) + row(3, 6) + row(4, 9)
+        audits = iter([({"repeats": [], "misfit": [2]}, "raw")])
+        seen = use(self, production, "call_llm_json", FakeLLM(lambda *a: next(audits, ({"repeats": []}, "raw"))))
+        fake = use(self, production, "call_llm", FakeLLM(
+            lambda *a: "| 9 | 9:59 | X | X | 🎬 Video | vacutainer tubes on a lab tray, slow push-in |"))
+        out, report = repair(table)
+        self.assertEqual(report["re_imaged"], 1)
+        self.assertIn("vacutainer", out)
+        self.assertIn("SAID: «", seen.calls[0]["user"])           # the audit sees what is spoken
+        self.assertIn(sentence(3), fake.calls[0]["user"])          # new picture for the real line
