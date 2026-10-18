@@ -13,6 +13,12 @@ THUMBNAIL CONSTRAINTS (non-negotiable):
 - One clear focal idea, at most 3 visual elements, strong contrast, readable at phone size.
 - Avoid medical-channel clichés (glowing red heart, hand clutching chest, doctor pointing at an X-ray, red arrows on a body, DNA helix, stethoscope close-up) unless you justify it as the strongest choice.
 - The thumbnail must show something the video really contains — no imagery implying claims the script doesn't make.
+- THUMBNAIL CRAFT (what wins on a phone feed):
+  * FRAMING: head-and-shoulders close-up of the presenter, his face about 35–45% of the frame height — never a small figure seated behind a desk.
+  * BRIGHT & HIGH-CONTRAST: a well-lit face and subject on a simple, clean background with ONE saturated accent colour; it must read in YouTube's dark mode. No dark, moody, low-key grading.
+  * ONE BIG REAL OBJECT: the focal prop is large (about a quarter of the frame), sharp and instantly recognisable (the actual pill strip, the calf, the cuff reading) — the story in one glance.
+  * TEXT PLACEMENT FOR ARABIC READERS: the text block sits top-RIGHT (where an Arabic reader's eye lands first) and the face on the LEFT third, never over the face or the object. Give the editor the font (bold Arabic display font such as Cairo / Tajawal ExtraBold), colour (white or yellow) and a dark outline/shadow.
+  * VARIETY: the 5 concepts use at least 3 DIFFERENT compositions, e.g. close-up face + big object; split frame «X ولا Y»; macro of the object with the presenter small in a corner; the everyday scene from the script; a simple visual contrast (before/after, right/wrong way) — not five versions of one layout.
 
 {{FACE_RULES}}
 
@@ -40,7 +46,7 @@ Each MUST have every field below — no abbreviations, no cross-references to an
 - **Cliché Check**: [trope considered and avoided/justified]
 - **Legibility at Small Size**: [text and focal element clear at phone size]
 - **🤖 AI Image Generation Prompt** *(Google Flow / Nano Banana / Gemini, with the presenter's reference photo)*:
-  One full paragraph: the reference-photo / identity / natural-expression sentence from the face rules, subject (pose, subtle expression, clothing, prop), background, lighting, camera (lens mm, f-stop, angle), composition (which side is kept clear for the Arabic text), color grading, style (photorealistic YouTube thumbnail), negative prompts (no AI artifacts, no extra fingers, no text in image, plus the face-rule negatives). End: Aspect ratio: 16:9.
+  One full paragraph: the reference-photo / identity / natural-expression sentence from the face rules, subject (pose, subtle expression, clothing, prop), background, lighting, camera (lens mm, f-stop, angle), composition (face on the left third, top-right kept clean for the Arabic text, the object large and sharp), bright high-key lighting with clean contrast, color grading, style (photorealistic YouTube thumbnail), negative prompts (no AI artifacts, no extra fingers, no text in image, plus the face-rule negatives). End: Aspect ratio: 16:9.
 
 * **Concept 1**: [all fields in full]
 * **Concept 2**: [all fields in full]

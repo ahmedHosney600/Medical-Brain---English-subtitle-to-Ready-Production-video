@@ -25,6 +25,49 @@ EXTREME_FACE_WORDS = [
 ]
 
 
+TITLE_MAX_CHARS = 60
+# Absolute claims a title may make only when the script says exactly that.
+_ABSOLUTE_RE = re.compile(r"(هو|هي)\s+السبب|بيشفي|يشفي|هيشفي|نهائي[اًا]?|للأبد|مضمون|100\s*%|١٠٠\s*٪|أكيد\s+(?:هـ|ه)")
+# Words in a search phrase that do not name the condition.
+_NOT_TOPIC = {"علاج", "ازاي", "اعرف", "اثناء", "أثناء", "خلال", "ليه", "امتي", "إمتى", "اسباب", "أسباب", "طريقه",
+              "طريقة", "كيف", "في", "من", "علي", "على", "عن", "مع", "او", "أو", "و", "وعلاجه", "وعلاجها", "اعراض",
+              "أعراض", "الحل", "حل", "سبب", "يعني", "ايه", "إيه", "النوم", "بالليل", "الطبيعي", "البيت"}
+
+
+def _bare_word(word: str) -> str:
+    from ..exports.workbook import normalize_ar
+    w = normalize_ar(word)
+    for prefix in ("وال", "بال", "ال", "و", "ب"):
+        if w.startswith(prefix) and len(w) - len(prefix) >= 3:
+            return w[len(prefix):]
+    return w
+
+
+def topic_words(keyword: str) -> set:
+    """The words of the SEO phrase that name the condition («الصداع النصفي» in «ازاي اعرف
+    الصداع النصفي وعلاجه»), without "ال"/"و" prefixes."""
+    from ..exports.workbook import normalize_ar
+    words = {_bare_word(w) for w in (keyword or "").split()
+             if len(w) >= 3 and normalize_ar(w) not in {normalize_ar(x) for x in _NOT_TOPIC}}
+    return {w for w in words if len(w) >= 3}
+
+
+def names_topic(title: str, keyword: str) -> bool:
+    wanted = topic_words(keyword)
+    return not wanted or bool(wanted & {_bare_word(w) for w in (title or "").split()})
+
+
+def thumbnail_texts(thumbnail_text: str) -> list:
+    """The text overlays of the thumbnail concepts ("Bold Arabic Text Overlay ...: `"…"`")."""
+    out = []
+    for line in (thumbnail_text or "").splitlines():
+        if "text overlay" in line.lower():
+            m = re.search(r"[`\"«“]{1,2}([^`\"»”]{2,80})[`\"»”]{1,2}", line.split(":", 1)[-1])
+            if m:
+                out.append(m.group(1).strip())
+    return out
+
+
 def thumbnail_face_rules(state) -> str:
     return (state.get("thumbnail_face_rules") or "").strip() or DEFAULT_THUMBNAIL_FACE_RULES
 
@@ -155,6 +198,23 @@ Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B tes
             code_issues.append(f"TITLE OVERCLAIM: «{title}» promises «{phrase}» — titles must not promise a speed "
                                "or certainty of effect; rewrite it to what the script delivers.")
 
+    script = state.get("refined_script", "") or ""
+    keyword = state.get("seo_primary_keyword", "") or ""
+    for row in title_rows:
+        cells = [c.strip() for c in row.strip().strip("|").split("|")]
+        title = cells[1] if len(cells) > 1 else row
+        if len(title) > TITLE_MAX_CHARS:
+            code_issues.append(f"TITLE LENGTH: «{title}» is {len(title)} characters; keep titles ≤ {TITLE_MAX_CHARS} "
+                               "so the hook isn't cut off on phones.")
+        absolute = _ABSOLUTE_RE.search(title)
+        if absolute and absolute.group(0) not in script:
+            code_issues.append(f"TITLE CERTAINTY: «{title}» says «{absolute.group(0)}», which the script never says "
+                               "with that certainty — keep the script's strength (a question, «ممكن», «أحياناً»).")
+    for overlay in thumbnail_texts(state.get("thumbnail_concepts", "")):
+        if len(overlay.split()) > 4:
+            code_issues.append(f"THUMBNAIL TEXT: «{overlay}» is {len(overlay.split())} words; use 2–4 words in the "
+                               "viewer's own language.")
+
     text = response.strip()
     try:
         if data is None:
@@ -183,6 +243,17 @@ Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B tes
             if honest:
                 print(f"  ⚠️ recommended title overclaims; using «{honest[0]}» instead")
                 recommended = honest[0]
+        # The viewer must see which condition the video is about.
+        if recommended and not names_topic(recommended, keyword):
+            named = [t for t in ab_titles if names_topic(t, keyword) and not overclaim_in(t)]
+            if named:
+                print(f"  ⚠️ recommended title doesn't name the condition; using «{named[0]}» instead")
+                recommended = named[0]
+            else:
+                code_issues.append(f"TOPIC: no A/B title names the condition ({' '.join(sorted(topic_words(keyword)))}); "
+                                   "the recommended title must say what the video is about, naturally.")
+                grade = "NEEDS_REVISION"
+                report += "\n- " + code_issues[-1]
 
         return {
             "packaging_grade": grade,

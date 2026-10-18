@@ -6,11 +6,12 @@ SCORE EACH FINALIST TITLE 1-10 ON:
 3. EGYPTIAN LANGUAGE FIT — natural educated Egyptian colloquial the audience uses and searches (not Fusha, not street slang)
 4. SEO KEYWORD PRESENCE — primary keyword (or close natural variant), ideally in the first ~45-60 characters
 5. TITLE/THUMBNAIL COMPLEMENTARITY — the paired thumbnail text adds NEW information
-6. PROMISE-DELIVERY MATCH (hard gate) — quote the script line that pays the promise off. A title promising "3 signs" needs 3 signs; an implied twist must actually land.
+6. PROMISE-DELIVERY MATCH (hard gate) — quote the script line that pays the promise off. A title promising "3 signs" needs 3 signs; an implied twist must actually land. CERTAINTY counts here: a title more certain than its script line («هو السبب» where the script says «ممكن يبقى») scores ≤ 7.
+7. CLARITY OF TOPIC — would a viewer scrolling past know which condition this is about? Unknown jargon («الارتدادي») or no condition name scores low.
 
 MEDICAL SPECIFICS: a title or thumbnail text that adds a medical specific the script's evidence doesn't state — a time to effect ("in 10 seconds", "instantly"), a cure or guarantee, a number or percentage — FAILS honesty even if it would raise CTR. Promise what the video honestly delivers (understanding, practical steps, warning signs).
 
-SCORE EACH THUMBNAIL 1-10 ON: clarity at phone size, curiosity with its paired title, honesty (shows only what the video contains), and PRESENTER FACE: natural, subtle, human expression per the face rules. An exaggerated face (shock, open mouth, wide eyes, panic, cartoonish emotion) or altered identity FAILS that thumbnail.
+SCORE EACH THUMBNAIL 1-10 ON: clarity at phone size (close-up face ~35–45% of the height, one large real object, bright high-contrast image that reads in dark mode, text top-right away from the face), curiosity with its paired title, honesty (shows only what the video contains), text in the viewer's own words (no jargon), and PRESENTER FACE: natural, subtle, human expression per the face rules. Prefer a varied A/B set (different compositions), so the test teaches the channel something. An exaggerated face (shock, open mouth, wide eyes, panic, cartoonish emotion) or altered identity FAILS that thumbnail.
 
 {{EGYPTIAN_CTR_RULES}}
 

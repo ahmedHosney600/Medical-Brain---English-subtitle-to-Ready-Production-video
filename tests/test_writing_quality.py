@@ -591,3 +591,35 @@ class ShareLineTest(unittest.TestCase):
         has = self.BODY + "\n\nابعت الفيديو ده لأمك. أشوفك في الحلقة الجاية.\n"
         self.assertFalse(ensure_share_line(has)[1])
         self.assertFalse(ensure_share_line("كلام قليل. أشوفك في الحلقة الجاية.")[1])
+
+
+class PackagingChecksTest(unittest.TestCase):
+    def test_topic_and_thumbnail_text_helpers(self):
+        from medical_brain.nodes.packaging import names_topic, thumbnail_texts
+        kw = "ازاي اعرف الصداع النصفي وعلاجه"
+        self.assertFalse(names_topic("ليه المسكن اللي بيريحك هو السبب إنك تصحى مصدع؟", kw))
+        self.assertTrue(names_topic("الصداع النصفي: ليه المسكن ممكن يرجّعه؟", kw))
+        concepts = ('- **Bold Arabic Text Overlay (2-4 words)**: `"فخ الصداع الارتدادي"`\n'
+                    '- **Bold Arabic Text Overlay (2-4 words)**: `"المسكن ده ممكن يكون هو اللي بيصحيك"`')
+        self.assertEqual(thumbnail_texts(concepts), ["فخ الصداع الارتدادي", "المسكن ده ممكن يكون هو اللي بيصحيك"])
+
+    def test_auditor_flags_certainty_length_and_long_overlay_and_fixes_topic(self):
+        import json
+        from medical_brain.nodes import packaging
+        titles = ("| # | Title | Characters | Mechanism | Anchor |\n|---|---|---|---|---|\n"
+                  "| 1 | ليه المسكن اللي بيريحك هو السبب إنك تصحى مصدع؟ | 46 | x | y |\n"
+                  "| 2 | الصداع النصفي: ليه المسكن ممكن يرجّعه؟ | 40 | x | y |\n")
+        answer = {"packaging_grade": "PASS", "packaging_critique_report": "ok", "lowest_ab_promise_delivery_score": 9,
+                  "recommended_title": "ليه المسكن اللي بيريحك هو السبب إنك تصحى مصدع؟",
+                  "ab_test_titles": ["ليه المسكن اللي بيريحك هو السبب إنك تصحى مصدع؟",
+                                     "الصداع النصفي: ليه المسكن ممكن يرجّعه؟"], "ab_test_thumbnails": []}
+        state = {"title_options": titles, "seo_primary_keyword": "ازاي اعرف الصداع النصفي وعلاجه",
+                 "refined_script": "المسكن ممكن يبقى هو نفسه السبب.",
+                 "thumbnail_concepts": '- **Bold Arabic Text Overlay**: `"المسكن ده ممكن يكون هو اللي بيصحيك"`'}
+        with mock.patch.object(packaging, "call_llm_json", return_value=(answer, json.dumps(answer))), \
+                mock.patch("builtins.print"):
+            out = packaging.packaging_honesty_ctr_auditor(state)
+        self.assertEqual(out["recommended_title"], "الصداع النصفي: ليه المسكن ممكن يرجّعه؟")
+        self.assertIn("TITLE CERTAINTY", out["packaging_critique_output"])
+        self.assertIn("THUMBNAIL TEXT", out["packaging_critique_output"])
+        self.assertEqual(out["packaging_grade"], "NEEDS_REVISION")
