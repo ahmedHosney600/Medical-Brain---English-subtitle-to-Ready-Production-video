@@ -447,3 +447,15 @@ class FuzzyFlashAndDoctorTest(unittest.TestCase):
         self.assertTrue(production._STAND_IN_DOCTOR_RE.search("An Egyptian doctor gesturing at a desk, slow push-in"))
         self.assertFalse(production._STAND_IN_DOCTOR_RE.search("the doctor's hand holding a pill strip, macro"))
         self.assertTrue(production._DIRECT_ADDRESS_RE.search("أهلاً بيكم، أنا د. أحمد حسني"))
+
+
+class EarlyExitTest(unittest.TestCase):
+    def test_exit_a_second_after_entry_moves_to_the_broll_end(self):
+        transition = transition_table(transition_row(1, 2, "Talking Head → B-roll #1", "in"),
+                                      transition_row(2, 2, "B-roll #1 → Talking Head", "out too soon"))
+        broll = broll_table(broll_row(1, 2, 3))                       # clip runs sentence 2 → end of 3
+        with mock.patch("builtins.print"):
+            out, _ = sync(transition, broll)
+        rows = transition_rows(out)
+        exit_row = [r for r in rows if r["cells"][3].startswith("B-roll #1")][0]
+        self.assertEqual(exit_row["cells"][2], end_cue(3))

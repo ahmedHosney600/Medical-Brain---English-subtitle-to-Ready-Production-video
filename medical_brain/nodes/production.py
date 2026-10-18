@@ -2765,6 +2765,27 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
             dropped_moves += 1
     if dropped_moves:
         print(f"  🔧 transition map: removed {dropped_moves} presenter moves hidden under a B-roll")
+    # A cut OUT of B-roll #N a second after cutting in flashes the clip: the exit belongs
+    # at the B-roll's END CUE (a critique found four 1–2 s flashes of 5–7 s clips).
+    flat = [(block, row) for block in blocks for row in block["rows"]]
+    flat_times = _transition_row_times(blocks, script, wpm)
+    by_num = {str(r.get("num", "")).strip(): (r, st, en) for r, st, en in zip(brolls, starts, ends)}
+    stretched = 0
+    for (block, row), t in zip(flat, flat_times):
+        source = re.split(r"\s*(?:→|->)\s*", _row_cell(row, block["cols"], "from_to"), maxsplit=1)[0]
+        m = _BROLL_REF.search(source)
+        cue_col = block["cols"].get("cue")
+        if not m or t is None or cue_col is None or cue_col >= len(row["cells"]):
+            continue
+        entry = by_num.get(m.group(2))
+        if not entry:
+            continue
+        brow, st, en = entry
+        if st is not None and en is not None and brow.get("end") and st - 0.5 <= t < min(st + 2.5, en - 1.0):
+            row["cells"][cue_col] = brow["end"]
+            stretched += 1
+    if stretched:
+        print(f"  🔧 transition map: moved {stretched} early B-roll exits to the clip's end")
     # A code-added cut is redundant when another row already names that B-roll edge at
     # the same moment (a relabelled designed row + a code-added row both "→ B-roll #5").
     flat = [(block, row) for block in blocks for row in block["rows"]]
