@@ -371,3 +371,17 @@ class GraphicDrawingOverlapTest(unittest.TestCase):
         self.assertIn("3D Artery Animation", found[0])
         entry = transition_table(transition_row(1, 6, "Talking Head → Analogy Graphic", "the drawing"))
         self.assertEqual(production.graphic_drawing_overlaps(entry, guide, script(), 60), [])
+
+
+class GraphicBecomesDrawingTest(unittest.TestCase):
+    def test_overlapping_graphic_is_renamed_to_the_drawing(self):
+        guide = ("### Drawing Animations\nDrawing Animation 1: Stomach gate\n"
+                 f"* Step 1: Narration Cue: «{sentence(6)}»\n* **Total: 12s**\n* **Whiteboard Image Prompt**: gate\n")
+        transition = transition_table(transition_row(1, 5, "Talking Head → Animated Digestive Diagram", "a"),
+                                      transition_row(2, 9, "Animated Digestive Diagram → Talking Head", "b"))
+        with mock.patch("builtins.print"):
+            out, _ = sync(transition, broll_table(broll_row(1, 0, 0)), state={"text_animation_overlay": guide})
+        froms = [r["cells"][3] for r in transition_rows(out)]
+        self.assertIn("Talking Head → Whiteboard Drawing 1", froms)
+        self.assertIn("Whiteboard Drawing 1 → Talking Head", froms)
+        self.assertEqual(production.graphic_drawing_overlaps(out, guide, script(), 60), [])

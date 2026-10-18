@@ -2448,6 +2448,40 @@ def _presenter_only(from_to: str) -> bool:
     return bool(_PRESENTER_WORDS.search(text)) and not _VISUAL_WORDS.search(text)
 
 
+def _graphics_become_drawings(blocks: list, overlay_guide: str, script: str, wpm: float) -> int:
+    """A transition-map graphic (animation/diagram/split-screen) on screen across a
+    whiteboard drawing is the same explanation drawn twice: the drawing owns it. The
+    graphic's name in every From → To cell is replaced by the drawing, so the cuts keep
+    their timing and lead to one visual. A critique asked for exactly this in three runs."""
+    drawings = _drawing_windows(overlay_guide or "", script, wpm)
+    if not drawings or not blocks:
+        return 0
+    rows = [(block, row) for block in blocks for row in block["rows"]]
+    timed = sorted([(t, block, row) for (block, row), t in zip(rows, _transition_row_times(blocks, script, wpm))
+                    if t is not None], key=lambda item: item[0])
+    renamed = 0
+    for k, (t, block, row) in enumerate(timed):
+        at = block["cols"].get("from_to")
+        if at is None or at >= len(row["cells"]):
+            continue
+        parts = re.split(r"\s*(?:→|->)\s*", row["cells"][at], maxsplit=1)
+        target = parts[-1].strip() if len(parts) == 2 else ""
+        if not target or not _GRAPHIC_TO_RE.search(target) or re.search(r"(?i)b-?\s?roll|drawing|whiteboard|sketch", target):
+            continue
+        until = next((u for u, _, _ in timed[k + 1:] if u > t + 0.5), t + GRAPHIC_AFTER_SECONDS)
+        hit = next((n for n, (a, b) in enumerate(drawings, 1) if t < b - 1.0 and until > a + 1.0), None)
+        if hit is None:
+            continue
+        name = f"Whiteboard Drawing {hit}"
+        for other_t, other_block, other in timed:
+            oat = other_block["cols"].get("from_to")
+            if oat is not None and oat < len(other["cells"]) and t - 0.5 <= other_t <= until + 1.0 \
+                    and target in other["cells"][oat]:
+                other["cells"][oat] = other["cells"][oat].replace(target, name)
+        renamed += 1
+    return renamed
+
+
 def _sync_transition_once(state: PipelineState, transition_design: str, broll_table: str,
                           script: str, wpm: float, broll_out: list = None,
                           map_out: dict = None) -> tuple:
@@ -2473,6 +2507,9 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
 
     target = next((block for block in blocks if block["cols"]["cue"] is not None), blocks[0])
     starts, ends = _broll_row_times(brolls, script, wpm)
+    replaced = _graphics_become_drawings(blocks, (state or {}).get("text_animation_overlay", ""), script, wpm)
+    if replaced:
+        print(f"  🔧 transition map: {replaced} graphic(s) overlapping a whiteboard drawing now cut to the drawing")
     row_refs = [(block, row) for block in blocks for row in block["rows"]]
     # A presenter-only move (punch-in, reframe) is not a cut to anything: it neither
     # covers a B-roll's entry nor may be relabelled as one (a critique found "Scale +
