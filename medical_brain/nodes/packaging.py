@@ -27,7 +27,8 @@ EXTREME_FACE_WORDS = [
 
 TITLE_MAX_CHARS = 60
 # Absolute claims a title may make only when the script says exactly that.
-_ABSOLUTE_RE = re.compile(r"(هو|هي)\s+السبب|بيشفي|يشفي|هيشفي|نهائي[اًا]?|للأبد|مضمون|100\s*%|١٠٠\s*٪|أكيد\s+(?:هـ|ه)")
+_ABSOLUTE_RE = re.compile(r"(هو|هي)\s+(ال)?سبب|بيشفي|يشفي|هيشفي|نهائي[اًا]?|للأبد|مضمون|100\s*%|١٠٠\s*٪|أكيد\s+(?:هـ|ه)"
+                          r"|بسرعة|في\s+ثواني|في\s+دقايق|على\s+طول|فوراً?")
 # Words in a search phrase that do not name the condition.
 _NOT_TOPIC = {"علاج", "ازاي", "اعرف", "اثناء", "أثناء", "خلال", "ليه", "امتي", "إمتى", "اسباب", "أسباب", "طريقه",
               "طريقة", "كيف", "في", "من", "علي", "على", "عن", "مع", "او", "أو", "و", "وعلاجه", "وعلاجها", "اعراض",
@@ -207,6 +208,8 @@ Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B tes
             code_issues.append(f"TITLE LENGTH: «{title}» is {len(title)} characters; keep titles ≤ {TITLE_MAX_CHARS} "
                                "so the hook isn't cut off on phones.")
         absolute = _ABSOLUTE_RE.search(title)
+        if absolute and re.search(r"طوارئ|طواري|مستشفى|دكتور|إسعاف|اسعاف", title):
+            absolute = None                    # "go to the ER immediately" is advice, not an effect claim
         if absolute and absolute.group(0) not in script:
             code_issues.append(f"TITLE CERTAINTY: «{title}» says «{absolute.group(0)}», which the script never says "
                                "with that certainty — keep the script's strength (a question, «ممكن», «أحياناً»).")
@@ -243,9 +246,20 @@ Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B tes
             if honest:
                 print(f"  ⚠️ recommended title overclaims; using «{honest[0]}» instead")
                 recommended = honest[0]
+        def unearned_certainty(title):
+            m = _ABSOLUTE_RE.search(title or "")
+            return bool(m and not re.search(r"طوارئ|طواري|مستشفى|دكتور|إسعاف|اسعاف", title)
+                        and m.group(0) not in script)
+
+        if recommended and unearned_certainty(recommended):
+            honest = [t for t in ab_titles if not unearned_certainty(t) and not overclaim_in(t)]
+            if honest:
+                print(f"  ⚠️ recommended title is more certain than the script; using «{honest[0]}» instead")
+                recommended = honest[0]
         # The viewer must see which condition the video is about.
         if recommended and not names_topic(recommended, keyword):
-            named = [t for t in ab_titles if names_topic(t, keyword) and not overclaim_in(t)]
+            named = [t for t in ab_titles if names_topic(t, keyword) and not overclaim_in(t)
+                     and not unearned_certainty(t)]
             if named:
                 print(f"  ⚠️ recommended title doesn't name the condition; using «{named[0]}» instead")
                 recommended = named[0]

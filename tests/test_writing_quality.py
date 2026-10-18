@@ -631,3 +631,19 @@ class PlainPipeHeaderTest(unittest.TestCase):
         out = normalize_section_headers("=== فخ المسكنات | 3:39 | Energy: 4 ===\nكلام\n=== CTA | 11:00 | Energy: 3/5 ===\n")
         self.assertIn("=== فخ المسكنات ===", out)
         self.assertIn("=== CTA | 11:00 | Energy: 3/5 ===", out)      # production label left for re-timing
+
+
+class RecommendedTitleCertaintyTest(unittest.TestCase):
+    def test_speed_promise_is_swapped_for_an_honest_title(self):
+        import json
+        from medical_brain.nodes import packaging
+        answer = {"packaging_grade": "PASS", "packaging_critique_report": "ok", "lowest_ab_promise_delivery_score": 9,
+                  "recommended_title": "إزاي توقف الصداع النصفي بسرعة أول ما يبدأ؟",
+                  "ab_test_titles": ["إزاي توقف الصداع النصفي بسرعة أول ما يبدأ؟",
+                                     "صداع جيوب أنفية ولا صداع نصفي؟ إزاي تفرق بينهم"], "ab_test_thumbnails": []}
+        state = {"title_options": "", "seo_primary_keyword": "ازاي اعرف الصداع النصفي وعلاجه",
+                 "refined_script": "المسكن بيشتغل أحسن لما تاخده بدري.", "thumbnail_concepts": ""}
+        with mock.patch.object(packaging, "call_llm_json", return_value=(answer, json.dumps(answer))), \
+                mock.patch("builtins.print"):
+            out = packaging.packaging_honesty_ctr_auditor(state)
+        self.assertEqual(out["recommended_title"], "صداع جيوب أنفية ولا صداع نصفي؟ إزاي تفرق بينهم")
