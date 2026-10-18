@@ -379,7 +379,9 @@ RESTRUCTURE STRATEGY PLAN (terminology retention, act breakdown):
 B-ROLL AVAILABILITY: {state.get("broll_availability", "")}
 TARGET PLATFORM: {state.get("target_platform", "")}
 
-Read this chapter's script and transition map together. Classify every element as one of the 5 primary types: TOP-RIGHT POPUP, TEXT OVERLAY TITLE, WARNING/ALERT BOX, QUOTE BOX, or KINETIC TEXT. For every English technical term in the script, generate a TOP-RIGHT POPUP with its Arabic translation. For every section/chapter transition, generate a TEXT OVERLAY TITLE. For medical disclaimers and warnings, use WARNING/ALERT BOX. For the most impactful sentences, use QUOTE BOX. For statistics and key terms, use KINETIC TEXT. Include START CUE and END CUE (exact first/last Arabic words from the script that trigger each element). For complex medical mechanisms that are hard to follow verbally, consider whether a drawing animation would genuinely help comprehension."""
+Read this chapter's script and transition map together. Classify every element as one of the 5 primary types: TOP-RIGHT POPUP, TEXT OVERLAY TITLE, WARNING/ALERT BOX, QUOTE BOX, or KINETIC TEXT. For every English technical term in the script, generate a TOP-RIGHT POPUP with its Arabic translation. For every section/chapter transition, generate a TEXT OVERLAY TITLE. For medical disclaimers and warnings, use WARNING/ALERT BOX. For the most impactful sentences, use QUOTE BOX. For statistics and key terms, use KINETIC TEXT. Include START CUE and END CUE (exact first/last Arabic words from the script that trigger each element). For complex medical mechanisms that are hard to follow verbally, consider whether a drawing animation would genuinely help comprehension.
+
+Other chapters are designed at the same time as this one: draw only a mechanism or metaphor this chapter's script INTRODUCES. When the script calls back an analogy from an earlier chapter (it names the same pump, switch or picture again), add no drawing — the earlier chapter already drew it, and a second full-screen drawing of the same metaphor reads as a rerun."""
     if style:
         prompt += f"""
 
@@ -2614,6 +2616,7 @@ def sync_transition_map(state: PipelineState, transition_design: str, broll_tabl
         if (not added and not moved) or unchanged:
             break
     text = drop_zero_length_flashes(text, script, wpm)
+    text = drop_moves_on_cuts(text, script, wpm)
     text = chain_transition_states(text)
     text = rebuild_density_summary(text, script, wpm)
     if broll_out is not None:
@@ -2663,6 +2666,31 @@ def drop_zero_length_flashes(text: str, script: str, wpm: float) -> str:
         block, row = rows[k]
         block["rows"].remove(row)
     print(f"  🔧 transition map: removed {len(drop)} rows of zero-length flashes")
+    return _render_transition_blocks(text, blocks)
+
+
+def drop_moves_on_cuts(text: str, script: str, wpm: float) -> str:
+    """Drops a presenter-only move (punch-in, reframe, scale) on the same moment as a cut:
+    a camera move starting on the frame of a cut reads as a stutter (a critique listed
+    seven such pairs, e.g. a cut back from B-roll and a 107% push-in both at 8:46). The
+    cut stays; the presenter is simply on camera."""
+    blocks = _transition_blocks(text or "")
+    if not blocks:
+        return text
+    rows = [(block, row) for block in blocks for row in block["rows"]]
+    times = _transition_row_times(blocks, script, wpm)
+    cuts = [t for (block, row), t in zip(rows, times)
+            if t is not None and not _presenter_only(_row_cell(row, block["cols"], "from_to"))]
+    dropped = 0
+    for (block, row), t in zip(rows, times):
+        if t is None or not _presenter_only(_row_cell(row, block["cols"], "from_to")):
+            continue
+        if any(abs(t - c) <= COLLISION_SECONDS + 0.5 for c in cuts):
+            block["rows"].remove(row)
+            dropped += 1
+    if not dropped:
+        return text
+    print(f"  🔧 transition map: removed {dropped} presenter moves on the frame of a cut")
     return _render_transition_blocks(text, blocks)
 
 

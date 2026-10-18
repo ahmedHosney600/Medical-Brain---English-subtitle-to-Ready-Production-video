@@ -531,3 +531,14 @@ class DrawingHoldParseTest(unittest.TestCase):
         guide = overlay_table(
             f"| 1 | 9:59 | DRAWING ANIMATION 1 | spec | {sentence(2)} | {end_cue(3)} | full | cut | 12.0s | cut | — | x |\n")
         self.assertEqual(production._overlay_table_drawing_windows(guide, script(), 60), [(10.0, 22.0)])
+
+
+class MoveOnCutTest(unittest.TestCase):
+    def test_presenter_move_on_the_frame_of_a_cut_is_dropped(self):
+        transition = transition_table(transition_row(1, 2, "B-roll #1 → Talking Head", "back"),
+                                      transition_row(2, 2, "Talking Head → Talking Head (Close)", "punch-in"),
+                                      transition_row(3, 6, "Talking Head → Talking Head (Medium)", "reframe later"))
+        with mock.patch("builtins.print"):
+            out = production.drop_moves_on_cuts(transition, script(), 60)
+        self.assertNotIn("punch-in", out)
+        self.assertIn("reframe later", out)
