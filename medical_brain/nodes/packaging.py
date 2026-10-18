@@ -216,7 +216,7 @@ Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B tes
     for prompt in re.findall(r"(?is)AI Image Generation Prompt\**:?\**\s*(.+?)(?=\n\s*\*\s+\*\*Concept|\n---|\Z)",
                              state.get("thumbnail_concepts", "")):
         positive = re.split(r"(?i)negative prompts?", prompt)[0]
-        shown = re.search(r"\b\d{2,3}\s*/\s*\d{2,3}\b|(?:display(?:s|ing)?|reading|showing|written|text)\s+[\"“«'][^\"”»']{1,30}[\"”»']", positive)
+        shown = re.search(r"\b\d{2,3}\s*/\s*\d{2,3}\b|\b\d{1,2}:\d{2}\b|(?:display(?:s|ing)?|reading|showing|written|text)\s+[\"“«'][^\"”»']{1,30}[\"”»']", positive)
         if shown:
             code_issues.append(f"THUMBNAIL IMAGE TEXT: the AI prompt asks for «{shown.group(0)[:40]}» inside the image — "
                                "image tools garble text and numbers; keep the screen/label blank and add it as an overlay.")
