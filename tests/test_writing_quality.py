@@ -723,3 +723,15 @@ class UnwrapScriptTest(unittest.TestCase):
         self.assertEqual(unwrap_script_text(escaped), script)
         self.assertEqual(english_terms(strip_script_extras(wrapped))[0], [])
         self.assertEqual(unwrap_script_text(script), script)
+
+
+class BoldCueIsNotATitleTest(unittest.TestCase):
+    def test_bold_cue_lines_stay(self):
+        from medical_brain.nodes.chapters import normalize_section_headers
+        text = ("**[VISUAL NOTE: جرافيك تقويم]**\n**[WARNING BOX: ⚠️ شخير عالي]**\n**[نبرة واثقة]**\n"
+                "**SFX: Pop**\n**نبرة جدية وحزم طبي**\n**الفصل الأول: الأرق | 1:10–3:30**\n")
+        out = normalize_section_headers(text)
+        for kept in ("**[VISUAL NOTE: جرافيك تقويم]**", "**[WARNING BOX: ⚠️ شخير عالي]**", "**[نبرة واثقة]**",
+                     "**SFX: Pop**", "**نبرة جدية وحزم طبي**"):
+            self.assertIn(kept, out)
+        self.assertIn("=== الفصل الأول: الأرق ===", out)
