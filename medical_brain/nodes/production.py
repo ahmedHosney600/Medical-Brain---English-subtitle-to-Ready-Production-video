@@ -2755,8 +2755,12 @@ def chain_transition_states(text: str) -> str:
             if previous_to and source != previous_to:
                 row["cells"][at] = f"{previous_to} → {target}"
                 changed += 1
-            if previous_to and previous_to == target:
-                row["_drop"] = True              # "Talking Head → Talking Head": a stale return
+            same_clip = bool(previous_to and _BROLL_REF.search(previous_to) and _BROLL_REF.search(target)
+                             and _same_visual(previous_to, target))
+            if previous_to and (previous_to == target or same_clip):
+                # "Talking Head → Talking Head" is a stale return; "B-roll #36 (Callback) →
+                # B-roll #36 (Kitchen Table)" cuts a clip to itself (a 0-second row).
+                row["_drop"] = True
                 changed += 1
                 continue
             previous_to = target
@@ -3058,7 +3062,9 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
                         target, _sentence_cue(sentence, norm), f"Talking Head → {name}",
                         f"Code-added: cut to {name} (full screen)", sentence["start_s"]))
                     added += 1
-            out = any(abs(t - high) <= TRANSITION_TOLERANCE_SECONDS and re.search(
+            # The window's end is an estimate: a designed exit anywhere after the drawing
+            # starts is its exit (an exit 4 s early got a second one added every pass).
+            out = any(low < t <= high + TRANSITION_TOLERANCE_SECONDS and re.search(
                 r"(?i)drawing|whiteboard", ft.split("→")[0]) for t, ft in labelled)
             if not out:
                 sentence = _first_sentence(all_sentences, high - 1.0, high + 2 * TRANSITION_TOLERANCE_SECONDS)

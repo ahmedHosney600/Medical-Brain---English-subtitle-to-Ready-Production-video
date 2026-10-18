@@ -574,3 +574,16 @@ class DrawingCutsTest(unittest.TestCase):
         self.assertIn(("0:20", "Talking Head → Whiteboard Drawing 1"), moves)
         self.assertTrue(any(m.startswith("Whiteboard Drawing 1 →") and t >= "0:32" for t, m in moves))
         self.assertNotIn("reframe inside", out)
+
+
+class SelfCutTest(unittest.TestCase):
+    def test_a_clip_cut_to_itself_is_dropped_but_presenter_moves_stay(self):
+        transition = transition_table(
+            transition_row(1, 0, "Talking Head → B-roll #3 (Props)", "in"),
+            transition_row(2, 0, "B-roll #3 (Props) → B-roll #3 (Kitchen Table)", "self"),
+            transition_row(3, 2, "B-roll #3 (Kitchen Table) → Talking Head (Medium)", "out"),
+            transition_row(4, 5, "Talking Head (Medium) → Talking Head (Push-in)", "push"))
+        out = production.chain_transition_states(transition)
+        self.assertNotIn("| self |", out)
+        self.assertIn("push", out)
+        self.assertIn("B-roll #3 (Props) → Talking Head (Medium)", out)
