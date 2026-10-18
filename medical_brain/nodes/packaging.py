@@ -32,14 +32,16 @@ _ABSOLUTE_RE = re.compile(r"(هو|هي)\s+(ال)?سبب|بيشفي|يشفي|هي
 # Words in a search phrase that do not name the condition.
 _NOT_TOPIC = {"علاج", "ازاي", "اعرف", "اثناء", "أثناء", "خلال", "ليه", "امتي", "إمتى", "اسباب", "أسباب", "طريقه",
               "طريقة", "كيف", "في", "من", "علي", "على", "عن", "مع", "او", "أو", "و", "وعلاجه", "وعلاجها", "اعراض",
-              "أعراض", "الحل", "حل", "سبب", "يعني", "ايه", "إيه", "النوم", "بالليل", "الطبيعي", "البيت"}
+              "أعراض", "الحل", "حل", "سبب", "يعني", "ايه", "إيه", "النوم", "بالليل", "الطبيعي", "البيت",
+              "سريع", "سريعة", "بسرعة", "بسرعه", "فوري", "فورا", "نهائي", "نهائيا", "طبيعي", "طبيعيا",
+              "بدون", "ادوية", "أدوية", "الادوية", "الأدوية", "طرق", "افضل", "أفضل"}
 
 
 def _bare_word(word: str) -> str:
     from ..exports.workbook import normalize_ar
     w = normalize_ar(word)
-    for prefix in ("وال", "بال", "ال", "و", "ب"):
-        if w.startswith(prefix) and len(w) - len(prefix) >= 3:
+    for prefix in ("وال", "بال", "لل", "ال", "و", "ب", "ل"):
+        if w.startswith(prefix) and len(w) - len(prefix) >= 2:
             return w[len(prefix):]
     return w
 
@@ -50,7 +52,7 @@ def topic_words(keyword: str) -> set:
     from ..exports.workbook import normalize_ar
     words = {_bare_word(w) for w in (keyword or "").split()
              if len(w) >= 3 and normalize_ar(w) not in {normalize_ar(x) for x in _NOT_TOPIC}}
-    return {w for w in words if len(w) >= 3}
+    return {w for w in words if len(w) >= 2}      # «شد» (from «للشد») is a condition word
 
 
 def names_topic(title: str, keyword: str) -> bool:

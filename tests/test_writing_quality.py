@@ -835,3 +835,12 @@ class ClosingTitleAnchorTest(unittest.TestCase):
         from medical_brain.nodes.chapters import content_sections
         script = "=== ACT 1 ===\nكلام\n=== ACT 4 — علامات الخطر + الـCTA ===\nكلام\n=== CTA + OUTRO ===\nسلام\n"
         self.assertEqual([t for t, _ in content_sections(script)], ["ACT 1", "ACT 4 — علامات الخطر + الـCTA"])
+
+
+class TopicWordsPrefixTest(unittest.TestCase):
+    def test_lil_prefix_and_non_condition_words(self):
+        from medical_brain.nodes.packaging import topic_words, names_topic
+        kw = "حل سريع للشد العضلي أثناء النوم"
+        self.assertIn("شد", topic_words(kw))
+        self.assertNotIn("سريع", topic_words(kw))
+        self.assertTrue(names_topic("شد السمانة بالليل: حقيقة فوار الماغنسيوم", kw))
