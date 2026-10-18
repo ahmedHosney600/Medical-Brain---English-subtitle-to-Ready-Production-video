@@ -558,3 +558,19 @@ class ProseDrawingFormatTest(unittest.TestCase):
         self.assertEqual(len(windows), 2)
         self.assertEqual(windows[0][0], 10.0)
         self.assertEqual(windows[1][0], 40.0)
+
+
+class DrawingCutsTest(unittest.TestCase):
+    def test_map_cuts_into_and_out_of_each_drawing(self):
+        guide = ("### Drawing Animations\n#### Drawing Animation 1: Pump\n"
+                 f"  *Exact spoken line*: «{sentence(4)}»\n  *Exact spoken line*: «{sentence(6)}»\n"
+                 "- Duration: 12s total\n- **Whiteboard image prompt**: a pump\n")
+        transition = transition_table(transition_row(1, 0, "Talking Head → B-roll #1", "in"),
+                                      transition_row(2, 5, "Talking Head → Talking Head (Close)", "reframe inside"))
+        broll = broll_table(broll_row(1, 0, 1))
+        with mock.patch("builtins.print"):
+            out, _ = sync(transition, broll, state={"text_animation_overlay": guide})
+        moves = [(r["cells"][1], r["cells"][3]) for r in transition_rows(out)]
+        self.assertIn(("0:20", "Talking Head → Whiteboard Drawing 1"), moves)
+        self.assertTrue(any(m.startswith("Whiteboard Drawing 1 →") and t >= "0:32" for t, m in moves))
+        self.assertNotIn("reframe inside", out)

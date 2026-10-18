@@ -171,9 +171,22 @@ def _join_broll(titles: list, texts: list, keys: list) -> tuple:
         if first is None:
             first = len(pieces) - 1
 
+    # The chapter answers often repeat their own "=== title ===" (it was printed twice),
+    # and every chapter but the first kept an empty "B-Roll Prompt Table" heading: a
+    # critique read that as "25 of 37 B-rolls have no generation prompt".
+    table_head = re.compile(r"(?i)^\s*#{2,6}\s*.*\bprompt table\b")
     out_lines = []
     for index, (title, prefix, suffix, header, separator) in enumerate(pieces):
         out_lines.append(f"=== {title} ===")
+        prefix = [line for line in prefix if line.strip() != f"=== {title} ===".strip()]
+        if header is not None:
+            if index == first:
+                prefix = [re.sub(r"(?i)\bprompt table\b.*$", "Prompt Table (whole video, every chapter, in time order)",
+                                 line) if table_head.match(line) else line for line in prefix]
+            else:
+                prefix = [("_This chapter's B-roll prompts are rows of the whole-video B-Roll Prompt Table in the "
+                           "first chapter (one table, in time order)._") if table_head.match(line) else line
+                          for line in prefix]
         out_lines.extend(prefix)
         if index == first and header is not None:
             out_lines.append(header)
@@ -2555,8 +2568,9 @@ def _move_out_of_warning_holds(state: PipelineState, text: str, broll_table: str
     """Moves transition rows that would cut away during a warning card's hold to the
     first sentence at/after the hold's end. A code-added cut into B-roll moves that
     B-roll row's own START CUE instead, so the two layers stay on the same clock."""
+    drawing_windows = _drawing_windows(state.get("text_animation_overlay", ""), script, wpm)
     warnings = sorted(_overlay_warning_holds(state.get("text_animation_overlay", ""), script, wpm)
-                      + _drawing_windows(state.get("text_animation_overlay", ""), script, wpm))
+                      + drawing_windows)
     blocks = _transition_blocks(text)
     if not warnings or not blocks:
         return text, broll_table, 0
@@ -2574,11 +2588,19 @@ def _move_out_of_warning_holds(state: PipelineState, text: str, broll_table: str
 
     moved, broll_changed = 0, False
     for warning_start, warning_end in warnings:
+        is_drawing = (warning_start, warning_end) in drawing_windows
         for block in blocks:
             cols = block["cols"]
-            for row in block["rows"]:
+            for row in list(block["rows"]):
                 when = _transition_row_time(row, cols, script, wpm)
                 if when is None or not (warning_start < when < warning_end):
+                    continue
+                from_to = _row_cell(row, cols, "from_to")
+                if is_drawing and re.search(r"(?i)drawing|whiteboard", from_to):
+                    continue                    # the cut into/out of this drawing itself
+                if is_drawing and _presenter_only(from_to):
+                    block["rows"].remove(row)    # the presenter is off screen: no move to see
+                    moved += 1
                     continue
                 sentence = _first_sentence(sentences, warning_end, None)
                 if sentence is None:
@@ -3013,6 +3035,38 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
                 added += 1
             else:
                 relabel(end_at, number, entering=False, low=low, skip=start)
+
+    # Each whiteboard drawing is one full-screen shot: the map must cut to it and back (a
+    # critique: "the drawing guide says the editor cuts at 01:36 and back at 01:56 — those
+    # two cuts do not exist anywhere in the Transition Table").
+    drawings = _drawing_windows((state or {}).get("text_animation_overlay", ""), script, wpm)
+    if drawings:
+        all_sentences = sentences or _script_sentences(script, wpm)
+        norm = norm_script or ew.normalize_ar(ew.spoken_text(script))
+        flat_now = [(block, row) for block in blocks for row in block["rows"]]
+        now_times = _transition_row_times(blocks, script, wpm)
+        labelled = [(t, _row_cell(row, block["cols"], "from_to")) for (block, row), t in zip(flat_now, now_times)
+                    if t is not None]
+        for n, (low, high) in enumerate(drawings, 1):
+            name = f"Whiteboard Drawing {n}"
+            into = any(abs(t - low) <= TRANSITION_TOLERANCE_SECONDS and re.search(
+                r"(?i)drawing|whiteboard", ft.split("→")[-1]) for t, ft in labelled)
+            if not into:
+                sentence = _first_sentence(all_sentences, low - 1.0, low + TRANSITION_TOLERANCE_SECONDS)
+                if sentence is not None:
+                    target["rows"].append(_new_transition_row(
+                        target, _sentence_cue(sentence, norm), f"Talking Head → {name}",
+                        f"Code-added: cut to {name} (full screen)", sentence["start_s"]))
+                    added += 1
+            out = any(abs(t - high) <= TRANSITION_TOLERANCE_SECONDS and re.search(
+                r"(?i)drawing|whiteboard", ft.split("→")[0]) for t, ft in labelled)
+            if not out:
+                sentence = _first_sentence(all_sentences, high - 1.0, high + 2 * TRANSITION_TOLERANCE_SECONDS)
+                if sentence is not None:
+                    target["rows"].append(_new_transition_row(
+                        target, _sentence_cue(sentence, norm), f"{name} → Talking Head",
+                        f"Code-added: back to the presenter after {name}", sentence["start_s"]))
+                    added += 1
 
     # A presenter-only move (punch-in, reframe) while a B-roll fills the screen cannot be
     # seen and contradicts the cut at the same second (a critique listed 24 such pairs).
