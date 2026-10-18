@@ -71,8 +71,8 @@ class ChapterSpansTest(unittest.TestCase):
         self.assertEqual([s["id"] for s in spans], ["C1", "C2"])
         self.assertIn("هوك", spans[0]["text"])                 # hook joins the first span
         self.assertIn("CTA أخير", spans[1]["text"])            # CTA joins the last span
-        first_words = len(("هوك\n\n=== A ===\n" + body1).split())
-        second_words = len(("=== B ===\n" + body2 + "\nCTA أخير").split())
+        first_words = len(("هوك\n" + body1).split())          # spoken clock: headers are not words
+        second_words = len((body2 + "\nCTA أخير").split())
         self.assertEqual(spans[0]["start_s"], 0)
         self.assertAlmostEqual(spans[0]["end_s"], first_words / wpm * 60)
         self.assertAlmostEqual(spans[1]["start_s"], first_words / wpm * 60)

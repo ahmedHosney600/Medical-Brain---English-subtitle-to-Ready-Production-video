@@ -308,7 +308,7 @@ def chapter_spans(script: str, blueprint) -> list:
     """[{id, title, text, start_s, end_s}] — one span per "=== title ===" chapter in
     `script`. The preamble (hook) joins the first chapter's span and trailing text
     (CTA/closing) joins the last, so the spans cover the whole spoken script. Start/end
-    times come from cumulative word counts at the blueprint's words_per_minute."""
+    times come from cumulative SPOKEN word counts at the blueprint's words_per_minute."""
     parts = split_by_chapters(script or "")
     chapters_list = [c for c in ((blueprint or {}).get("chapters") or []) if isinstance(c, dict)]
 
@@ -341,7 +341,10 @@ def chapter_spans(script: str, blueprint) -> list:
             chapter = chapters_list[i]
         title = title or str((chapter or {}).get("title", "") or "").strip()
         cid = str((chapter or {}).get("id", "") or "").strip() or f"C{i + 1}"
-        words = len(text.split())
+        # The spoken clock every cue uses (headers, stage directions and markdown are not
+        # spoken): raw words ran chapter 2's window 2 minutes late, so its transition
+        # designer was shown chapter 3's B-rolls and invented its own.
+        words = len(normalize_ar(spoken_text(text)).split())
         start, cum = cum, cum + words
         spans.append({"id": cid, "title": title or cid, "text": text,
                       "start_s": start / wpm * 60.0, "end_s": cum / wpm * 60.0})
