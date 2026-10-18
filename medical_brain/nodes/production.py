@@ -1198,13 +1198,36 @@ def _rewrite_moved_row(layout: dict, row: dict, rows: list, sentence: dict, sent
     return True
 
 
-def _ask_gap_row(layout: dict, rows: list, sentence_index: int, sentences: list, avoid: str = ""):
+def _clip_words(row: dict, layout: dict, norm_script: str, after: int = 0) -> str:
+    """The words spoken while a B-roll row is on screen (START CUE through END CUE),
+    normalized, at most 45 words; "" when its cues are not found."""
+    cols = layout["cols"]
+    cells = row["cells"]
+    if cols["start"] is None or cols["end"] is None or max(cols["start"], cols["end"]) >= len(cells):
+        return ""
+    starts = [p for p in ew.cue_positions(cells[cols["start"]], norm_script) if p >= after]
+    if not starts:
+        return ""
+    end_cue = ew.normalize_ar(ew.spoken_text(cells[cols["end"]])).split()
+    ends = [p for p in ew.cue_positions(cells[cols["end"]], norm_script) if p >= starts[0]]
+    words = norm_script.split()
+    finish = ends[0] + len(end_cue) if ends else starts[0] + 15
+    return " ".join(words[starts[0]:min(finish, starts[0] + 45)])
+
+
+def _ask_gap_row(layout: dict, rows: list, sentence_index: int, sentences: list, avoid: str = "",
+                 focus: str = ""):
     """One small call for one B-roll row in a gap. Returns the parsed cells or None.
-    `avoid`: a prompt already used elsewhere in the table — the new image must differ."""
+    `avoid`: a prompt already used elsewhere in the table — the new image must differ.
+    `focus`: the exact words spoken while the clip plays; the picture must show them (the
+    surrounding passage is context only — re-imaged rows drew a neighbouring sentence:
+    a fizzing supplement over «زي زرار نور علّق», a thigh stretch over curled toes)."""
     cols = layout["cols"]
     header = layout["header"]
     examples = "\n".join("| " + " | ".join(row["cells"]) + " |" for row in rows[:2])
     passage = " ".join(s["text"] for s in sentences[max(0, sentence_index - 1):sentence_index + 2])
+    if not focus and 0 <= sentence_index < len(sentences):
+        focus = sentences[sentence_index]["text"]
     prompt = f"""Add exactly ONE row to this B-roll prompt table for the passage below.
 
 TABLE HEADER:
@@ -1213,11 +1236,15 @@ TABLE HEADER:
 FORMAT EXAMPLES (existing rows):
 {examples or "(the table has no rows yet)"}
 
-PASSAGE (spoken script around the missing moment):
+PASSAGE (spoken script around the moment — context only):
 {passage}
 
+ON SCREEN WHILE THESE WORDS ARE SPOKEN (the picture must show exactly this — its object, body
+part, action or metaphor — not a neighbouring sentence):
+«{focus}»
+
 RULES:
-- Photoreal medical B-roll that illustrates the passage, same visual style as the examples.
+- Photoreal medical B-roll that shows the ON-SCREEN words above, same visual style as the examples.
 - 🎬 Video needs a visible subject action and a camera move (slow push-in, dolly, orbit, track…).
 - 🖼️ Still needs a Ken Burns move in Composition Notes.
 - No text, letters or numbers inside the generated image; put words in Composition Notes as a Premiere overlay.
@@ -1518,12 +1545,15 @@ def _replace_repeated_families(rows: list, layout: dict, sentences: list, script
     times = _running_row_times(rows, layout, script, wpm, after=after)
     starts = [s["start_s"] for s in sentences]
     listing = []
+    norm_script = ew.normalize_ar(ew.spoken_text(script))
     for i, row in enumerate(rows, 1):
         cells = row["cells"]
         text = cells[cue_col] if cue_col is not None and cue_col < len(cells) and cells[cue_col].strip() \
             else (cells[prompt_col][:160] if prompt_col < len(cells) else "")
         spoken = ""
         if times[i - 1] is not None:
+            spoken = _clip_words(row, layout, norm_script, int(times[i - 1] * wpm / 60.0) - 2)[:200]
+        if not spoken and times[i - 1] is not None:
             k = max((n for n, t in enumerate(starts) if t <= times[i - 1] + 0.5), default=None)
             if k is not None:
                 spoken = sentences[k]["text"][:140]
@@ -1589,8 +1619,12 @@ def _replace_repeated_families(rows: list, layout: dict, sentences: list, script
         planned.append((j, index, jobs[n]))
     # The rows are independent: ask for their new pictures in parallel (a run spent 16
     # minutes in the B-roll step, mostly on these small calls one after another).
+    norm_script = ew.normalize_ar(ew.spoken_text(script))
+    focus = {j: _clip_words(rows[j], layout, norm_script, int(times[j] * wpm / 60.0) - 2)
+             for j, _, _ in planned}
     answers = chapters.parallel_map(
-        lambda job: _ask_gap_row(layout, rows, job[1], sentences, avoid=job[2]), planned, workers=4)
+        lambda job: _ask_gap_row(layout, rows, job[1], sentences, avoid=job[2], focus=focus[job[0]]),
+        planned, workers=4)
     replaced = 0
     for (j, _, _), cells in zip(planned, answers):
         if cells is None:
@@ -1628,7 +1662,8 @@ def _replace_duplicate_images(rows: list, layout: dict, sentences: list, script:
         if index is None:
             continue
         budget[0] -= 1
-        cells = _ask_gap_row(layout, rows, index, sentences, avoid=rows[twin]["cells"][prompt_col])
+        cells = _ask_gap_row(layout, rows, index, sentences, avoid=rows[twin]["cells"][prompt_col],
+                             focus=_clip_words(rows[j], layout, norm_script, int(times[j] * wpm / 60.0) - 2))
         if cells is None:
             continue
         cols = layout["cols"]

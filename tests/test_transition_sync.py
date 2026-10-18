@@ -510,3 +510,17 @@ class OverlayOffDrawingTest(unittest.TestCase):
         self.assertEqual(cues[1], sentence(4))                       # first sentence after 0:20
         self.assertEqual(cues[2], sentence(5))                       # queued after the warning
         self.assertEqual(production.move_overlays_out_of_drawings(out, script(), 60), out)
+
+
+class ClipWordsTest(unittest.TestCase):
+    def test_clip_words_span_start_to_end_cue_and_reach_the_prompt(self):
+        layout = production._broll_layout(broll_table(broll_row(1, 3, 4)))
+        norm = production.ew.normalize_ar(production.ew.spoken_text(script()))
+        self.assertEqual(production._clip_words(layout["rows"][0], layout, norm),
+                         " ".join(sentence(3).split() + sentence(4).split()))
+        seen = []
+        use(self, production, "call_llm", FakeLLM(lambda s, u, *a, **k: seen.append(u) or "| 1 | 0:00 | a | b | c | d |"))
+        production._ask_gap_row(layout, layout["rows"], 3, production._script_sentences(script(), 60),
+                                focus="w15 w16 w17")
+        self.assertIn("«w15 w16 w17»", seen[0])
+        self.assertIn("context only", seen[0])
