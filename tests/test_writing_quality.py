@@ -820,3 +820,18 @@ class DuplicateClosingTest(unittest.TestCase):
         self.assertIn("(Term4)", out)
         self.assertNotIn("(Term5)", out)
         self.assertEqual(len(notes), 2)
+
+
+class BracketTitleTrailingTimeTest(unittest.TestCase):
+    def test_time_range_after_brackets(self):
+        from medical_brain.nodes.chapters import normalize_section_headers
+        out = normalize_section_headers("[HOOK] — 0:00–0:45\nكلام\n[ACT 1 — وهم الجيوب الأنفية] — 1:10–3:15\nكلام\n")
+        self.assertIn("=== ACT 1 — وهم الجيوب الأنفية ===", out)
+        self.assertIn("[HOOK] — 0:00–0:45", out)            # a cue/label line, not a chapter
+
+
+class ClosingTitleAnchorTest(unittest.TestCase):
+    def test_chapter_mentioning_cta_is_still_a_chapter(self):
+        from medical_brain.nodes.chapters import content_sections
+        script = "=== ACT 1 ===\nكلام\n=== ACT 4 — علامات الخطر + الـCTA ===\nكلام\n=== CTA + OUTRO ===\nسلام\n"
+        self.assertEqual([t for t, _ in content_sections(script)], ["ACT 1", "ACT 4 — علامات الخطر + الـCTA"])

@@ -544,7 +544,9 @@ def spoken_words(text: str) -> int:
 # narrative/word-quality checks used by self_critique
 # --------------------------------------------------------------------------
 # A trailing CTA/outro section is not "content": it must not make the ending look heavy.
-_CTA_TITLE_RE = re.compile(r"CTA|OUTRO|CLOSING|الخاتمة|خاتمة|الختام|الخلاصة والختام", re.IGNORECASE)
+# A title that IS the closing ("CTA + OUTRO", "CLOSING — الخاتمة"), not a chapter that
+# merely mentions it ("ACT 4 — علامات الخطر + الـCTA").
+_CTA_TITLE_RE = re.compile(r"^\s*(?:\[?\s*)(?:CTA|OUTRO|CLOSING|الخاتمة|خاتمة|الختام|الخلاصة والختام)", re.IGNORECASE)
 HEAVY_ENDING_SHARE = 0.30      # the last content section may not hold > 30% of the words
 HEAVY_ENDING_RATIO = 1.6       # nor be > 1.6 × the average section
 
@@ -670,6 +672,7 @@ _WRAPPED_HEADER_RE = re.compile(r"^\s*===\s*\[\s*(.*?)\s*\](?:\s*\|[^=\[\]]*)?\s
 _SECTION_WORD_RE = re.compile(r"^(?:الفصل|المقدمة|الخاتمة|المقدّمة|ACT\b|CHAPTER\b|PART\b|INTRO|OUTRO)", re.IGNORECASE)
 # A bold cue line ("**[VISUAL NOTE: …]**", "**[نبرة واثقة]**", "**SFX: …**") is not a title.
 BOLD_TITLE_MAX = 12
+_TRAILING_RANGE_RE = re.compile(r"\s*[—–-]\s*~?\d{1,2}:\d{2}(?:\s*[–\-—]\s*~?\d{1,2}:\d{2})?\s*$")
 _MD_TITLE_RE = re.compile(r"^\s*#{1,3}\s+([^#\n]{2,110}?)\s*#*\s*$")
 _LABEL_LINE_RE = re.compile(r"^\s*\**\s*(?:HOOK|BODY|INTRO|OUTRO|CTA|CLOSING|BRIDGE|DISCLAIMER)"
                             r"(?:\s*[+&/،,—–-]\s*(?:HOOK|BODY|INTRO|OUTRO|CTA|CLOSING|BRIDGE|DISCLAIMER))*\s*\**\s*$")
@@ -733,7 +736,9 @@ def normalize_section_headers(text: str) -> str:
                 lines[i] = f"=== {head} ==="
                 changed = True
                 continue
-        m = _BRACKET_HEADER_RE.match(line)
+        # "[ACT 1 — العنوان] — 1:10–3:15": a stale time range after the brackets.
+        bare = _TRAILING_RANGE_RE.sub("", line)
+        m = _BRACKET_HEADER_RE.match(bare)
         if m:
             title = m.group(1).strip()
             numbered = _NUMBERED_PIPE_RE.match(title)
@@ -741,7 +746,7 @@ def normalize_section_headers(text: str) -> str:
                 if numbered else f"=== {title} ==="
             changed = True
             continue
-        m = _TIMED_BRACKET_HEADER_RE.match(line)
+        m = _TIMED_BRACKET_HEADER_RE.match(bare)
         if m and not _CUE_LABEL_RE.match(m.group(1).strip()):
             lines[i] = f"=== {m.group(1).strip()} ==="
             changed = True
