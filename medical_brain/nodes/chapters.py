@@ -544,7 +544,7 @@ def spoken_words(text: str) -> int:
 # narrative/word-quality checks used by self_critique
 # --------------------------------------------------------------------------
 # A trailing CTA/outro section is not "content": it must not make the ending look heavy.
-_CTA_TITLE_RE = re.compile(r"CTA|OUTRO|CLOSING", re.IGNORECASE)
+_CTA_TITLE_RE = re.compile(r"CTA|OUTRO|CLOSING|الخاتمة|خاتمة|الختام|الخلاصة والختام", re.IGNORECASE)
 HEAVY_ENDING_SHARE = 0.30      # the last content section may not hold > 30% of the words
 HEAVY_ENDING_RATIO = 1.6       # nor be > 1.6 × the average section
 

@@ -792,3 +792,10 @@ class WordNumberedPipeTitleTest(unittest.TestCase):
         out = normalize_section_headers("=== الفصل الأول | كبسولة تحت اللسان ===\nكلام\n")
         self.assertIn("=== الفصل الأول — كبسولة تحت اللسان ===", out)
         self.assertEqual(len(content_sections(out)), 1)
+
+
+class ArabicClosingTitleTest(unittest.TestCase):
+    def test_arabic_closing_section_is_not_a_chapter(self):
+        from medical_brain.nodes.chapters import content_sections
+        script = "=== الفصل الأول ===\nكلام\n=== الخاتمة: القاعدة الذهبية ===\nسلام\n"
+        self.assertEqual([t for t, _ in content_sections(script)], ["الفصل الأول"])
