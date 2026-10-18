@@ -388,6 +388,16 @@ MAX_ENGLISH_TERMS = 5
 
 
 def _plain_terms_fix_pass(script: str) -> tuple:
+    """Up to two English-terms passes: a term repeated in the script needs a unique find
+    text per occurrence, and one pass left 3 of 6 bare terms in place."""
+    fixed, notes = _plain_terms_fix_once(script)
+    if notes and chapters.english_terms(fixed)[0]:
+        fixed, more = _plain_terms_fix_once(fixed)
+        notes += more
+    return fixed, notes
+
+
+def _plain_terms_fix_once(script: str) -> tuple:
     """A code-enforced pass on English terms: when the script has a bare English word in an
     Arabic sentence or more than 5 English terms in brackets, ONE small call returns
     find/replace edits (applied in code only when the find text is unique). Every
@@ -407,8 +417,10 @@ def _plain_terms_fix_pass(script: str) -> tuple:
         "«نظام أكل مخصوص للضغط (DASH)» — and the whole script keeps at most "
         f"{MAX_ENGLISH_TERMS} such bracketed terms (keep the ones that most help a viewer search or talk to a "
         "doctor). Every other English word is said in plain Egyptian only, or in Arabic letters for a drug "
-        "or brand name («بروفين»). Change only the words needed; keep the dialect, meaning and medical "
-        "facts exactly.\n\n"
+        "or brand name («بروفين»). Use the words viewers say — «دوا ضغط من نوع (ACE inhibitors)» — never a "
+        "formal translation («مثبطات الإنزيم المحول للأنجيوتنسين»). Change only the words needed; keep the dialect, "
+        "meaning and medical facts exactly. A term that appears several times needs one edit PER occurrence, each "
+        "with enough surrounding words that its find text appears only once in the script.\n\n"
         f"BARE ENGLISH WORDS (outside parentheses): {', '.join(sorted(set(bare))) or 'none'}\n"
         f"BRACKETED TERMS ({len(groups)}): {', '.join(groups) or 'none'}\n\n"
         "SENTENCES WITH ENGLISH:\n" + "\n".join(f"- {s.strip()}" for s in sentences[:40])

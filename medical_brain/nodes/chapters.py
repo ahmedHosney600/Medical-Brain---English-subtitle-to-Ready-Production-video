@@ -676,7 +676,7 @@ _LABEL_LINE_RE = re.compile(r"^\s*\**\s*(?:HOOK|BODY|INTRO|OUTRO|CTA|CLOSING|BRI
 _BOLD_CUE_RE = re.compile(r"^(?:\[|\(|[A-Z][A-Z0-9 \-/&+]*:|(?:نبرة|وقفة|طاقة|نظرة|ميل|ابتسامة|صوت|حركة)\b)")
 _BOLD_TITLE_RE = re.compile(r"^\s*\*\*([^*\n]{3,110}?)\*\*\s*$")
 _TIME_OR_ENERGY_RE = re.compile(r"^(?:timestamp\s*:\s*)?~?\d{1,2}:\d{2}|^energy\b|^\d+(?:\.\d+)?\s*/\s*5$", re.IGNORECASE)
-_NUMBERED_PIPE_RE = re.compile(r"^((?:ACT|CHAPTER|PART|الفصل)\s*\d+)\s*\|\s*(.+)$", re.IGNORECASE)
+_NUMBERED_PIPE_RE = re.compile(r"^((?:ACT|CHAPTER|PART)\s*\d+|الفصل\s+\S+)\s*\|\s*(.+)$", re.IGNORECASE)
 
 
 def normalize_section_headers(text: str) -> str:

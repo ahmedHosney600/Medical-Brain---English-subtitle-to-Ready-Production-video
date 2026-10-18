@@ -784,3 +784,11 @@ class MarkdownTitleTest(unittest.TestCase):
         text = "## لحظة الشد العضلي\nكلام\n## روتين بسيط قبل النوم\nكلام\n## CTA + OUTRO\nاشترك\n"
         out = normalize_section_headers(text)
         self.assertEqual([t for t, _ in content_sections(out)], ["لحظة الشد العضلي", "روتين بسيط قبل النوم"])
+
+
+class WordNumberedPipeTitleTest(unittest.TestCase):
+    def test_arabic_word_numbered_chapter_with_pipe(self):
+        from medical_brain.nodes.chapters import normalize_section_headers, content_sections
+        out = normalize_section_headers("=== الفصل الأول | كبسولة تحت اللسان ===\nكلام\n")
+        self.assertIn("=== الفصل الأول — كبسولة تحت اللسان ===", out)
+        self.assertEqual(len(content_sections(out)), 1)
