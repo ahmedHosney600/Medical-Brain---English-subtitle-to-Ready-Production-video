@@ -316,13 +316,16 @@ class LinkRecomputeTest(unittest.TestCase):
 
 
 class PresenterMoveAndIdTest(unittest.TestCase):
-    def test_presenter_move_is_left_alone_and_a_cut_is_added(self):
-        transition = transition_table(transition_row(1, 0, "Talking Head (Wide) → Talking Head (Punch-in)", "reframe"))
+    def test_presenter_move_under_a_broll_goes_and_one_outside_stays(self):
+        transition = transition_table(
+            transition_row(1, 0, "Talking Head (Wide) → Talking Head (Punch-in)", "reframe"),
+            transition_row(2, 6, "Talking Head (Medium) → Talking Head (Close-up)", "push"))
         broll = broll_table(broll_row(1, 0, 1))
         with mock.patch("builtins.print"):
             out, added = sync(transition, broll)
         froms = [r["cells"][3] for r in transition_rows(out)]
-        self.assertIn("Talking Head (Wide) → Talking Head (Punch-in)", froms)
+        self.assertNotIn("Talking Head (Wide) → Talking Head (Punch-in)", froms)   # hidden under B-roll #1
+        self.assertIn("Talking Head (Medium) → Talking Head (Close-up)", froms)    # presenter on screen
         self.assertIn("Talking Head → B-roll #1", froms)
 
     def test_a_wrong_broll_number_at_an_edge_is_corrected(self):

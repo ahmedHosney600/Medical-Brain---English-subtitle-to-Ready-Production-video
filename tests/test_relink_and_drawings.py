@@ -268,3 +268,9 @@ class DrawingSpecRetimeTest(unittest.TestCase):
             out = production.retime_drawing_specs(guide, script(), 60)
         self.assertIn("`0:20 – 0:40 (20s total)`.", out)          # sentence 4 starts at 20 s
         self.assertEqual(out.count("total"), 1)
+
+
+class DrawingDurationTest(unittest.TestCase):
+    def test_total_beats_step_times(self):
+        block = "Step 1: 3.5s draw\nStep 2: 4.0s\n**Duration**: Total: 16.0s (spanning 1:13 – 1:29)"
+        self.assertEqual(production._drawing_duration(block), 16.0)

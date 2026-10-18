@@ -1191,6 +1191,8 @@ Return ONLY the markdown row (one line, same number of columns as the header).""
 
 
 DRAWING_WINDOW_SECONDS = 15
+DRAWING_MIN_SECONDS = 6             # a stated length below this is a step time
+DRAWING_MAX_SECONDS = 40
 DRAWING_LEAD_SECONDS = 5           # a clip starting this soon before a drawing overlaps it
 
 
@@ -1213,7 +1215,11 @@ def _cue_seconds_loose(cue: str, script: str, wpm: float):
 
 def _drawing_duration(text: str):
     """The seconds a drawing spec/row says it lasts (None when it does not say)."""
+    # A "Total: 16.0s" beats the first number found: a real spec listed step times
+    # (3.5 s) first, and the drawing got a 4-second window.
     patterns = (
+        r"(?i)\btotal\b[^:\n\d]{0,20}:?\s*\**\s*(\d+(?:\.\d+)?)\s*(?:s\b|sec)",
+        r"(?i)\(\s*(\d+(?:\.\d+)?)\s*s(?:ec(?:onds)?)?\s*total\s*\)",
         r"(?i)\b(?:total\s+)?duration\b[^:\n\d]{0,20}:\s*\**\s*(\d+(?:\.\d+)?)",
         r"(?i)\bhold\b[^:\n\d]{0,20}:\s*\**\s*(\d+(?:\.\d+)?)",
         r"(?i)(\d+(?:\.\d+)?)\s*(?:s\b|sec(?:ond)?s?)\b",
@@ -1326,22 +1332,27 @@ def _prose_drawing_windows(guide: str, script: str, wpm: float) -> list:
         if start is None:
             continue
         duration = _drawing_duration(block)
+        if duration is not None and duration < DRAWING_MIN_SECONDS:
+            duration = None                     # a step time, not the drawing's length
         if duration is None:
             # Some specs put Duration after the image prompt (but before the next
             # drawing/heading) instead of before it.
             after = (guide or "")[pos:]
             after = re.split(r"(?m)^\s*(?:-{3,}|#{1,6}\s+\S)", after, maxsplit=1)[0]
             duration = _drawing_duration(after)
-        if duration and duration > 0:
-            end = start + float(duration)
-        else:
-            last = None
-            for cue in cues[first:]:
-                seconds = _cue_seconds_loose(cue, script, wpm)
-                if seconds is not None and seconds > start:
-                    last = seconds
-            end = last if last is not None else start + DRAWING_WINDOW_SECONDS
-        windows.append((start, end))
+        # The window lasts until the later of start + its stated length and the last
+        # build-step line (+ time to say it); later cue matches far away (a label that
+        # also occurs minutes later) are ignored, and no drawing runs past 40 s.
+        last = None
+        for cue in cues[first:]:
+            seconds = _cue_seconds_loose(cue, script, wpm)
+            if seconds is not None and start < seconds <= start + DRAWING_MAX_SECONDS:
+                last = max(last or 0.0, seconds + len(cue.split()) / wpm * 60.0)
+        candidates = [start + float(duration)] if duration and duration > 0 else []
+        if last is not None:
+            candidates.append(last)
+        end = max(candidates) if candidates else start + DRAWING_WINDOW_SECONDS
+        windows.append((start, min(end, start + DRAWING_MAX_SECONDS)))
     return windows
 
 
@@ -2489,6 +2500,21 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
             else:
                 relabel(end_at, number, entering=False)
 
+    # A presenter-only move (punch-in, reframe) while a B-roll fills the screen cannot be
+    # seen and contradicts the cut at the same second (a critique listed 24 such pairs).
+    on_screen = [(st - 1.5, en if en is not None else st + BROLL_CLIP_SECONDS[1])
+                 for st, en in zip(starts, ends) if st is not None]
+    all_times = _transition_row_times(blocks, script, wpm)
+    dropped_moves = 0
+    flat = [(block, row) for block in blocks for row in block["rows"]]
+    for (block, row), t in zip(flat, all_times):
+        if t is None or not _presenter_only(_row_cell(row, block["cols"], "from_to")):
+            continue
+        if any(lo <= t < hi for lo, hi in on_screen):
+            block["rows"].remove(row)
+            dropped_moves += 1
+    if dropped_moves:
+        print(f"  🔧 transition map: removed {dropped_moves} presenter moves hidden under a B-roll")
     if added:
         print(f"  🔧 transition map: added {added} B-roll cuts")
     if relabelled[0]:
