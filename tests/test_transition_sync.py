@@ -232,13 +232,13 @@ if __name__ == "__main__":
 
 class RelabelAndDensityTest(unittest.TestCase):
     def test_a_row_at_a_broll_edge_that_names_no_broll_is_pointed_at_it(self):
-        transition = transition_table(transition_row(1, 0, "A-roll → 2D Animation", "graphic"),
+        transition = transition_table(transition_row(1, 0, "Black screen → Presenter A-roll", "open"),
                                       transition_row(2, 3, "B-roll #9 → Talking Head", "back"))
         broll = broll_table(broll_row(1, 0, 2))
         with mock.patch("builtins.print"):
             out, added = sync(transition, broll)
         froms = [r["cells"][3] for r in transition_rows(out)]
-        self.assertIn("A-roll → B-roll #1", froms)
+        self.assertIn("Black screen → B-roll #1", froms)
         self.assertIn("B-roll #9 → Talking Head", froms)       # names a B-roll: left alone
         with mock.patch("builtins.print"):
             again, _ = sync(out, broll)
@@ -334,3 +334,17 @@ class PresenterMoveAndIdTest(unittest.TestCase):
         with mock.patch("builtins.print"):
             out, _ = sync(transition, broll)
         self.assertIn("Talking Head → B-roll #1", [r["cells"][3] for r in transition_rows(out)])
+
+
+class GraphicOwnsItsMomentTest(unittest.TestCase):
+    def test_a_cut_to_a_designed_graphic_is_not_relabelled(self):
+        transition = transition_table(transition_row(1, 0, "A-roll → 2D Animation", "graphic"))
+        with mock.patch("builtins.print"):
+            out, _ = sync(transition, broll_table(broll_row(1, 0, 1)))
+        self.assertIn("A-roll → 2D Animation", [r["cells"][3] for r in transition_rows(out)])
+
+    def test_broll_repair_moves_a_broll_off_a_designed_graphic(self):
+        from medical_brain.nodes import production as P
+        transition = transition_table(transition_row(1, 6, "Talking Head → Dual-Bar Chart", "stat"))
+        windows = P._designed_graphic_windows(transition, script(), 60)
+        self.assertEqual(windows, [(27.0, 36.0)])                  # sentence 6 starts at 30 s

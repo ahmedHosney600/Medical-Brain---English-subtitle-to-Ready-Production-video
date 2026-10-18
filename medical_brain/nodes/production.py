@@ -1612,6 +1612,27 @@ def _fit_end_cues(rows: list, layout: dict, sentences: list, script: str, wpm: f
     return changed
 
 
+GRAPHIC_BEFORE_SECONDS, GRAPHIC_AFTER_SECONDS = 3.0, 6.0
+_GRAPHIC_TO_RE = re.compile(r"(?i)animation|graphic|chart|diagram|drawing|whiteboard|\b[23]d\b|infographic|split")
+
+
+def _designed_graphic_windows(transition_design: str, script: str, wpm: float) -> list:
+    """Moments the transition designer cuts TO a graphic/animation/chart (not a B-roll):
+    the screen belongs to that graphic, so a B-roll may not start there. A run had a cut
+    to the 38% bar chart and a code-added cut to a B-roll at the same second."""
+    blocks = _transition_blocks(transition_design or "")
+    if not blocks:
+        return []
+    out = []
+    rows = [(block, row) for block in blocks for row in block["rows"]]
+    for (block, row), t in zip(rows, _transition_row_times(blocks, script, wpm)):
+        from_to = _row_cell(row, block["cols"], "from_to")
+        target = re.split(r"\s*(?:→|->)\s*", from_to, maxsplit=1)[-1]
+        if t is not None and _GRAPHIC_TO_RE.search(target) and not re.search(r"(?i)b-?\s?roll", target):
+            out.append((max(0.0, t - GRAPHIC_BEFORE_SECONDS), t + GRAPHIC_AFTER_SECONDS))
+    return out
+
+
 def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: float,
                           after: int = 0, map_out: list = None, fill_tail: bool = False) -> tuple:
     """Code-repairs the B-roll timeline: clustered rows (<8 s apart) move to a later
@@ -1691,7 +1712,8 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
     # applies (a later shift out of a hold left two B-rolls 6 s apart).
     drawing_windows = sorted(
         [(max(0.0, a - DRAWING_LEAD_SECONDS), b) for a, b in _drawing_windows(overlay_guide, script, wpm)]
-        + _overlay_warning_holds(overlay_guide, script, wpm))
+        + _overlay_warning_holds(overlay_guide, script, wpm)
+        + _designed_graphic_windows(state.get("transition_design", ""), script, wpm))
     if drawing_windows:
         rows, moved_out, dropped_out = _move_brolls_out_of_drawings(
             rows, layout, drawing_windows, sentences, script, wpm, norm_script, after, budget)
@@ -2497,6 +2519,8 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
                     relabelled[0] += 1
             return
         parts = re.split(r"\s*(?:→|->)\s*", current, maxsplit=1)
+        if entering and len(parts) > 1 and _GRAPHIC_TO_RE.search(parts[1]):
+            return                              # a designed graphic owns this moment
         side_from = parts[0].strip() or "Talking Head"
         side_to = parts[1].strip() if len(parts) > 1 and parts[1].strip() else "Talking Head"
         row["cells"][at] = (f"{side_from} → B-roll #{number}" if entering
