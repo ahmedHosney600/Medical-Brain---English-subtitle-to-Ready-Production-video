@@ -11,7 +11,8 @@ from ..utils.llm_json import UnreadableAnswer, pick
 from . import chapters
 
 
-TRUTH_HEALED_MIN_SCORE = 8         # below this the input had real fabrications: revise it
+TRUTH_HEALED_MIN_SCORE = 8
+VERIFIED_MAX_GROWTH = 1.5             # a corrected script this much longer than its input is broken         # below this the input had real fabrications: revise it
 
 
 def _healed_truth_note(state) -> str:
@@ -485,6 +486,20 @@ The ORIGINAL SOURCE above is a verified RESEARCH DOSSIER with citations [S#]. Ev
         truth_score = pick(data, "truth_score", default=0, kind=int)
         truth_pass = pick(data, "truth_pass", default=False, kind=bool)
         verified_script = (data.get("verified_script", "") or "").strip()
+        # A degenerate answer (looping / drifting into English) must never become the
+        # script: a run's verified_script came back 11,034 words for a 1,794-word input,
+        # ~6,750 of them English. Keep the input and let the next round verify again.
+        if verified_script:
+            given = state.get("refined_script", "") or ""
+            n_in, n_out = chapters.spoken_words(given), chapters.spoken_words(verified_script)
+            bare_in = len(chapters.english_terms(given)[0])
+            bare_out = len(chapters.english_terms(verified_script)[0])
+            if (n_in >= 200 and n_out > n_in * VERIFIED_MAX_GROWTH) or bare_out > max(30, 3 * bare_in + 10):
+                print(f"  ⚠️ truth verifier: corrected script is broken ({n_out} words for {n_in}, "
+                      f"{bare_out} bare English words) — keeping the input; corrections not applied")
+                verified_script = ""
+                truth_pass = False
+                data["corrected_script_clean"] = False
         # truth_pass judges the INPUT; the judge only ever sees the corrected script. Every
         # revision added a few small overstatements that the verifier healed, so the input
         # never passed and no round could reach an A. Minor issues (score ≥ 8) that the

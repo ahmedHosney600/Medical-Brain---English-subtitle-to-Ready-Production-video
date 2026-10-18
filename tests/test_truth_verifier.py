@@ -399,3 +399,16 @@ class FidelityEditsTest(unittest.TestCase):
     def test_incomplete_or_serious_still_fails(self):
         self.assertEqual(self.run_audit(8, False, self.EDIT)["fidelity_score"], 8)
         self.assertEqual(self.run_audit(6, True, self.EDIT)["fidelity_score"], 6)
+
+
+class BrokenVerifiedScriptTest(unittest.TestCase):
+    def test_a_runaway_corrected_script_is_discarded(self):
+        good = "كلام عربي سليم عن النوم. " * 60
+        broken = good + ("the model kept writing english words in a loop " * 200)
+        answer = ({"truth_score": 9, "truth_pass": True, "corrected_script_clean": True,
+                   "truth_verification_report": "r", "verified_script": broken}, "raw")
+        use(self, FakeJSON(lambda s, u: answer))
+        with mock.patch("builtins.print"):
+            out = quality.medical_truth_verifier(state(refined_script=good, research_dossier=""))
+        self.assertNotIn("english words", out["refined_script"])
+        self.assertFalse(out["truth_pass"])
