@@ -358,3 +358,16 @@ class CollisionTest(unittest.TestCase):
         found = production.transition_collisions(transition, script(), 60)
         self.assertEqual(len(found), 1)
         self.assertIn("2 transitions on the same moment (0:20)", found[0])
+
+
+class GraphicDrawingOverlapTest(unittest.TestCase):
+    def test_graphic_held_across_a_drawing_is_reported(self):
+        guide = ("### Drawing Animations\nDrawing Animation 1: Hose\n"
+                 f"* Step 1: Narration Cue: «{sentence(6)}»\n* **Total: 12s**\n* **Whiteboard Image Prompt**: hose\n")
+        transition = transition_table(transition_row(1, 4, "Talking Head → 3D Artery Animation", "a"),
+                                      transition_row(2, 10, "3D Artery Animation → Talking Head", "b"))
+        found = production.graphic_drawing_overlaps(transition, guide, script(), 60)
+        self.assertEqual(len(found), 1)
+        self.assertIn("3D Artery Animation", found[0])
+        entry = transition_table(transition_row(1, 6, "Talking Head → Analogy Graphic", "the drawing"))
+        self.assertEqual(production.graphic_drawing_overlaps(entry, guide, script(), 60), [])

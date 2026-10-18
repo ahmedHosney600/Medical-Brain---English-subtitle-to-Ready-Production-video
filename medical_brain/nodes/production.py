@@ -2906,6 +2906,34 @@ def transition_collisions(transition_design: str, script: str, wpm: float) -> li
     return problems
 
 
+def graphic_drawing_overlaps(transition_design: str, overlay_guide: str, script: str, wpm: float) -> list:
+    """Problem lines for a transition-map graphic/animation that plays inside a whiteboard
+    drawing's window: two full-screen visuals booked for the same seconds (a run held a 3D
+    artery animation 4:27–5:10 across a whiteboard drawing at 4:36–4:47)."""
+    drawings = _drawing_windows(overlay_guide or "", script, wpm)
+    if not drawings:
+        return []
+    blocks = _transition_blocks(transition_design or "")
+    rows = [(block, row) for block in blocks for row in block["rows"]]
+    timed = sorted(((t, _row_cell(row, block["cols"], "from_to")) for (block, row), t in
+                    zip(rows, _transition_row_times(blocks, script, wpm)) if t is not None), key=lambda x: x[0])
+    problems = []
+    for k, (t, from_to) in enumerate(timed):
+        target = re.split(r"\s*(?:→|->)\s*", from_to, maxsplit=1)[-1]
+        # The cut INTO the drawing itself is right; a non-drawing graphic on screen is not.
+        if not _GRAPHIC_TO_RE.search(target) or re.search(r"(?i)b-?\s?roll|drawing|whiteboard|sketch", target):
+            continue
+        until = next((u for u, _ in timed[k + 1:] if u > t + 0.5), t + GRAPHIC_AFTER_SECONDS)
+        for start, end in drawings:
+            if abs(t - start) <= 2.0:
+                continue                        # the designer's own name for this drawing
+            if t < end - 1.0 and until > start + 1.0:
+                problems.append(f"«{target[:40]}» is on screen {_fmt_seconds(t)}–{_fmt_seconds(until)}, across the "
+                                f"whiteboard drawing {_fmt_seconds(start)}–{_fmt_seconds(end)}: two full-screen "
+                                "visuals at once — keep the drawing and end or drop the graphic before it.")
+    return problems
+
+
 def production_quality_critique(state: PipelineState) -> dict:
     system_prompt = load_prompt("production_quality_critique")
     code_problems = broll_engagement_problems(state.get("broll_prompts", ""), state.get("text_animation_overlay", ""),
@@ -2913,6 +2941,9 @@ def production_quality_critique(state: PipelineState) -> dict:
                                               wpm=ew.blueprint_wpm(state.get("blueprint")))
     code_problems += transition_collisions(state.get("transition_design", ""), state.get("refined_script", ""),
                                            ew.blueprint_wpm(state.get("blueprint")))
+    code_problems += graphic_drawing_overlaps(state.get("transition_design", ""),
+                                              state.get("text_animation_overlay", ""),
+                                              state.get("refined_script", ""), ew.blueprint_wpm(state.get("blueprint")))
     code_problems += broll_reference_problems(state.get("broll_prompts", ""),
                                               state.get("transition_design", ""),
                                               state.get("text_animation_overlay", ""))
