@@ -1879,3 +1879,20 @@ class SignoffCodeCheckTest(unittest.TestCase):
         close = "متنسوش تشتركوا في القناة وفعّلوا الجرس. دمتم صحيين."
         prompt = self._critique(f"=== الفصل الأول ===\n{body}\n\n{close}")
         self.assertNotIn("must end with ONE sign-off", prompt)
+
+
+class ClosingHeaderTest(unittest.TestCase):
+    def test_new_frame_replaces_the_old_closing_section(self):
+        from medical_brain.nodes import script_writing as sw
+        source = ("=== الفصل الأول ===\nنص أول\n\n=== الفصل الثاني ===\nنص تاني\n\n"
+                  f"=== {sw.CLOSING_HEADER} ===\nخاتمة قديمة")
+        segs = sw._frame_segments({}, {"opening": "افتتاح", "closing": "خاتمة جديدة"}, source)
+        labels = [label for label, _ in segs]
+        self.assertEqual(labels, ["OPENING", "الفصل الأول", "الفصل الثاني", "CLOSING"])
+        self.assertNotIn("خاتمة قديمة", " ".join(text for _, text in segs))
+
+    def test_closing_section_is_not_counted_as_the_last_chapter(self):
+        from medical_brain.nodes import chapters as C
+        from medical_brain.nodes import script_writing as sw
+        script = f"=== أ ===\n{'ك ' * 300}\n=== ب ===\n{'ك ' * 200}\n=== {sw.CLOSING_HEADER} ===\n{'ك ' * 150}\n"
+        self.assertEqual([C.spoken_words(t) for _, t in C.content_sections(script)], [300, 200])

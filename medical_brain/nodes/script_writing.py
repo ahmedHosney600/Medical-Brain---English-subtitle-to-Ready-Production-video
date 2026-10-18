@@ -806,8 +806,10 @@ def _frame_segments(state: PipelineState, frame: dict, chapter_source: str,
                        if x and x.strip())
     if head.strip():
         segments.append(("OPENING", head))
+    # The old closing's own "=== CLOSING — الخاتمة ===" section is replaced by the new one.
     chapter_parts = [(title, text) for title, text in
-                     chapters.split_by_chapters(chapter_source or "") if title]
+                     chapters.split_by_chapters(chapter_source or "")
+                     if title and not title.upper().startswith("CLOSING")]
     if old_frame_closing and chapter_parts:
         title, text = chapter_parts[-1]
         body, _ = chapters.split_closing(text, old_frame_closing)
@@ -947,6 +949,9 @@ def repair_script(state: PipelineState, script: str, *sources: str) -> str:
     return script
 
 
+CLOSING_HEADER = "CLOSING — الخاتمة"
+
+
 def _dialect_chapter_mode(state: PipelineState, system_prompt: str, revising: bool) -> dict:
     segments, frame = _dialect_segments(state, revising)
     workers = int(state.get("chapter_workers", 4) or 4)
@@ -997,7 +1002,12 @@ def _dialect_chapter_mode(state: PipelineState, system_prompt: str, revising: bo
         return label, script, notes
 
     results = chapters.parallel_map(rewrite, list(enumerate(segments)), workers)
-    joined = chapters.clean_spoken_script(chapters.join_chapters([script for _, script, _ in results]))
+    # The closing gets its own header: joined bare, it read as part of the last chapter,
+    # which then always looked ~150 words over its plan (and too heavy to the judge).
+    joined = chapters.clean_spoken_script(chapters.join_chapters(
+        [(f"=== {CLOSING_HEADER} ===\n{script}" if label == "CLOSING" and script.strip()
+          and not chapters._HEADER_RE.match(script.strip().splitlines()[0]) else script)
+         for label, script, _ in results]))
     # A pass can drop a chapter (a proxied rewrite, a cut): put it back before the notes.
     blueprint_chapters = [c for c in ((state.get("blueprint") or {}).get("chapters") or [])
                           if isinstance(c, dict)]
