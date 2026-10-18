@@ -707,6 +707,42 @@ def _table_row_times(text: str, script: str, wpm: float, need: str) -> list:
     return out
 
 
+_OVERLAY_REF = re.compile(r"(?i)\b(Overlay\s*#\s*)(\d+)\b")
+
+
+def _relink_inline_overlays(broll: str, overlay_rows: list, script: str, wpm: float) -> tuple:
+    """Inline "Overlay #N" mentions in a B-roll row (composition notes reserving space for
+    a card) must name a card on screen during that clip: re-point to the one that is, or
+    "—" (a critique found nine notes keyed to cards at other times or not existing)."""
+    layout = _broll_layout(broll or "")
+    if not layout or not overlay_rows:
+        return broll, 0
+    times = {n: t for n, t in overlay_rows}
+    rows = [{"num": r["cells"][layout["cols"]["num"]] if layout["cols"]["num"] is not None else "",
+             "start": r["cells"][layout["cols"]["start"]] if layout["cols"]["start"] is not None else "",
+             "end": r["cells"][layout["cols"]["end"]] if layout["cols"]["end"] is not None else ""}
+            for r in layout["rows"]]
+    starts, ends = _broll_row_times(rows, script, wpm)
+    changed = 0
+    for row, st, en in zip(layout["rows"], starts, ends):
+        if st is None:
+            continue
+        lo, hi = st - LINK_TOLERANCE_SECONDS, (en if en is not None else st + BROLL_CLIP_SECONDS[1]) + 1.0
+        on_screen = sorted((t, n) for n, t in overlay_rows if lo <= t <= hi)
+
+        def fix(m):
+            nonlocal changed
+            t = times.get(m.group(2))
+            if t is not None and lo <= t <= hi:
+                return m.group(0)
+            changed += 1
+            return f"{m.group(1)}{on_screen[0][1]}" if len(on_screen) == 1 else "—"
+        row["cells"] = [_OVERLAY_REF.sub(fix, cell) for cell in row["cells"]]
+    if not changed:
+        return broll, 0
+    return _render_broll_layout(layout, layout["rows"]), changed
+
+
 def recompute_link_columns(overlay: str, broll: str, transition: str, script: str, wpm: float) -> tuple:
     """Rewrites every "Linked to Transition / Overlay / B-roll #" cell from the shared
     script clock: the row of that layer that starts within ±3 s of this row's start, or
@@ -767,6 +803,8 @@ def recompute_link_columns(overlay: str, broll: str, transition: str, script: st
 
     overlay, a = rewrite(overlay, "ELEMENT")
     broll, b = rewrite(broll, "PROMPT")
+    broll, c = _relink_inline_overlays(broll, layers["OVERLAY"][1], script, wpm)
+    b += c
     if transition:
         transition = _BROLL_REF.sub(lambda m: m.group(0) if m.group(2) in known_brolls else "—", transition)
     if a + b:

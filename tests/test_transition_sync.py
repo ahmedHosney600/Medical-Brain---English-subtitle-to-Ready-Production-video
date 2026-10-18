@@ -642,3 +642,13 @@ class PresenterFlashTest(unittest.TestCase):
         with mock.patch("builtins.print"):
             out = production.drop_moves_on_cuts(transition, script(), 60, card_times=[20.5])
         self.assertNotIn("push", out)
+
+
+class InlineOverlayRefTest(unittest.TestCase):
+    def test_overlay_mentions_point_at_the_card_on_screen(self):
+        broll = broll_table(broll_row(1, 2, 3).replace("a clinic, slow push-in", "keep right clear for Overlay #9, push-in"),
+                            broll_row(2, 8, 9).replace("a clinic, slow push-in", "space for Overlay #1, push-in"))
+        out, changed = production._relink_inline_overlays(broll, [("4", 12.0), ("9", 70.0)], script(), 60)
+        self.assertEqual(changed, 2)
+        self.assertIn("Overlay #4", out)
+        self.assertIn("space for —", out)
