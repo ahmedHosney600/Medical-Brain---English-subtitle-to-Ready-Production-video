@@ -776,3 +776,11 @@ class LabelLineAndCueTest(unittest.TestCase):
             quality._plain_terms_fix_pass(script)
         self.assertIn("DASH", calls[0])
         self.assertNotIn("warm practical light", calls[0])
+
+
+class MarkdownTitleTest(unittest.TestCase):
+    def test_markdown_section_titles_become_headers(self):
+        from medical_brain.nodes.chapters import normalize_section_headers, content_sections
+        text = "## لحظة الشد العضلي\nكلام\n## روتين بسيط قبل النوم\nكلام\n## CTA + OUTRO\nاشترك\n"
+        out = normalize_section_headers(text)
+        self.assertEqual([t for t, _ in content_sections(out)], ["لحظة الشد العضلي", "روتين بسيط قبل النوم"])

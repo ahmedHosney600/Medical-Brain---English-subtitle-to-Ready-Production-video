@@ -16,7 +16,7 @@ MEDICAL DISCLAIMER — NON-NEGOTIABLE:
 CTA RULES:
 - Comes after loop resolution and after the disclaimer
 - Three versions: Soft / Medium / Strong, matched to `ctaGoal`
-- YouTube: subscribe + comment prompt is the default frame unless `ctaGoal` says otherwise
+- YouTube: the closing's ONE ask is subscribe (or what `ctaGoal` names) — the comment question was already asked early in the video, so it is NOT repeated in the closing (two asks split the viewer's attention; judges fail it)
 - The chosen closing uses ONE CTA only (not the three versions stacked), plus a "ابعت الفيديو ده لحد في البيت بيعاني من ده" (send it to someone at home who suffers from this) line.
 
 OUTRO: callback to the hook, then a warm sign-off — not a generic "see you next time." End with an honest, emotional line that pays off the promise; the opening scene should be recognisable in the closing.

@@ -670,6 +670,7 @@ _WRAPPED_HEADER_RE = re.compile(r"^\s*===\s*\[\s*(.*?)\s*\](?:\s*\|[^=\[\]]*)?\s
 _SECTION_WORD_RE = re.compile(r"^(?:الفصل|المقدمة|الخاتمة|المقدّمة|ACT\b|CHAPTER\b|PART\b|INTRO|OUTRO)", re.IGNORECASE)
 # A bold cue line ("**[VISUAL NOTE: …]**", "**[نبرة واثقة]**", "**SFX: …**") is not a title.
 BOLD_TITLE_MAX = 12
+_MD_TITLE_RE = re.compile(r"^\s*#{1,3}\s+([^#\n]{2,110}?)\s*#*\s*$")
 _LABEL_LINE_RE = re.compile(r"^\s*\**\s*(?:HOOK|BODY|INTRO|OUTRO|CTA|CLOSING|BRIDGE|DISCLAIMER)"
                             r"(?:\s*[+&/،,—–-]\s*(?:HOOK|BODY|INTRO|OUTRO|CTA|CLOSING|BRIDGE|DISCLAIMER))*\s*\**\s*$")
 _BOLD_CUE_RE = re.compile(r"^(?:\[|\(|[A-Z][A-Z0-9 \-/&+]*:|(?:نبرة|وقفة|طاقة|نظرة|ميل|ابتسامة|صوت|حركة)\b)")
@@ -691,6 +692,13 @@ def normalize_section_headers(text: str) -> str:
         del lines[k]
     bold_converted = []
     for i, line in enumerate(lines):
+        md = _MD_TITLE_RE.match(line)
+        if md and not _BOLD_CUE_RE.match(md.group(1).strip()) and len(md.group(1).split()) <= 14:
+            # "## روتين بسيط قبل النوم" used as a section title (single-script mode).
+            bold_converted.append((i, lines[i]))
+            lines[i] = f"=== {md.group(1).strip().strip('*').strip()} ==="
+            changed = True
+            continue
         if _LABEL_LINE_RE.match(line):
             # A bare production label line ("CTA + OUTRO", "BODY") is a section marker,
             # not spoken English.
