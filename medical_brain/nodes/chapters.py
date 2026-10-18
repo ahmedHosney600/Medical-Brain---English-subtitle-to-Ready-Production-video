@@ -975,6 +975,9 @@ _SIGNOFF_MARKERS = (
     ("دمتم",),
     ("اشوفكم",),
     ("مع السلامه", "سلام"),
+    ("اشتراك",),
+    ("ابعت الفيديو", "ابعتوا الفيديو"),
+    ("بالك من نفسك", "بالكم من نفسكم"),
     ("subscribe",),
     ("comment",),
     ("see you",),
@@ -1150,6 +1153,9 @@ def split_closing(text: str, closing_hint: str = "") -> tuple:
     return body, "\n\n".join(closing).strip()
 
 
+_SUBSCRIBE_RE = re.compile(r"اشترك|اشتراك|subscribe", re.IGNORECASE)
+
+
 def dedupe_signoffs(script: str) -> tuple:
     """(script, removed_count): keep ONE closing in the tail.
 
@@ -1186,6 +1192,8 @@ def dedupe_signoffs(script: str) -> tuple:
         block_start = signoffs[j - 1][0]
         j -= 1
     kept_words = _word_set("\n\n".join(paragraphs[block_start:block_end + 1]))
+    closing_asks = bool(_SUBSCRIBE_RE.search(normalize_ar("\n\n".join(paragraphs[block_start:block_end + 1]))))
+    final_asks = bool(_SUBSCRIBE_RE.search(normalize_ar(paragraphs[block_end])))
 
     remove = set()
     for i, farewell in signoffs:
@@ -1194,14 +1202,16 @@ def dedupe_signoffs(script: str) -> tuple:
         if i >= block_start:
             # Inside the final closing block a paragraph is part of that closing (a
             # comment question before the good-bye); only an extra good-bye goes.
-            if farewell:
-                remove.add(i)
+            if farewell or (final_asks and _SUBSCRIBE_RE.search(normalize_ar(paragraphs[i]))):
+                remove.add(i)           # an extra good-bye, or the same subscribe ask twice
             continue
         # A sign-off before the closing block is a duplicate of it when it says a
         # good-bye or repeats the closing's words; a bare comment question that does
         # neither is left alone.
         if farewell or _jaccard(_word_set(paragraphs[i]), kept_words) >= SIGNOFF_JACCARD:
             remove.add(i)
+        elif _SUBSCRIBE_RE.search(normalize_ar(paragraphs[i])) and closing_asks:
+            remove.add(i)               # a second subscribe ask before the closing's own
     if not remove:
         return script, 0
     result = "\n\n".join(p for i, p in enumerate(paragraphs) if i not in remove)

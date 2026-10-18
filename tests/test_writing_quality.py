@@ -799,3 +799,24 @@ class ArabicClosingTitleTest(unittest.TestCase):
         from medical_brain.nodes.chapters import content_sections
         script = "=== الفصل الأول ===\nكلام\n=== الخاتمة: القاعدة الذهبية ===\nسلام\n"
         self.assertEqual([t for t, _ in content_sections(script)], ["الفصل الأول"])
+
+
+class DuplicateClosingTest(unittest.TestCase):
+    def test_two_back_to_back_closings_keep_one(self):
+        from medical_brain.nodes.chapters import dedupe_signoffs
+        body = "كلام مفيد عن الصداع. " * 150
+        first = "لو وصلت لحد هنا، دوس اشتراك في القناة، وابعت الفيديو ده لحد في البيت. خد بالك من نفسك."
+        second = "الوعد اتحقق. لو الحكاية لامستك، دوس اشتراك في القناة، وابعت الفيديو ده لحد في البيت. خد بالك من نفسك."
+        out, removed = dedupe_signoffs(body + "\n\n" + first + "\n\n" + second)
+        self.assertEqual(removed, 1)
+        self.assertNotIn("لو وصلت لحد هنا", out)
+        self.assertIn("الوعد اتحقق", out)
+
+    def test_extra_bracketed_terms_are_trimmed(self):
+        from medical_brain.nodes.quality import _trim_extra_terms
+        script = " ".join(f"معنى {i} (Term{i})." for i in range(7))
+        with mock.patch("builtins.print"):
+            out, notes = _trim_extra_terms(script)
+        self.assertIn("(Term4)", out)
+        self.assertNotIn("(Term5)", out)
+        self.assertEqual(len(notes), 2)

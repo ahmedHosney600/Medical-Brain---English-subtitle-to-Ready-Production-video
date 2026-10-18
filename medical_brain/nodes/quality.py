@@ -389,11 +389,33 @@ MAX_ENGLISH_TERMS = 5
 
 def _plain_terms_fix_pass(script: str) -> tuple:
     """Up to two English-terms passes: a term repeated in the script needs a unique find
-    text per occurrence, and one pass left 3 of 6 bare terms in place."""
+    text per occurrence, and one pass left 3 of 6 bare terms in place. More than 5
+    bracketed terms left after that are trimmed in code (see _trim_extra_terms)."""
     fixed, notes = _plain_terms_fix_once(script)
     if notes and chapters.english_terms(fixed)[0]:
         fixed, more = _plain_terms_fix_once(fixed)
         notes += more
+    fixed, trimmed = _trim_extra_terms(fixed)
+    return fixed, notes + trimmed
+
+
+def _trim_extra_terms(script: str) -> tuple:
+    """Every bracketed English term follows its plain Egyptian meaning, so dropping the
+    "(Term)" keeps the sentence whole. Keeps the first 5 distinct terms and removes the
+    brackets of the rest (a model pass returned no edits for a 6th term)."""
+    groups = chapters.english_terms(script)[1]
+    distinct = list(dict.fromkeys(g.strip() for g in groups))
+    if len(distinct) <= MAX_ENGLISH_TERMS:
+        return script, []
+    extra = distinct[MAX_ENGLISH_TERMS:]
+    fixed, notes = script, []
+    for term in extra:
+        pattern = re.compile(r"\s*\(\s*" + re.escape(term) + r"\s*\)")
+        fixed, n = pattern.subn("", fixed)
+        if n:
+            notes.append(f"- removed «({term})» ×{n} (more than {MAX_ENGLISH_TERMS} English terms)")
+    if notes:
+        print(f"  🔤 English terms: trimmed {len(notes)} extra bracketed term(s) in code")
     return fixed, notes
 
 
