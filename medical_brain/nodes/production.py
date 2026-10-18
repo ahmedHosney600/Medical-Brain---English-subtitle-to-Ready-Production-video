@@ -287,9 +287,9 @@ Read through the script section by section, noting every scene change (talking h
 
 ## MODE: REVISION PASS (Pass #{state.get("production_revision_count", 0)})
 
-CRITICAL INSTRUCTION: Read the Production Critique Report below carefully.
-- If the critique does NOT mention TRANSITION APPROPRIATENESS or TRANSITION RESTRAINT as failing — output your previous TRANSITION DESIGN MAP exactly as it was, word for word. Do not change a single entry.
-- If the critique DID flag specific transitions: apply ONLY those exact fixes. Leave all other transitions untouched.
+CRITICAL INSTRUCTION: the B-roll table and overlays were revised before you, so the VISUAL EVENTS list above is the truth now — your previous map may point at B-rolls or moments that changed.
+- Rebuild the map so every cut matches the VISUAL EVENTS list; keep your previous map's style, palette and every transition that still matches a visual event.
+- Apply every fix the Production Critique Report flags for transitions.
 
 PREVIOUS TRANSITION DESIGN MAP:
 {state.get("transition_design", "")}
