@@ -47,6 +47,8 @@ PROMPT ENGINEERING PRINCIPLES — NON-NEGOTIABLE:
 
 2. SPECIFICITY OVER GENERALITY: Not "a doctor in a clinic" but "close-up of a doctor's hands writing on a medical chart at a modern desk, warm fluorescent overhead lighting casting soft shadows, slightly shallow depth of field at f/2.8, stethoscope draped on the desk edge, muted teal and white color palette, shot on 85mm lens"
 
+2b. THE PRESENTER IS THE DOCTOR: never generate a stand-in doctor (another physician at a desk, a doctor gesturing at a patient) — it competes with the presenter. And never cut away while he speaks straight to the viewer (the comment question, subscribe/share, «خليني أقولك»): his face carries those lines.
+
 3. MEDICAL ACCURACY: B-roll imagery must ACCURATELY represent what the script is discussing at that moment. Don't generate imagery that shows the wrong body part, wrong medical device, wrong procedure, or wrong severity level. Cross-reference the Medical Fact Ledger. NEGATIONS AND CONTRASTS: when the line says what something does NOT do or is NOT ("gepants don't narrow the vessels", "a normal scan doesn't mean the pain is imaginary"), the picture shows the TRUE state (an open, relaxed vessel), never the thing being denied. When a line contrasts two options (triptans narrow vessels, gepants don't), the picture must not show one option's effect under the other's name — use a two-panel comparison or a neutral shot.
 
 4. MESSAGE-FIRST VISUAL DESIGN: Every B-roll prompt must serve the MESSAGE being delivered at that moment in the script. The B-roll's job is to visually reinforce, illustrate, or emotionally ground what the presenter is saying. Ask: "what does the viewer need to SEE right now to understand or feel what's being said?" — then describe that scene.

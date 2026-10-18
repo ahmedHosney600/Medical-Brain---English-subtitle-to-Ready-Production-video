@@ -286,3 +286,11 @@ class DrawingRepeatTest(unittest.TestCase):
             out, report = production.repair_broll_timeline({"text_animation_overlay": guide}, table, script(30), 60)
         self.assertEqual(report["re_imaged"], 1)
         self.assertIn("switchboard", fake.calls[0]["user"])
+
+
+class DirectAddressTest(unittest.TestCase):
+    def test_comment_question_sentence_is_blocked(self):
+        sentences = production._script_sentences("كلام عادي هنا. اكتبلي في التعليقات بقالك قد إيه. كلام تاني.", 60)
+        windows = production._direct_address_windows(sentences)
+        self.assertEqual(len(windows), 1)
+        self.assertLess(windows[0][0], sentences[1]["start_s"] + 0.01)

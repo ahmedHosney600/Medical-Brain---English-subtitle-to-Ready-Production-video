@@ -1633,6 +1633,16 @@ def _designed_graphic_windows(transition_design: str, script: str, wpm: float) -
     return out
 
 
+_DIRECT_ADDRESS_RE = re.compile(r"كومنت|تعليق|اكتبلي|اكتبولي|اكتب لي|اشترك|ابعت الفيديو|شاركني|قولي في")
+
+
+def _direct_address_windows(sentences: list) -> list:
+    """The presenter speaking straight to the viewer (comment question, subscribe, share)
+    stays on screen: a B-roll there broke the moment the script wrote for his face."""
+    return [(max(0.0, s["start_s"] - 1.0), s["start_s"] + len(s["words"]) / 2.25 + 1.0)
+            for s in sentences if _DIRECT_ADDRESS_RE.search(s["text"])]
+
+
 def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: float,
                           after: int = 0, map_out: list = None, fill_tail: bool = False) -> tuple:
     """Code-repairs the B-roll timeline: clustered rows (<8 s apart) move to a later
@@ -1713,7 +1723,8 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
     drawing_windows = sorted(
         [(max(0.0, a - DRAWING_LEAD_SECONDS), b) for a, b in _drawing_windows(overlay_guide, script, wpm)]
         + _overlay_warning_holds(overlay_guide, script, wpm)
-        + _designed_graphic_windows(state.get("transition_design", ""), script, wpm))
+        + _designed_graphic_windows(state.get("transition_design", ""), script, wpm)
+        + _direct_address_windows(sentences))
     if drawing_windows:
         rows, moved_out, dropped_out = _move_brolls_out_of_drawings(
             rows, layout, drawing_windows, sentences, script, wpm, norm_script, after, budget)
