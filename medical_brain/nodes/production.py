@@ -1118,7 +1118,7 @@ _MIN_CUE_SENTENCE_WORDS = 3
 MAX_MOVE_REWRITES = 10
 # Duplicate/family re-imaging has its own calls: moves out of drawings used the shared 6 up,
 # so 9 B-rolls were dropped and the variety audit never ran.
-MAX_VARIETY_REWRITES = 8
+MAX_VARIETY_REWRITES = 12
 
 
 def _first_sentence(sentences: list, low: float, high, after: int = 0):
