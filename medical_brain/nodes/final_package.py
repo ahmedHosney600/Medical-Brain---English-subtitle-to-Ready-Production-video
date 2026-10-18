@@ -43,10 +43,10 @@ def _status_from_grade(grade) -> str:
     text = str(grade or "").strip().upper()
     if not text:
         return "Not run"
-    if text.startswith("PASS") or text in ("A", "A+", "A-"):
+    if text.startswith("PASS") or text in ("A", "A+"):
         return "Pass"
     if text.startswith("B"):
-        return "Warn"
+        return "Fail — below A"                 # the channel's bar is A; a B is not a pass
     return "Fail"
 
 

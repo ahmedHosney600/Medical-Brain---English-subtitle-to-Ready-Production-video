@@ -680,3 +680,21 @@ class CodeFenceHeaderTest(unittest.TestCase):
         out = normalize_section_headers("كلام\n```\n=== DISCLAIMER | Timestamp: 2:50 ===\n```\nتنبيه\n")
         self.assertNotIn("```", out)
         self.assertIn("=== DISCLAIMER | Timestamp: 2:50 ===", out)
+
+
+class StrictAGateTest(unittest.TestCase):
+    def test_an_a_with_a_critical_criterion_below_8_counts_as_b(self):
+        import json
+        from medical_brain.nodes import quality
+        answer = {"critique_grade": "A", "critique_report": "r", "dialect_authenticity_score": 9, "warmth_score": 9,
+                  "fidelity_score": 9, "medical_accuracy_pass": True, "lowest_critical_score": 7}
+        state = {"refined_script": "نص", "fidelity_score": 9, "medical_accuracy_pass": True,
+                 "truth_score": 9, "truth_pass": True, "quality_revision_count": 0}
+        with mock.patch.object(quality, "call_llm_json", return_value=(answer, json.dumps(answer))), \
+                mock.patch("builtins.print"):
+            out = quality.self_critique(state)
+        self.assertEqual(out["quality_grade"], "B")
+        answer["lowest_critical_score"] = 8
+        with mock.patch.object(quality, "call_llm_json", return_value=(answer, json.dumps(answer))), \
+                mock.patch("builtins.print"):
+            self.assertEqual(quality.self_critique(state)["quality_grade"], "PASS")

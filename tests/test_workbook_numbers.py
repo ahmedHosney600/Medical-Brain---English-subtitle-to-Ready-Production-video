@@ -77,7 +77,7 @@ class FinalPackageNumbersTest(unittest.TestCase):
     def test_qa_rows_reflect_the_real_scores(self):
         out = self._package()
         self.assertIn("| Production | NEEDS_REVISION | Fail |", out)
-        self.assertIn("| Packaging | B | Warn |", out)
+        self.assertIn("| Packaging | B | Fail — below A |", out)
         self.assertIn("| Dialect authenticity | 9/10 | Pass |", out)
         self.assertIn("| Warmth | 8/10 | Pass |", out)
         self.assertIn("| Medical fidelity | 9/10 | Pass |", out)

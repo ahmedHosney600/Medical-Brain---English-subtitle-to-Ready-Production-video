@@ -106,7 +106,7 @@ class ModelLayerTest(unittest.TestCase):
 class NodesTest(unittest.TestCase):
     def test_grades_with_plus_minus(self):
         self.assertEqual([quality._letter_grade(g) for g in ("A-", "B+", "A+", "PASS", "**A**", "", "FAIL")],
-                         ["A", "B", "A+", "A", "A", "F", "F"])
+                         ["B", "B", "A+", "A", "A", "F", "F"])       # an A- is not an A
 
     def test_last_failed_round_never_ships_an_unchecked_rewrite(self):
         use_router(self, Canned(json.dumps({"critique_grade": "B", "dialect_authenticity_score": 9, "warmth_score": 9,

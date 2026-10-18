@@ -73,6 +73,9 @@ def _unplanned_tail_sections(script: str, blueprint) -> list:
             if chapters.spoken_words(text) >= 40]
 
 
+A_MIN_CRITICAL_SCORE = 8              # an A needs every Critical criterion at 8+
+
+
 def _wpm(state) -> float:
     from ..exports.workbook import blueprint_wpm
     return blueprint_wpm(state.get("blueprint"))
@@ -686,10 +689,12 @@ def _letter_grade(value) -> str:
     text = str(value or "").strip().strip("*").strip().upper()
     if text.startswith("PASS"):
         return "A"
-    m = re.match(r"([A-F])\s*(\+?)(?![A-Z])", text)
+    m = re.match(r"([A-F])\s*([+\-]?)(?![A-Z])", text)
     if not m:
         return "F"
-    return "A+" if m.group(1) == "A" and m.group(2) else m.group(1)
+    if m.group(1) == "A" and m.group(2) == "-":
+        return "B"                              # an A- is not an A: the bar is A
+    return "A+" if m.group(1) == "A" and m.group(2) == "+" else m.group(1)
 
 
 def _judge_is_not_writer() -> bool:
@@ -729,6 +734,10 @@ def _critique_result(state: PipelineState, grade: str, data, raw: str) -> dict:
     truth_score = int(state.get("truth_score", 0) or 0)
     truth_pass = bool(state.get("truth_pass", False))
 
+    lowest = pick(data, "lowest_critical_score", kind=int)
+    if grade in ["A+", "A"] and lowest is not None and lowest < A_MIN_CRITICAL_SCORE:
+        print(f"  ⚠️ self_critique: graded A with a Critical criterion at {lowest}/10 — counts as B")
+        grade = "B"
     if grade in ["A+", "A"]:
         if (dialect is not None and dialect < 8) or (warmth is not None and warmth < 8):
             grade = "B"

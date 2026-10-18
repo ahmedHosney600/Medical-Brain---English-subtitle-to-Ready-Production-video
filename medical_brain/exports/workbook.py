@@ -928,6 +928,10 @@ def quality_warning(state: Optional[dict]) -> str:
     if (state.get("quality_grade") == "PASS" and state.get("medical_accuracy_pass")
             and state.get("truth_pass")):
         return ""
+    if state.get("medical_accuracy_pass") and state.get("truth_pass"):
+        return (f"⚠️ The script did not reach grade A after {state.get('quality_revision_count')} rounds "
+                f"(best grade {state.get('quality_grade') or '?'}); the medical gates passed. Read the last "
+                "critique (self_critique_output in checkpoint.json) and fix its open items before filming.")
     return (f"⚠️ The medical quality gate did not pass after {state.get('quality_revision_count')} rounds "
             f"(fidelity {state.get('fidelity_score', '?')}/10, medical accuracy "
             f"{'pass' if state.get('medical_accuracy_pass') else 'FAIL'}, truth {state.get('truth_score', '?')}/10"

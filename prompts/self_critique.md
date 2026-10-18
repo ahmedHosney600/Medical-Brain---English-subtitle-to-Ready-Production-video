@@ -34,9 +34,11 @@ HARD GATES — grade can only be "A" if ALL of the following hold:
 - the final chapter is the lightest (≤ ~20% of the spoken words, ≤ 4 new points) and the loop payoff/red flags come before secondary lists
 - an early comment question (first ~40%) and at most 5 English terms (each explained in parentheses) are present
 - the closing calls back to the opening scene, pays off the promise, has ONE CTA plus the "send it to someone at home" line, and a warm sign-off
+- EVERY Critical criterion (1–20 marked Critical) scores at least 8/10 and no criterion at all scores below 7 — an A is a script ready to publish on a leading channel, not "good with fixes"; any open CRITICAL issue means it is not an A
 
 REVISION MODE: if `revision_count` > 0, verify the specific issues from your previous critique are actually resolved in the current script — not renamed or superficially touched.
 
+`lowest_critical_score` = the LOWEST score you gave any Critical criterion above (code checks it: an A needs ≥ 8).
 critique_grade must be exactly one of: "A+", "A", "B", "C", "D", "F" (no "A-" or "B+"). "A"/"A+" means every hard gate above holds.
 
 OUTPUT — ONLY valid JSON:
@@ -48,6 +50,7 @@ OUTPUT — ONLY valid JSON:
   "dialect_authenticity_score": 0,
   "warmth_score": 0,
   "fidelity_score": 0,
-  "medical_accuracy_pass": false
+  "medical_accuracy_pass": false,
+  "lowest_critical_score": 0
 }
 ```
