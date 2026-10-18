@@ -582,7 +582,10 @@ def heavy_ending(script: str):
     total = sum(words)
     if total <= 0:
         return None
-    average = total / len(words)
+    # Tiny bridge/intro sections (< 80 words) are not chapters: counting them dragged the
+    # average down until a normal chapter looked 2× too big.
+    real = [w for w in words if w >= 80] or words
+    average = sum(real) / len(real)
     # The crammed part is often the second-to-last section, with a short prevention or
     # summary section after it (a real run: red flags + medicines + diseases = 32% in
     # act 4, then a light act 5), so the last two content sections are both checked.
@@ -663,7 +666,11 @@ def normalize_section_headers(text: str) -> str:
     if not text:
         return text
     lines = text.split("\n")
-    changed = False
+    # A model wrapped a header in a markdown code fence: the ``` lines would print as-is.
+    fenced = [k for k, line in enumerate(lines) if re.fullmatch(r"\s*```[\w-]*\s*", line)]
+    changed = bool(fenced)
+    for k in reversed(fenced):
+        del lines[k]
     for i, line in enumerate(lines):
         m = _WRAPPED_HEADER_RE.match(line) or (_HEADER_RE.match(line) if "|" in line else None)
         if m:
@@ -739,7 +746,7 @@ def strip_script_extras(text: str) -> str:
 # to the closing; code moves a drifted paragraph back (and self_critique flags one that
 # cannot be found at all).
 DISCLAIMER_JACCARD = 0.4
-DISCLAIMER_EARLY_FRACTION = 0.3
+DISCLAIMER_EARLY_FRACTION = 0.15   # hook + intro fit; a disclaimer after chapter 1 (22%) is late
 
 
 def _paragraph_spans(text: str) -> list:

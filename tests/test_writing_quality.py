@@ -672,3 +672,11 @@ class UnplannedTailTest(unittest.TestCase):
         self.assertEqual(_unplanned_tail_sections(script, bp), [("كام كلمة سريعة قبل ما نقفل", 120)])
         clean = script.split("=== كام")[0]
         self.assertEqual(_unplanned_tail_sections(clean, bp), [])
+
+
+class CodeFenceHeaderTest(unittest.TestCase):
+    def test_fenced_header_lines_are_unwrapped(self):
+        from medical_brain.nodes.chapters import normalize_section_headers
+        out = normalize_section_headers("كلام\n```\n=== DISCLAIMER | Timestamp: 2:50 ===\n```\nتنبيه\n")
+        self.assertNotIn("```", out)
+        self.assertIn("=== DISCLAIMER | Timestamp: 2:50 ===", out)

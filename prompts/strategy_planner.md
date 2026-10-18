@@ -121,7 +121,7 @@ CHAPTER NAME RULES (these become the YouTube chapters viewers click on): viewer-
 | 1 | 0:00 | [chapter name] | [the start cue or main point this chapter marks] |
 
 ### Disclaimer Plan
-**Placement**: [where in the script]
+**Placement**: [within the first ~60 seconds — right after the hook / the presenter's introduction and BEFORE the first medical chapter; never after chapter 1]
 **Tone direction**: [how to phrase it so it feels caring, not legal boilerplate]
 
 ### Cultural Sensitivity Notes
