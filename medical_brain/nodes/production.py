@@ -2377,12 +2377,48 @@ def sync_transition_map(state: PipelineState, transition_design: str, broll_tabl
         text = new_text
         if (not added and not moved) or unchanged:
             break
+    text = chain_transition_states(text)
     text = rebuild_density_summary(text, script, wpm)
     if broll_out is not None:
         broll_out.append(broll_table)
     if map_out is not None:
         map_out.append(mapping or {})
     return text, total
+
+
+def chain_transition_states(text: str) -> str:
+    """Makes the transition table one continuous state chain: in table order (already
+    sorted by time), each row's "From" is the previous row's "To". A critique failed a
+    map whose rows said "Talking Head → B-roll #9" right after a cut TO a split-screen —
+    the editor cannot follow a table whose states jump."""
+    blocks = _transition_blocks(text or "")
+    if not blocks:
+        return text
+    previous_to, changed = None, 0
+    for block in blocks:
+        at = block["cols"].get("from_to")
+        if at is None:
+            continue
+        for row in block["rows"]:
+            if at >= len(row["cells"]):
+                continue
+            parts = re.split(r"\s*(?:→|->)\s*", row["cells"][at], maxsplit=1)
+            if len(parts) != 2:
+                previous_to = None
+                continue
+            source, target = parts[0].strip(), parts[1].strip()
+            if previous_to and source != previous_to:
+                row["cells"][at] = f"{previous_to} → {target}"
+                changed += 1
+            if previous_to and previous_to == target:
+                row["_drop"] = True              # "Talking Head → Talking Head": a stale return
+                changed += 1
+                continue
+            previous_to = target
+        block["rows"] = [row for row in block["rows"] if not row.get("_drop")]
+    if not changed:
+        return text
+    return _render_transition_blocks(text, blocks)
 
 
 _DENSITY_HEAD_RE = re.compile(r"^#{2,4}\s*Transition Density Summary.*$", re.IGNORECASE | re.MULTILINE)

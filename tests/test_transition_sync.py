@@ -130,7 +130,7 @@ class SyncBrollCutsTest(unittest.TestCase):
         self.assertEqual([r["cells"][2] for r in rows],
                          [sentence(0), sentence(2), end_cue(4)])
         self.assertEqual([r["cells"][1] for r in rows], ["0:00", "0:10", "0:21"])
-        self.assertIn("Talking Head → B-roll #1", out)
+        self.assertIn("Hook → B-roll #1", out)          # chained from the previous row's state
         self.assertIn("B-roll #1 → Talking Head", out)
         self.assertIn("Code-added: back to the presenter", out)
 
@@ -239,7 +239,7 @@ class RelabelAndDensityTest(unittest.TestCase):
             out, added = sync(transition, broll)
         froms = [r["cells"][3] for r in transition_rows(out)]
         self.assertIn("Black screen → B-roll #1", froms)
-        self.assertIn("B-roll #9 → Talking Head", froms)       # names a B-roll: left alone
+        self.assertNotIn("Talking Head → Talking Head", froms)   # stale return dropped by the chain
         with mock.patch("builtins.print"):
             again, _ = sync(out, broll)
         self.assertEqual(again, out)
@@ -325,7 +325,7 @@ class PresenterMoveAndIdTest(unittest.TestCase):
             out, added = sync(transition, broll)
         froms = [r["cells"][3] for r in transition_rows(out)]
         self.assertNotIn("Talking Head (Wide) → Talking Head (Punch-in)", froms)   # hidden under B-roll #1
-        self.assertIn("Talking Head (Medium) → Talking Head (Close-up)", froms)    # presenter on screen
+        self.assertTrue(any(f.endswith("→ Talking Head (Close-up)") for f in froms))   # presenter on screen
         self.assertIn("Talking Head → B-roll #1", froms)
 
     def test_a_wrong_broll_number_at_an_edge_is_corrected(self):
@@ -382,6 +382,18 @@ class GraphicBecomesDrawingTest(unittest.TestCase):
         with mock.patch("builtins.print"):
             out, _ = sync(transition, broll_table(broll_row(1, 0, 0)), state={"text_animation_overlay": guide})
         froms = [r["cells"][3] for r in transition_rows(out)]
-        self.assertIn("Talking Head → Whiteboard Drawing 1", froms)
+        self.assertTrue(any(f.endswith("→ Whiteboard Drawing 1") for f in froms))
         self.assertIn("Whiteboard Drawing 1 → Talking Head", froms)
         self.assertEqual(production.graphic_drawing_overlaps(out, guide, script(), 60), [])
+
+
+class ChainStatesTest(unittest.TestCase):
+    def test_from_follows_the_previous_to_and_noop_rows_go(self):
+        transition = transition_table(transition_row(1, 0, "Talking Head → Split-Screen", "a"),
+                                      transition_row(2, 3, "Talking Head → B-roll #9", "b"),
+                                      transition_row(3, 6, "B-roll #9 → Talking Head", "c"),
+                                      transition_row(4, 8, "B-roll #2 → Talking Head", "stale"))
+        out = production.chain_transition_states(transition)
+        froms = [r["cells"][3] for r in transition_rows(out)]
+        self.assertEqual(froms, ["Talking Head → Split-Screen", "Split-Screen → B-roll #9",
+                                 "B-roll #9 → Talking Head"])
