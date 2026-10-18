@@ -935,6 +935,11 @@ def repair_script(state: PipelineState, script: str, *sources: str) -> str:
     script, removed = chapters.dedupe_signoffs(script)
     if removed:
         print(f"  🩹 removed {removed} duplicate sign-off paragraph(s)")
+    frame_ = (state or {}).get("script_frame") or {}
+    script, sectioned = chapters.ensure_closing_section(
+        script, str(frame_.get("closing", "") or "") if isinstance(frame_, dict) else "")
+    if sectioned:
+        print("  🩹 gave the closing its own section")
     script, shared = chapters.ensure_share_line(script)
     if shared:
         print("  🩹 added the family-share line before the sign-off")
@@ -949,7 +954,7 @@ def repair_script(state: PipelineState, script: str, *sources: str) -> str:
     return script
 
 
-CLOSING_HEADER = "CLOSING — الخاتمة"
+CLOSING_HEADER = chapters.CLOSING_SECTION_TITLE
 
 
 def _dialect_chapter_mode(state: PipelineState, system_prompt: str, revising: bool) -> dict:

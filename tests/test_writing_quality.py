@@ -698,3 +698,15 @@ class StrictAGateTest(unittest.TestCase):
         with mock.patch.object(quality, "call_llm_json", return_value=(answer, json.dumps(answer))), \
                 mock.patch("builtins.print"):
             self.assertEqual(quality.self_critique(state)["quality_grade"], "PASS")
+
+
+class ClosingSectionTest(unittest.TestCase):
+    def test_closing_inside_the_last_chapter_gets_its_own_section(self):
+        from medical_brain.nodes.chapters import ensure_closing_section, content_sections, spoken_words
+        script = ("=== الفصل الأول ===\n" + "ك " * 300 + "\n=== الفصل التاني ===\n" + "ك " * 250
+                  + "\n\n---\n\nاشترك في القناة، وابعت الفيديو ده لحد في البيت. خلي بالك من نفسك، أشوفك في الحلقة الجاية.\n")
+        out, added = ensure_closing_section(script)
+        self.assertTrue(added)
+        self.assertIn("=== CLOSING — الخاتمة ===", out)
+        self.assertEqual([spoken_words(t) for _, t in content_sections(out)], [300, 250])
+        self.assertEqual(ensure_closing_section(out), (out, False))

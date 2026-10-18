@@ -1014,6 +1014,26 @@ def _collapse_double_dashes(text: str) -> str:
     return "\n".join(out)
 
 
+CLOSING_SECTION_TITLE = "CLOSING — الخاتمة"
+
+
+def ensure_closing_section(script: str, closing_hint: str = "") -> tuple:
+    """(script, added). Puts the closing (recap, call to action, share line, sign-off)
+    under its own "=== CLOSING — الخاتمة ===" header when it sits inside the last
+    chapter: there it counted as chapter content and made every last chapter look ~150+
+    words over plan. Scripts that already have a closing/CTA section are left alone."""
+    parts = split_by_chapters(script or "")
+    titled = [(k, t) for k, (t, _) in enumerate(parts) if t]
+    if not titled or any(_CTA_TITLE_RE.search(t) for _, t in titled):
+        return script, False
+    k, title = titled[-1]
+    body, closing = split_closing(parts[k][1], closing_hint)
+    if not closing.strip() or not body.strip():
+        return script, False
+    parts[k] = (title, body.rstrip() + f"\n\n=== {CLOSING_SECTION_TITLE} ===\n" + closing.strip() + "\n")
+    return "".join(text for _, text in parts), True
+
+
 def split_closing(text: str, closing_hint: str = "") -> tuple:
     """(body, closing): separate a script's closing/sign-off tail from its body.
 
