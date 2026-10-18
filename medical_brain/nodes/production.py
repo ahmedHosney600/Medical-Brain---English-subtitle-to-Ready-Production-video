@@ -1076,7 +1076,10 @@ def _sentence_cue(sentence: dict, norm_script: str) -> str:
 _MIN_CUE_SENTENCE_WORDS = 3
 # A moved B-roll gets a new prompt for its new sentence (its old picture illustrated
 # the old one); at most this many small calls per table.
-MAX_MOVE_REWRITES = 6
+MAX_MOVE_REWRITES = 10
+# Duplicate/family re-imaging has its own calls: moves out of drawings used the shared 6 up,
+# so 9 B-rolls were dropped and the variety audit never ran.
+MAX_VARIETY_REWRITES = 8
 
 
 def _first_sentence(sentences: list, low: float, high, after: int = 0):
@@ -1763,8 +1766,9 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
         report["filled"] += 1
 
     rows = _sorted_rows(rows, layout, script, wpm, after=after)
-    re_imaged = _replace_duplicate_images(rows, layout, sentences, script, wpm, after, norm_script, budget)
-    re_imaged += _replace_repeated_families(rows, layout, sentences, script, wpm, after, budget,
+    variety_budget = [MAX_VARIETY_REWRITES]
+    re_imaged = _replace_duplicate_images(rows, layout, sentences, script, wpm, after, norm_script, variety_budget)
+    re_imaged += _replace_repeated_families(rows, layout, sentences, script, wpm, after, variety_budget,
                                             drawings=_drawing_subjects(state.get("text_animation_overlay", "")))
     if re_imaged:
         report["re_imaged"] = re_imaged
