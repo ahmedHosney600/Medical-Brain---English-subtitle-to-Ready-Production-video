@@ -1485,6 +1485,9 @@ def _drawing_subjects(guide: str) -> list:
     return out
 
 
+_STAND_IN_DOCTOR_RE = re.compile(r"(?i)\b(doctor|physician|cardiologist|neurologist|clinician|GP)\b(?![^.]{0,40}\b(?:hand|hands|'s hand)\b)")
+
+
 def _replace_repeated_families(rows: list, layout: dict, sentences: list, script: str, wpm: float,
                                after: int, budget: list, drawings: list = None) -> int:
     """ONE small call groups B-rolls that repeat the same subject + action (word overlap
@@ -1534,6 +1537,11 @@ def _replace_repeated_families(rows: list, layout: dict, sentences: list, script
             if n == len(rows) and keep is not None and keep <= 3:
                 continue                       # the closing's deliberate callback to the opening
             jobs.setdefault(n, rows[keep - 1]["cells"][prompt_col])
+    # A stand-in doctor competes with the presenter (who IS the doctor): re-image it.
+    for n, row in enumerate(rows, 1):
+        if prompt_col < len(row["cells"]) and _STAND_IN_DOCTOR_RE.search(row["cells"][prompt_col]):
+            jobs.setdefault(n, "a doctor or physician figure — the presenter is the doctor; show the patient, "
+                               "the object or the mechanism instead, no doctor in the frame")
     for n in sorted(drawing_repeats):
         jobs.setdefault(n, "the whiteboard drawing already shows this: "
                         + " | ".join(drawings or []))
@@ -1680,7 +1688,8 @@ def _designed_graphic_windows(transition_design: str, script: str, wpm: float) -
     return out
 
 
-_DIRECT_ADDRESS_RE = re.compile(r"كومنت|تعليق|اكتبلي|اكتبولي|اكتب لي|اشترك|ابعت الفيديو|شاركني|قولي في")
+_DIRECT_ADDRESS_RE = re.compile(r"كومنت|تعليق|اكتبلي|اكتبولي|اكتب لي|اشترك|ابعت الفيديو|شاركني|قولي في"
+                                r"|أنا د\.|انا د\.|أنا دكتور|انا دكتور|أنا أحمد|انا احمد|معاكم د\.|معاكم دكتور")
 
 
 def _direct_address_windows(sentences: list) -> list:
@@ -2431,6 +2440,15 @@ def sync_transition_map(state: PipelineState, transition_design: str, broll_tabl
     return text, total
 
 
+def _same_visual(a: str, b: str) -> bool:
+    """Two labels for one visual: "Warning Card" vs "Warning Card (Beta-Blockers)",
+    "Talking Head CU" vs "Talking Head" — the core words before any bracket match."""
+    def core(label):
+        words = re.sub(r"\(.*?\)|[^\w\s#]", " ", label or "").lower().split()
+        return " ".join(words[:2])
+    return bool(core(a)) and core(a) == core(b)
+
+
 def drop_zero_length_flashes(text: str, script: str, wpm: float) -> str:
     """Drops an "X → Y" row immediately followed by "Y → X" on the same moment: Y would be
     on screen for 0 frames (a critique found Talking Head → Drawing 2 → Talking Head all
@@ -2448,7 +2466,7 @@ def drop_zero_length_flashes(text: str, script: str, wpm: float) -> str:
             continue
         p1 = re.split(r"\s*(?:→|->)\s*", _row_cell(r1, b1["cols"], "from_to"), maxsplit=1)
         p2 = re.split(r"\s*(?:→|->)\s*", _row_cell(r2, b2["cols"], "from_to"), maxsplit=1)
-        if len(p1) == 2 and len(p2) == 2 and p1[1].strip() == p2[0].strip() and p1[1].strip():
+        if len(p1) == 2 and len(p2) == 2 and p1[1].strip() and _same_visual(p1[1], p2[0]):
             drop.update({k, k + 1})
     if not drop:
         return text

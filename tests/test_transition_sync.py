@@ -432,3 +432,18 @@ class TransitionsDesignedLastTest(unittest.TestCase):
         self.assertEqual(_STATIC_NEXT["text_animation_overlay_designer"], "broll_prompt_generator")
         self.assertEqual(_STATIC_NEXT["broll_prompt_generator"], "transition_designer")
         self.assertEqual(_STATIC_NEXT["transition_designer"], "production_quality_critique")
+
+
+class FuzzyFlashAndDoctorTest(unittest.TestCase):
+    def test_warning_card_in_and_out_on_one_moment_is_dropped(self):
+        transition = transition_table(transition_row(1, 0, "Talking Head → B-roll #1", "a"),
+                                      transition_row(2, 4, "Talking Head CU → Warning Card (Beta-Blockers)", "b"),
+                                      transition_row(3, 4, "Warning Card → Talking Head", "c"))
+        with mock.patch("builtins.print"):
+            out = production.drop_zero_length_flashes(transition, script(), 60)
+        self.assertEqual(len(transition_rows(out)), 1)
+
+    def test_stand_in_doctor_pattern(self):
+        self.assertTrue(production._STAND_IN_DOCTOR_RE.search("An Egyptian doctor gesturing at a desk, slow push-in"))
+        self.assertFalse(production._STAND_IN_DOCTOR_RE.search("the doctor's hand holding a pill strip, macro"))
+        self.assertTrue(production._DIRECT_ADDRESS_RE.search("أهلاً بيكم، أنا د. أحمد حسني"))
