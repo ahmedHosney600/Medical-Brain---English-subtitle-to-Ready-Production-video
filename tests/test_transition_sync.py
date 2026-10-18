@@ -613,3 +613,32 @@ class TitleHoldTest(unittest.TestCase):
             f"| 2 | 9:59 | TOP-RIGHT POPUP | term | {sentence(3)} | {end_cue(3)} | top-right | fade | 3 | fade | — | x |\n",
             f"| 3 | 9:59 | TEXT OVERLAY TITLE | تاني | {sentence(1)} | {end_cue(1)} | Center-frame, full-width | fade | 3 | fade | — | x |\n")
         self.assertEqual(production._overlay_title_holds(guide, text, 60), [(5.0, 8.0), (35.0, 38.0)])
+
+
+class DrawingSpecScopeTest(unittest.TestCase):
+    def test_times_far_from_the_drawing_are_left_alone(self):
+        guide = ("#### Drawing Animation 1: Pump\n- **Timing**: `0:27 – 0:39` (12s total)\n"
+                 f"    *Exact spoken line*: «{sentence(2)}»\n"
+                 "- **Whiteboard image prompt**: a pump\n\n### B-roll flags\n- 1:30–1:40 keep clear\n")
+        with mock.patch("builtins.print"):
+            out = production.retime_drawing_specs(guide, script(30), 60)
+        self.assertIn("1:30–1:40 keep clear", out)
+
+
+class PresenterFlashTest(unittest.TestCase):
+    def test_two_second_presenter_between_clips_becomes_one_cut(self):
+        text = " ".join(f"w{i}" for i in range(80))      # one long sentence: 1 word per second
+        transition = transition_table(
+            transition_row(1, 0, "Talking Head → B-roll #1", "in").replace(sentence(0), "w0 w1 w2 w3"),
+            transition_row(2, 0, "B-roll #1 → Talking Head", "out").replace(sentence(0), "w10 w11 w12 w13"),
+            transition_row(3, 0, "Talking Head → B-roll #2", "in2").replace(sentence(0), "w12 w13 w14 w15"))
+        with mock.patch("builtins.print"):
+            out = production.chain_transition_states(production.drop_zero_length_flashes(transition, text, 60))
+        moves = [r["cells"][3] for r in transition_rows(out)]
+        self.assertEqual(moves, ["Talking Head → B-roll #1", "B-roll #1 → B-roll #2"])
+
+    def test_camera_move_on_a_title_entry_is_dropped(self):
+        transition = transition_table(transition_row(1, 4, "Talking Head → Talking Head (Push-in)", "push"))
+        with mock.patch("builtins.print"):
+            out = production.drop_moves_on_cuts(transition, script(), 60, card_times=[20.5])
+        self.assertNotIn("push", out)

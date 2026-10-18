@@ -1904,8 +1904,11 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
         gap = max(gaps, key=lambda g: g["hi"] - g["lo"])
         attempts.add(gap["key"])
         middle = (gap["lo"] + gap["hi"]) / 2.0
+        # At least 8 s from both neighbours: a fill aimed at a gap's middle (inside a
+        # drawing) fell back to a sentence 6 s after the previous B-roll.
+        low_ok = gap["lo"] + (_MIN_BROLL_SPACING if not gap.get("leading") else 0.001)
         candidates = [(i, s) for i, s in enumerate(sentences)
-                      if s["start"] >= after and gap["lo"] < s["start_s"] < gap["hi"]
+                      if s["start"] >= after and low_ok <= s["start_s"] <= gap["hi"] - _MIN_BROLL_SPACING
                       and len(s["words"]) >= _MIN_CUE_SENTENCE_WORDS
                       and not _inside_drawing_window(s["start_s"], drawing_windows)]
         if not candidates:
@@ -2364,8 +2367,12 @@ def retime_drawing_specs(guide: str, script: str, wpm: float) -> str:
                 delta = start - old_start
 
                 def shift(m):
-                    value = min(max(int(m.group(1)) * 60 + int(m.group(2)) + delta, start), stop)
-                    return _fmt_seconds(value)
+                    # Only the drawing's own times: the block runs on to the chapter's
+                    # density map and B-roll flags, and clamping those produced "5:22–5:22".
+                    value = int(m.group(1)) * 60 + int(m.group(2))
+                    if not old_start - 3 <= value <= old_start + DRAWING_MAX_SECONDS + 5:
+                        return m.group(0)
+                    return _fmt_seconds(value + delta)
                 block = re.sub(r"(?<![\d:])(\d{1,2}):(\d{2})(?![\d:])", shift, block)
             new_block, k = _TIME_RANGE_RE.subn(
                 lambda m: label + ("`" if m.group(3) and m.group(3).startswith("`") else ""), block, count=1)
@@ -2784,7 +2791,8 @@ def sync_transition_map(state: PipelineState, transition_design: str, broll_tabl
         if (not added and not moved) or unchanged:
             break
     text = drop_zero_length_flashes(text, script, wpm)
-    text = drop_moves_on_cuts(text, script, wpm)
+    text = drop_moves_on_cuts(text, script, wpm,
+                              _card_entries((state or {}).get("text_animation_overlay", ""), script, wpm))
     text = chain_transition_states(text)
     text = rebuild_density_summary(text, script, wpm)
     if broll_out is not None:
@@ -2806,6 +2814,9 @@ def _same_visual(a: str, b: str) -> bool:
     return bool(core(a)) and core(a) == core(b)
 
 
+PRESENTER_FLASH_SECONDS = 2.0
+
+
 def drop_zero_length_flashes(text: str, script: str, wpm: float) -> str:
     """Drops an "X → Y" row immediately followed by "Y → X" on the same moment: Y would be
     on screen for 0 frames (a critique found Talking Head → Drawing 2 → Talking Head all
@@ -2819,10 +2830,17 @@ def drop_zero_length_flashes(text: str, script: str, wpm: float) -> str:
     for k in range(len(rows) - 1):
         (b1, r1), (b2, r2) = rows[k], rows[k + 1]
         t1, t2 = times[k], times[k + 1]
-        if t1 is None or t2 is None or abs(t2 - t1) > COLLISION_SECONDS or k in drop:
+        if t1 is None or t2 is None or k in drop:
             continue
         p1 = re.split(r"\s*(?:→|->)\s*", _row_cell(r1, b1["cols"], "from_to"), maxsplit=1)
         p2 = re.split(r"\s*(?:→|->)\s*", _row_cell(r2, b2["cols"], "from_to"), maxsplit=1)
+        # The presenter for 2 s between two B-rolls is a stutter (a critique: "B-roll #9
+        # ends 4:10 → presenter for ~1 s → B-roll #10 at 4:12"): cut clip to clip.
+        between_clips = (len(p1) == 2 and len(p2) == 2 and _BROLL_REF.search(p1[0]) and _BROLL_REF.search(p2[1])
+                         and re.search(r"(?i)talking head|presenter|a-?roll", p1[1]))
+        limit = PRESENTER_FLASH_SECONDS if between_clips else COLLISION_SECONDS
+        if abs(t2 - t1) > limit:
+            continue
         if len(p1) == 2 and len(p2) == 2 and p1[1].strip() and _same_visual(p1[1], p2[0]):
             # "X → Y" + "Y → X" flashes Y: drop both. "B-roll #2 → Talking Head" +
             # "Talking Head → B-roll #3" is one cut from #2 to #3: keep the second row (the
@@ -2837,7 +2855,13 @@ def drop_zero_length_flashes(text: str, script: str, wpm: float) -> str:
     return _render_transition_blocks(text, blocks)
 
 
-def drop_moves_on_cuts(text: str, script: str, wpm: float) -> str:
+def _card_entries(guide: str, script: str, wpm: float) -> list:
+    """Start times of centre TITLE / KINETIC cards (type animating in on screen)."""
+    return [a for a, _ in _overlay_holds(guide, script, wpm, lambda element, position: (
+        "TITLE" in element or "KINETIC" in element) and _overlay_slot(position) == "center")]
+
+
+def drop_moves_on_cuts(text: str, script: str, wpm: float, card_times: list = None) -> str:
     """Drops a presenter-only move (punch-in, reframe, scale) on the same moment as a cut:
     a camera move starting on the frame of a cut reads as a stutter (a critique listed
     seven such pairs, e.g. a cut back from B-roll and a 107% push-in both at 8:46). The
@@ -2853,12 +2877,13 @@ def drop_moves_on_cuts(text: str, script: str, wpm: float) -> str:
     for (block, row), t in zip(rows, times):
         if t is None or not _presenter_only(_row_cell(row, block["cols"], "from_to")):
             continue
-        if any(abs(t - c) <= COLLISION_SECONDS + 0.5 for c in cuts):
-            block["rows"].remove(row)
+        if any(abs(t - c) <= COLLISION_SECONDS + 0.5 for c in cuts) or any(
+                abs(t - c) <= 1.0 for c in (card_times or [])):
+            block["rows"].remove(row)       # type and camera never animate together
             dropped += 1
     if not dropped:
         return text
-    print(f"  🔧 transition map: removed {dropped} presenter moves on the frame of a cut")
+    print(f"  🔧 transition map: removed {dropped} presenter moves on the frame of a cut or title card")
     return _render_transition_blocks(text, blocks)
 
 
@@ -3161,7 +3186,7 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
                 # entry is then covered by this row).
                 following = next(((str(r.get("num", "")).strip(), t) for r, t in
                                   zip(brolls[index + 1:], starts[index + 1:]) if t is not None), None)
-                if following and abs(following[1] - end_at) <= COLLISION_SECONDS + 0.5:
+                if following and abs(following[1] - end_at) <= PRESENTER_FLASH_SECONDS:
                     move, why = f"B-roll #{number} → B-roll #{following[0]}", f"Code-added: straight on to B-roll #{following[0]}"
                 else:
                     move, why = f"B-roll #{number} → Talking Head", "Code-added: back to the presenter"
