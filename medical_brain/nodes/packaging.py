@@ -46,6 +46,16 @@ def _bare_word(word: str) -> str:
     return w
 
 
+def _claim_in_script(title: str, match, script: str) -> bool:
+    """True when the script makes the same certainty claim: the certainty phrase together
+    with the word before it in the title. «فوراً» alone is everywhere («روح الطوارئ فوراً»);
+    «علامة واحدة تحسم الفرق فوراً» needs «الفرق فوراً» in the script."""
+    from ..exports.workbook import normalize_ar
+    before = title[:match.start()].split()
+    phrase = ((before[-1] + " ") if before else "") + match.group(0)
+    return normalize_ar(phrase) in normalize_ar(script)
+
+
 def topic_words(keyword: str) -> set:
     """The words of the SEO phrase that name the condition («الصداع النصفي» in «ازاي اعرف
     الصداع النصفي وعلاجه»), without "ال"/"و" prefixes."""
@@ -212,7 +222,7 @@ Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B tes
         absolute = _ABSOLUTE_RE.search(title)
         if absolute and re.search(r"طوارئ|طواري|مستشفى|دكتور|إسعاف|اسعاف", title):
             absolute = None                    # "go to the ER immediately" is advice, not an effect claim
-        if absolute and absolute.group(0) not in script:
+        if absolute and not _claim_in_script(title, absolute, script):
             code_issues.append(f"TITLE CERTAINTY: «{title}» says «{absolute.group(0)}», which the script never says "
                                "with that certainty — keep the script's strength (a question, «ممكن», «أحياناً»).")
     for prompt in re.findall(r"(?is)AI Image Generation Prompt\**:?\**\s*(.+?)(?=\n\s*\*\s+\*\*Concept|\n---|\Z)",
@@ -258,7 +268,7 @@ Score every title and thumbnail. Apply the hard gates. Pick and rank the A/B tes
         def unearned_certainty(title):
             m = _ABSOLUTE_RE.search(title or "")
             return bool(m and not re.search(r"طوارئ|طواري|مستشفى|دكتور|إسعاف|اسعاف", title)
-                        and m.group(0) not in script)
+                        and not _claim_in_script(title, m, script))
 
         if recommended and unearned_certainty(recommended):
             honest = [t for t in ab_titles if not unearned_certainty(t) and not overclaim_in(t)]

@@ -844,3 +844,12 @@ class TopicWordsPrefixTest(unittest.TestCase):
         self.assertIn("شد", topic_words(kw))
         self.assertNotIn("سريع", topic_words(kw))
         self.assertTrue(names_topic("شد السمانة بالليل: حقيقة فوار الماغنسيوم", kw))
+
+
+class CertaintyContextTest(unittest.TestCase):
+    def test_certainty_word_elsewhere_in_script_does_not_license_the_title(self):
+        from medical_brain.nodes import packaging as P
+        title = "شد عضلي في الساق ولا جلطة؟ علامة واحدة تحسم الفرق فوراً"
+        m = P._ABSOLUTE_RE.search(title)
+        self.assertFalse(P._claim_in_script(title, m, "لو حصل كده روح الطوارئ فوراً."))
+        self.assertTrue(P._claim_in_script(title, m, "العلامة دي بتحسم الفرق فوراً."))
