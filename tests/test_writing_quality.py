@@ -623,3 +623,11 @@ class PackagingChecksTest(unittest.TestCase):
         self.assertIn("TITLE CERTAINTY", out["packaging_critique_output"])
         self.assertIn("THUMBNAIL TEXT", out["packaging_critique_output"])
         self.assertEqual(out["packaging_grade"], "NEEDS_REVISION")
+
+
+class PlainPipeHeaderTest(unittest.TestCase):
+    def test_title_with_time_and_energy_fields(self):
+        from medical_brain.nodes.chapters import normalize_section_headers
+        out = normalize_section_headers("=== فخ المسكنات | 3:39 | Energy: 4 ===\nكلام\n=== CTA | 11:00 | Energy: 3/5 ===\n")
+        self.assertIn("=== فخ المسكنات ===", out)
+        self.assertIn("=== CTA | 11:00 | Energy: 3/5 ===", out)      # production label left for re-timing

@@ -649,6 +649,7 @@ _CUE_LABEL_RE = re.compile(r"^[A-Z][A-Z0-9 \-/&]*:")
 # "=== [CHAPTER 1 | العنوان] ===": brackets inside the header and a "|" after the number
 # (a "|" title reads as a production label "DISCLAIMER | Timestamp …" and is skipped).
 _WRAPPED_HEADER_RE = re.compile(r"^\s*===\s*\[\s*(.*?)\s*\](?:\s*\|[^=\[\]]*)?\s*===\s*$")
+_TIME_OR_ENERGY_RE = re.compile(r"^(?:timestamp\s*:\s*)?~?\d{1,2}:\d{2}|^energy\b|^\d+(?:\.\d+)?\s*/\s*5$", re.IGNORECASE)
 _NUMBERED_PIPE_RE = re.compile(r"^((?:ACT|CHAPTER|PART|الفصل)\s*\d+)\s*\|\s*(.+)$", re.IGNORECASE)
 
 
@@ -666,6 +667,12 @@ def normalize_section_headers(text: str) -> str:
             numbered = _NUMBERED_PIPE_RE.match(title)
             if numbered:
                 title = f"{numbered.group(1)} — {numbered.group(2).strip()}"
+            elif "|" in title:
+                # "title | 0:20 | Energy: 3": planned time/energy fields go stale; keep the title.
+                head, *fields = [f.strip() for f in title.split("|")]
+                if head and fields and all(_TIME_OR_ENERGY_RE.search(f) for f in fields) \
+                        and not _PRODUCTION_LABEL_RE.search(head):
+                    title = head
             if f"=== {title} ===" != line.strip():
                 lines[i] = f"=== {title} ==="
                 changed = True
