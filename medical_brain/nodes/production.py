@@ -1881,6 +1881,7 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
     drawing_windows = sorted(
         [(max(0.0, a - DRAWING_LEAD_SECONDS), b) for a, b in _drawing_windows(overlay_guide, script, wpm)]
         + _overlay_warning_holds(overlay_guide, script, wpm)
+        + _overlay_title_holds(overlay_guide, script, wpm)
         + _designed_graphic_windows(state.get("transition_design", ""), script, wpm)
         + _direct_address_windows(sentences))
     if drawing_windows:
@@ -2625,6 +2626,19 @@ def order_overlay_cards(text: str, script: str, wpm: float) -> str:
 
 def _overlay_warning_holds(text: str, script: str, wpm: float) -> list:
     """[(start_s, end_s)] for overlay rows whose Element Type is a WARNING/ALERT box."""
+    return _overlay_holds(text, script, wpm, lambda element, position: "WARNING" in element or "ALERT" in element)
+
+
+def _overlay_title_holds(text: str, script: str, wpm: float) -> list:
+    """[(start_s, end_s)] for full-width/centre TITLE cards: a B-roll starting under one
+    hides the shot behind the card (a critique: a full-width title fired on the exact
+    entry of the licorice-vendor B-roll)."""
+    return _overlay_holds(text, script, wpm,
+                          lambda element, position: "TITLE" in element and _overlay_slot(position) == "center")
+
+
+def _overlay_holds(text: str, script: str, wpm: float, wanted) -> list:
+    """[(start_s, end_s)] for overlay rows where wanted(ELEMENT TYPE upper, position)."""
     lines = (text or "").splitlines()
     holds, i = [], 0
     while i < len(lines):
@@ -2648,13 +2662,21 @@ def _overlay_warning_holds(text: str, script: str, wpm: float) -> list:
         start_col = col("START CUE", "▶", "START")
         hold_col = col("HOLD")
         time_col = col("TIMESTAMP", "TIMECODE", "TIME", "⏱")
+        pos_col = col("POSITION")
         separator = i + 1 < j and chapters.is_separator_row(lines[i + 1])
+        pos = 0
+        norm_script = ew.normalize_ar(ew.spoken_text(script))
         for k in range(i + (2 if separator else 1), j):
             cells = _table_cells(lines[k])
             if not cells or all(_SEPARATOR_CELL.fullmatch(c) for c in cells if c):
                 continue
             element = cells[element_col].upper() if element_col is not None and element_col < len(cells) else ""
-            if "WARNING" not in element and "ALERT" not in element:
+            position = cells[pos_col] if pos_col is not None and pos_col < len(cells) else ""
+            if start_col is not None and start_col < len(cells) and cells[start_col]:
+                later = [p for p in ew.cue_positions(cells[start_col], norm_script) if p >= pos]
+                if later:
+                    pos = later[0]          # rows run in script order: a repeated cue means the next one
+            if not wanted(element, position):
                 continue
             hold_match = re.search(r"\d+(?:\.\d+)?",
                                    cells[hold_col] if hold_col is not None and hold_col < len(cells) else "")
@@ -2662,7 +2684,7 @@ def _overlay_warning_holds(text: str, script: str, wpm: float) -> list:
                 continue
             start = None
             if start_col is not None and start_col < len(cells) and cells[start_col]:
-                start = ew.cue_seconds(cells[start_col], script, wpm)
+                start = ew.cue_seconds(cells[start_col], script, wpm, after=pos)
             if start is None and time_col is not None and time_col < len(cells):
                 stamp = _seconds(cells[time_col])
                 start = float(stamp) if stamp is not None else None

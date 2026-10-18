@@ -603,3 +603,13 @@ class DrawingSpecShiftTest(unittest.TestCase):
         self.assertIn("cuts in at 0:10 and back at 0:22", out)
         with mock.patch("builtins.print"):
             self.assertEqual(production.retime_drawing_specs(out, script(), 60), out)
+
+
+class TitleHoldTest(unittest.TestCase):
+    def test_full_width_titles_hold_and_repeated_cues_resolve_in_order(self):
+        text = " ".join((sentence(1) if i == 7 else sentence(i)) + "." for i in range(12))
+        guide = overlay_table(
+            f"| 1 | 9:59 | TEXT OVERLAY TITLE | عنوان | {sentence(1)} | {end_cue(1)} | Center-frame, full-width | fade | 3 | fade | — | x |\n",
+            f"| 2 | 9:59 | TOP-RIGHT POPUP | term | {sentence(3)} | {end_cue(3)} | top-right | fade | 3 | fade | — | x |\n",
+            f"| 3 | 9:59 | TEXT OVERLAY TITLE | تاني | {sentence(1)} | {end_cue(1)} | Center-frame, full-width | fade | 3 | fade | — | x |\n")
+        self.assertEqual(production._overlay_title_holds(guide, text, 60), [(5.0, 8.0), (35.0, 38.0)])
