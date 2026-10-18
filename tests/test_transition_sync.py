@@ -524,3 +524,10 @@ class ClipWordsTest(unittest.TestCase):
                                 focus="w15 w16 w17")
         self.assertIn("«w15 w16 w17»", seen[0])
         self.assertIn("context only", seen[0])
+
+
+class DrawingHoldParseTest(unittest.TestCase):
+    def test_decimal_hold_is_seconds_not_digits(self):
+        guide = overlay_table(
+            f"| 1 | 9:59 | DRAWING ANIMATION 1 | spec | {sentence(2)} | {end_cue(3)} | full | cut | 12.0s | cut | — | x |\n")
+        self.assertEqual(production._overlay_table_drawing_windows(guide, script(), 60), [(10.0, 22.0)])

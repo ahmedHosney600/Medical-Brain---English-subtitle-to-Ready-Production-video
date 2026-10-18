@@ -1372,7 +1372,12 @@ def _overlay_table_drawing_windows(guide: str, script: str, wpm: float) -> list:
                 continue
             duration = None
             if duration_col is not None and duration_col < len(cells):
-                duration = _number_value(cells[duration_col])
+                # "34.0s" is 34 seconds (digits-only parsing read 340 and one drawing
+                # claimed 5½ minutes: 34 cards, 31 cuts and 12 B-rolls were pushed out).
+                found = re.search(r"\d+(?:\.\d+)?", cells[duration_col])
+                duration = float(found.group(0)) if found else None
+                if duration is not None and not DRAWING_MIN_SECONDS <= duration <= DRAWING_MAX_SECONDS:
+                    duration = None
             if not duration or duration <= 0:
                 duration = _drawing_duration(" | ".join(cells))
             windows.append((start, start + float(duration or DRAWING_WINDOW_SECONDS)))
