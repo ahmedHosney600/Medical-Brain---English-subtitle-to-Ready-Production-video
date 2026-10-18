@@ -742,3 +742,16 @@ class BoldTitleCapTest(unittest.TestCase):
         from medical_brain.nodes.chapters import normalize_section_headers
         text = "\n".join(f"**جملة مهمة رقم {i} هنا**\nكلام" for i in range(20))
         self.assertEqual(normalize_section_headers(text), text)
+
+
+class RewordedTitleTest(unittest.TestCase):
+    def test_a_reworded_chapter_title_is_not_missing(self):
+        from medical_brain.nodes.chapters import missing_chapters
+        bp = {"chapter_mode": True, "chapters": [{"id": "C1", "title": "إزاي العضلة بتفك ميكانيكياً في ثواني؟"},
+                                                 {"id": "C2", "title": "كذبة المغنيسيوم والموز"}]}
+        script = "=== إزاي العضلة بتفك غالباً في دقيقة ===\nنص\n=== كذبة المغنيسيوم والموز ===\nنص\n"
+        from medical_brain.nodes import chapters as C
+        with mock.patch.object(C, "chapter_mode_on", return_value=True):
+            self.assertEqual(missing_chapters(bp, script), [])
+            self.assertEqual(missing_chapters(bp, "=== كذبة المغنيسيوم والموز ===\nنص\n"),
+                             ["إزاي العضلة بتفك ميكانيكياً في ثواني؟"])

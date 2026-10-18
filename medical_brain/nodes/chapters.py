@@ -127,9 +127,22 @@ def missing_chapters(blueprint, script: str) -> list:
         if not isinstance(chapter, dict):
             continue
         title = str(chapter.get("title", "") or "").strip()
-        if title and title not in present:
+        if title and title not in present and not _title_reworded(title, present):
             missing.append(title)
     return missing
+
+
+def _title_reworded(title: str, present: set) -> bool:
+    """True when a header in the script is the same chapter with a reworded title: a
+    truth fix turned «بتفك ميكانيكياً في ثواني؟» into «بتفك غالباً في …» and the exact-match
+    check "restored" the old chapter next to the corrected one (chapter 1 twice)."""
+    def words(text):
+        return {w for w in normalize_ar(re.sub(r"(?i)^(?:chapter|act|الفصل)\s*\S*\s*[—:\-–|]\s*", "", text)).split()
+                if len(w) >= 3}
+    wanted = words(title)
+    if len(wanted) < 2:
+        return False
+    return any(len(wanted & words(other)) / len(wanted) >= 0.6 for other in present)
 
 
 def blueprint_signature(blueprint) -> str:
