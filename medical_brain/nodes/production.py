@@ -1822,8 +1822,13 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
     rows = _sorted_rows(rows, layout, script, wpm, after=after)
     variety_budget = [MAX_VARIETY_REWRITES]
     re_imaged = _replace_duplicate_images(rows, layout, sentences, script, wpm, after, norm_script, variety_budget)
-    re_imaged += _replace_repeated_families(rows, layout, sentences, script, wpm, after, variety_budget,
-                                            drawings=_drawing_subjects(state.get("text_animation_overlay", "")))
+    drawings = _drawing_subjects(state.get("text_animation_overlay", ""))
+    first = _replace_repeated_families(rows, layout, sentences, script, wpm, after, variety_budget, drawings=drawings)
+    re_imaged += first
+    if first and variety_budget[0] > 0:
+        # New pictures (and gap fills) can repeat each other: audit once more.
+        re_imaged += _replace_repeated_families(rows, layout, sentences, script, wpm, after, variety_budget,
+                                                drawings=drawings)
     if re_imaged:
         report["re_imaged"] = re_imaged
     _fit_end_cues(rows, layout, sentences, script, wpm, after)
