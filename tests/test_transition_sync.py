@@ -128,8 +128,9 @@ class SyncBrollCutsTest(unittest.TestCase):
         rows = transition_rows(out)
         self.assertEqual([r["cells"][0] for r in rows], ["1", "2", "3"])
         self.assertEqual([r["cells"][2] for r in rows],
-                         [sentence(0), sentence(2), end_cue(4)])
-        self.assertEqual([r["cells"][1] for r in rows], ["0:00", "0:10", "0:21"])
+                         [sentence(0), sentence(2), " ".join(sentence(5).split()[:4])])
+        # The cut back is where the END CUE finishes (the next words), not where it begins.
+        self.assertEqual([r["cells"][1] for r in rows], ["0:00", "0:10", "0:25"])
         self.assertIn("Hook → B-roll #1", out)          # chained from the previous row's state
         self.assertIn("B-roll #1 → Talking Head", out)
         self.assertIn("Code-added: back to the presenter", out)
@@ -160,10 +161,10 @@ class WarningHoldTest(unittest.TestCase):
         state = {"text_animation_overlay": overlay_table(warning_row(4, 10))}
         out, added = sync(transition, broll, state=state)
 
-        self.assertEqual(added, 0)                       # sentence(0) covers the B-roll
+        self.assertEqual(added, 1)                       # only the cut back after sentence(0)
         rows = transition_rows(out)
-        self.assertEqual([r["cells"][1] for r in rows], ["0:00", "0:30"])
-        self.assertEqual(rows[1]["cells"][2], sentence(6))
+        self.assertEqual([r["cells"][1] for r in rows], ["0:00", "0:05", "0:30"])
+        self.assertEqual(rows[2]["cells"][2], sentence(6))
         self.assertNotIn(sentence(5), out)
 
     def test_a_code_added_broll_cut_moves_the_broll_start_instead(self):
@@ -458,4 +459,54 @@ class EarlyExitTest(unittest.TestCase):
             out, _ = sync(transition, broll)
         rows = transition_rows(out)
         exit_row = [r for r in rows if r["cells"][3].startswith("B-roll #1")][0]
-        self.assertEqual(exit_row["cells"][2], end_cue(3))
+        self.assertEqual(exit_row["cells"][2], " ".join(sentence(4).split()[:4]))
+
+
+class EndCueTimingTest(unittest.TestCase):
+    def test_a_repeated_end_cue_resolves_after_the_clip_start(self):
+        # sentence 1 is said again as sentence 8: the clip starting at sentence 7 ends there.
+        text = " ".join((sentence(1) if i == 8 else sentence(i)) + "." for i in range(12))
+        rows = [{"num": "1", "start": sentence(7), "end": end_cue(1)}]
+        starts, ends = production._broll_row_times(rows, text, 60)
+        self.assertEqual(starts, [35.0])
+        self.assertEqual(ends, [45.0])                 # after the second occurrence finishes
+
+    def test_phantom_rows_naming_a_far_broll_are_replaced(self):
+        transition = transition_table(transition_row(1, 0, "Talking Head → B-roll #1", "in"),
+                                      transition_row(2, 1, "B-roll #1 → Talking Head", "out"),
+                                      transition_row(3, 6, "Talking Head → B-roll #9", "ghost"),
+                                      transition_row(4, 7, "B-roll #9 → Talking Head", "ghost out"))
+        broll = broll_table(broll_row(1, 0, 0))
+        with mock.patch("builtins.print"):
+            out, _ = sync(transition, broll)
+        self.assertNotIn("B-roll #9", out)
+        self.assertNotIn("ghost", out)
+
+    def test_back_to_back_clips_become_one_cut(self):
+        transition = transition_table(transition_row(1, 0, "Talking Head → B-roll #1", "in"))
+        broll = broll_table(broll_row(1, 2, 3), broll_row(2, 4, 5))   # #1 ends where #2 starts
+        with mock.patch("builtins.print"):
+            out, _ = sync(transition, broll)
+        moves = [r["cells"][3] for r in transition_rows(out)]
+        self.assertIn("B-roll #1 → B-roll #2", moves)
+        self.assertIn("B-roll #2 → Talking Head", moves)
+
+    def test_same_visual_tells_broll_numbers_apart(self):
+        self.assertFalse(production._same_visual("B-roll #2", "B-roll #3"))
+        self.assertTrue(production._same_visual("B-roll #2", "Hook B-roll #2"))
+        self.assertTrue(production._same_visual("Talking Head CU", "Talking Head"))
+
+
+class OverlayOffDrawingTest(unittest.TestCase):
+    def test_cards_inside_a_drawing_move_after_it_and_queue(self):
+        guide = overlay_table(
+            f"| 1 | 9:59 | WHITEBOARD DRAWING | diagram | {sentence(2)} | {end_cue(3)} | full | draw | 10 | cut | — | x |\n",
+            f"| 2 | 9:59 | WARNING BOX | تحذير مهم | {sentence(3)} | {end_cue(3)} | center | fade | 4 | fade | — | x |\n",
+            f"| 3 | 9:59 | TOP-RIGHT POPUP | DVT | {sentence(3)} | {end_cue(3)} | top | fade | 3 | fade | — | x |\n")
+        with mock.patch("builtins.print"):
+            out = production.move_overlays_out_of_drawings(guide, script(), 60)
+        cues = [production._table_cells(line)[4] for line in out.splitlines()[3:] if line.startswith("|")]
+        self.assertEqual(cues[0], sentence(2))                       # the drawing stays
+        self.assertEqual(cues[1], sentence(4))                       # first sentence after 0:20
+        self.assertEqual(cues[2], sentence(5))                       # queued after the warning
+        self.assertEqual(production.move_overlays_out_of_drawings(out, script(), 60), out)

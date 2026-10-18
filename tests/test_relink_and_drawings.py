@@ -152,8 +152,8 @@ class NodeRelinkTest(unittest.TestCase):
         self.assertIn("B-roll #2", out["transition_design"])
         self.assertNotIn("cut to B-roll #3", out["transition_design"])
         self.assertIn("B-roll #2 and —", out["text_animation_overlay"])
-        self.assertIn("T#3", out["text_animation_overlay"])
-        self.assertIn("After T#3", out["broll_prompts"])
+        self.assertIn("T#5", out["text_animation_overlay"])
+        self.assertIn("After T#5", out["broll_prompts"])
         self.assertIn("text_animation_overlay", out)
 
 

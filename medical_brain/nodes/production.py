@@ -318,7 +318,8 @@ def visual_events_block(state: PipelineState, low: float = None, high: float = N
         if start is not None:
             events.append((start, f"B-roll #{row.get('num', '')} starts — cue «{row.get('start', '')}»"))
         if end is not None:
-            events.append((end, f"B-roll #{row.get('num', '')} ends — cue «{row.get('end', '')}» (back to the presenter)"))
+            events.append((end, f"B-roll #{row.get('num', '')} ends after «{row.get('end', '')}» is spoken "
+                                f"(cut back to the presenter here, on the next words)"))
     guide = state.get("text_animation_overlay", "") or ""
     for n, (a, b) in enumerate(_drawing_windows(guide, script, wpm), 1):
         events.append((a, f"Whiteboard Drawing {n} on screen until {_fmt_seconds(b)} (full screen — no other cut inside)"))
@@ -410,7 +411,8 @@ def _overlay_chapter_mode(state: PipelineState, system_prompt: str, blueprint: d
     joined = retime_drawing_specs(joined, state.get("refined_script", ""), ew.blueprint_wpm(state.get("blueprint")))
     joined = ew.rewrite_cue_timestamps(joined, state.get("refined_script", ""),
                                        ew.blueprint_wpm(state.get("blueprint")))
-    joined = fix_overlay_read_times(joined)
+    joined = move_overlays_out_of_drawings(fix_overlay_read_times(joined), state.get("refined_script", ""),
+                                           ew.blueprint_wpm(state.get("blueprint")))
     return {"text_animation_overlay": joined,
             "production_chapter_outputs": _store_step(state, "text_animation_overlay", outputs)}
 
@@ -456,7 +458,8 @@ PRODUCTION CRITIQUE REPORT:
     response = retime_drawing_specs(response, state.get("refined_script", ""), ew.blueprint_wpm(state.get("blueprint")))
     response = ew.rewrite_cue_timestamps(response, state.get("refined_script", ""),
                                          ew.blueprint_wpm(state.get("blueprint")))
-    return {"text_animation_overlay": fix_overlay_read_times(response)}
+    return {"text_animation_overlay": move_overlays_out_of_drawings(
+        fix_overlay_read_times(response), state.get("refined_script", ""), ew.blueprint_wpm(state.get("blueprint")))}
 
 
 def text_animation_overlay_designer(state: PipelineState) -> dict:
@@ -1674,14 +1677,14 @@ def _fit_end_cues(rows: list, layout: dict, sentences: list, script: str, wpm: f
                 clip = min(BROLL_CLIP_SECONDS[1], max(BROLL_CLIP_SECONDS[0], float(found.group(0))))
         limit = next((t for t in times[i + 1:] if t is not None), None)
         current = cells[cols["end"]].strip()
-        at = ew.cue_seconds(current, script, wpm, after=after) if current else None
+        at = ew.cue_seconds(current, script, wpm, after=max(after, int(start * wpm / 60.0) - 1)) if current else None
         if at is not None:
-            at += len(current.split()) / wpm * 60.0
+            at += len(ew.normalize_ar(ew.spoken_text(current)).split()) / wpm * 60.0
             # Long enough to fill and short enough not to freeze: leave the model's cue.
-            if start + BROLL_CLIP_SECONDS[0] * 0.66 < at <= start + clip * 1.5 and (limit is None or at <= limit + 0.5):
+            if start + BROLL_CLIP_SECONDS[0] * 0.85 < at <= start + clip * 1.5 and (limit is None or at <= limit + 0.5):
                 continue
         options = [(end, s) for end, s in ends
-                   if end > start + BROLL_CLIP_SECONDS[0] * 0.66 and (limit is None or end <= limit + 0.5)]
+                   if end > start + BROLL_CLIP_SECONDS[0] * 0.85 and (limit is None or end <= limit + 0.5)]
         if not options:
             continue
         end, sentence = min(options, key=lambda item: abs(item[0] - (start + clip)))
@@ -2023,14 +2026,20 @@ def _sort_transition_blocks(blocks: list, script: str, wpm: float,
     """Sort rows by their script position, renumber 1..n and put each row back in the
     chapter block whose time range contains it (single-table runs keep one block).
     `map_out` accumulates the old→new number map across repeated sorts."""
+    def exit_first(row, cols):
+        """On one moment a cut OUT of a B-roll precedes the next cut in ("B-roll #2 →
+        Talking Head" before "Talking Head → B-roll #3"), so the chain reads #2 → #3."""
+        source = re.split(r"\s*(?:→|->)\s*", _row_cell(row, cols, "from_to"), maxsplit=1)[0]
+        return 0 if _BROLL_REF.search(source) else 1
+
     flat, order = [], 0
     for bi, block in enumerate(blocks):
         for row in block["rows"]:
             t = _transition_row_time(row, block["cols"], script, wpm)
             old = _number_value(_row_cell(row, block["cols"], "num"))
-            flat.append((t is None, t or 0.0, order, bi, row, old))
+            flat.append((t is None, t or 0.0, order, bi, row, old, exit_first(row, block["cols"])))
             order += 1
-    flat.sort(key=lambda item: (item[0], item[1], item[2]))
+    flat.sort(key=lambda item: (item[0], item[1], item[6], item[2]))
     step = {}
     for number, item in enumerate(flat, 1):
         num_col = blocks[item[3]]["cols"]["num"]
@@ -2090,10 +2099,10 @@ def _sort_transition_blocks(blocks: list, script: str, wpm: float,
                     else:
                         distances.append((0.0, k))
                 block_index = min(distances)[1]
-        assigned[block_index].append((float("inf") if time is None else time, order_no, row))
+        assigned[block_index].append((float("inf") if time is None else time, item[6], order_no, row))
     for block, rows in zip(blocks, assigned):
-        rows.sort(key=lambda item: (item[0], item[1]))
-        block["rows"] = [row for _t, _o, row in rows]
+        rows.sort(key=lambda item: (item[0], item[1], item[2]))
+        block["rows"] = [row for _t, _e, _o, row in rows]
 
 
 def _render_transition_blocks(text: str, blocks: list) -> str:
@@ -2125,9 +2134,28 @@ def _new_transition_row(block: dict, cue: str, from_to: str, rationale: str,
     return {"cells": cells, "order": 0}
 
 
-def _broll_row_times(rows: list, script: str, wpm: float) -> tuple:
-    """(start, end) script seconds for every B-roll row, using running cue positions."""
+def _end_cue_finish(cue: str, norm_script: str, wpm: float, start_pos: int):
+    """(seconds, next_cue) for a B-roll's END CUE: the moment its last word is spoken (the
+    cut back belongs there, not where the cue begins) and the first words spoken after it,
+    usable as the exit row's cue. The occurrence at/after the clip's start is the one meant:
+    the first occurrence put an outro clip's exit at 2:47 when its END CUE was also said
+    there (a critique: "T#22/T#23 point to B-roll #43 at 2:41, but #43 is the outro").
+    (None, None) when the cue is not found."""
+    positions = [p for p in ew.cue_positions(cue, norm_script) if p >= start_pos]
+    if not positions:
+        return None, None
+    words = norm_script.split()
+    finish = positions[0] + len(ew.normalize_ar(ew.spoken_text(cue)).split())
+    after = words[finish:finish + 4]
+    return finish / wpm * 60.0, (" ".join(after) if len(after) >= 3 else None)
+
+
+def _broll_row_times(rows: list, script: str, wpm: float, exit_cues: list = None) -> tuple:
+    """(start, end) script seconds for every B-roll row, using running cue positions. The
+    end is when the END CUE finishes. `exit_cues`, when given, receives per row the words
+    spoken right after the END CUE (None when unknown)."""
     norm_script = ew.normalize_ar(ew.spoken_text(script))
+    wpm = float(wpm or 135)
     pos, starts, ends = 0, [], []
     for row in rows:
         cue = row.get("start") or ""
@@ -2140,9 +2168,12 @@ def _broll_row_times(rows: list, script: str, wpm: float) -> tuple:
             later = [p for p in ew.cue_positions(cue, norm_script) if p >= pos]
             if later:
                 pos = later[0]
+        start_pos = pos if cue and later else (int(seconds * wpm / 60.0) if seconds is not None else 0)
         end = row.get("end") or ""
-        end_seconds = ew.cue_seconds(end, script, wpm) if end else None
+        end_seconds, next_cue = _end_cue_finish(end, norm_script, wpm, start_pos) if end else (None, None)
         ends.append(end_seconds)
+        if exit_cues is not None:
+            exit_cues.append(next_cue)
     return starts, ends
 
 
@@ -2333,6 +2364,86 @@ def fix_overlay_read_times(text: str) -> str:
     return "\n".join(lines) + ("\n" if (text or "").endswith("\n") else "") if changed else text
 
 
+def move_overlays_out_of_drawings(text: str, script: str, wpm: float) -> str:
+    """A whiteboard drawing fills the screen, so no text card may sit on it (a critique:
+    "Drawing 4 is flagged clear, but Warning #28 starts at 12:58 and DVT Popup #29 at
+    13:04 — three focal elements stack on the most safety-critical visual"). A card that
+    starts inside a drawing's window moves to the first sentence after it; one that starts
+    before and runs more than 1 s into it is cut to end at the drawing when it can still
+    be read, otherwise moved after it as well. Drawing rows themselves stay."""
+    windows = _drawing_windows(text, script, wpm)
+    if not windows or not script:
+        return text
+    sentences = _script_sentences(script, wpm)
+    norm_script = ew.normalize_ar(ew.spoken_text(script))
+    lines = text.splitlines()
+    moved = cut = 0
+    i = 0
+    while i < len(lines):
+        if not lines[i].strip().startswith("|"):
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and lines[j].strip().startswith("|"):
+            j += 1
+        upper = [c.upper() for c in _table_cells(lines[i])]
+
+        def col(*names):
+            return next((k for k, h in enumerate(upper) if any(n in h for n in names)), None)
+
+        element_col, start_col, end_col = col("ELEMENT"), col("START CUE", "▶"), col("END CUE", "⏹")
+        hold_col, content_col = col("HOLD"), col("CONTENT")
+        if element_col is None or start_col is None or hold_col is None:
+            i = j
+            continue
+        separator = i + 1 < j and chapters.is_separator_row(lines[i + 1])
+        pos, free_at = 0, 0.0          # cards moved after one drawing queue, never stack
+        for k in range(i + (2 if separator else 1), j):
+            cells = _table_cells(lines[k])
+            if len(cells) <= max(element_col, start_col, hold_col):
+                continue
+            element = cells[element_col].upper()
+            if "DRAWING" in element or "WHITEBOARD" in element:
+                continue
+            start = ew.cue_seconds(cells[start_col], script, wpm, after=pos)
+            hold = re.search(r"\d+(?:\.\d+)?", cells[hold_col])
+            if start is None or not hold:
+                continue
+            later = [p for p in ew.cue_positions(cells[start_col], norm_script) if p >= pos]
+            if later:
+                pos = later[0]
+            length = float(hold.group(0))
+            for low, high in windows:
+                inside = low - 0.25 <= start < high
+                runs_in = start < low and start + length > low + 1.0
+                if not inside and not runs_in:
+                    continue
+                words = len(re.findall(r"[\w\u0600-\u06FF]+", cells[content_col])) if content_col is not None \
+                    and content_col < len(cells) else 0
+                readable = max(1.5, words / OVERLAY_READ_WORDS_PER_SECOND)
+                if runs_in and low - start >= readable:
+                    cells[hold_col] = cells[hold_col][:hold.start()] + f"{math.floor((low - start) * 2) / 2:g}" \
+                        + cells[hold_col][hold.end():]
+                    cut += 1
+                else:
+                    sentence = _first_sentence(sentences, max(high, free_at), None)
+                    if sentence is None:
+                        break
+                    cells[start_col] = _sentence_cue(sentence, norm_script)
+                    if end_col is not None and end_col < len(cells):
+                        cells[end_col] = " ".join(sentence["words"][-4:])
+                    free_at = sentence["start_s"] + length
+                    moved += 1
+                lines[k] = "| " + " | ".join(cells) + " |"
+                break
+        i = j
+    if not moved and not cut:
+        return text
+    print(f"  🔧 overlays: moved {moved} cards off whiteboard drawings, shortened {cut} to end at one")
+    text = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+    return ew.rewrite_cue_timestamps(text, script, wpm)
+
+
 def _overlay_warning_holds(text: str, script: str, wpm: float) -> list:
     """[(start_s, end_s)] for overlay rows whose Element Type is a WARNING/ALERT box."""
     lines = (text or "").splitlines()
@@ -2478,6 +2589,9 @@ def _same_visual(a: str, b: str) -> bool:
     def core(label):
         words = re.sub(r"\(.*?\)|[^\w\s#]", " ", label or "").lower().split()
         return " ".join(words[:2])
+    ref_a, ref_b = _BROLL_REF.search(a or ""), _BROLL_REF.search(b or "")
+    if ref_a or ref_b:                       # "B-roll #2" and "B-roll #3" are two clips
+        return bool(ref_a and ref_b) and ref_a.group(2) == ref_b.group(2)
     return bool(core(a)) and core(a) == core(b)
 
 
@@ -2499,13 +2613,16 @@ def drop_zero_length_flashes(text: str, script: str, wpm: float) -> str:
         p1 = re.split(r"\s*(?:→|->)\s*", _row_cell(r1, b1["cols"], "from_to"), maxsplit=1)
         p2 = re.split(r"\s*(?:→|->)\s*", _row_cell(r2, b2["cols"], "from_to"), maxsplit=1)
         if len(p1) == 2 and len(p2) == 2 and p1[1].strip() and _same_visual(p1[1], p2[0]):
-            drop.update({k, k + 1})
+            # "X → Y" + "Y → X" flashes Y: drop both. "B-roll #2 → Talking Head" +
+            # "Talking Head → B-roll #3" is one cut from #2 to #3: keep the second row (the
+            # chain then names #2 as its From); dropping both orphaned B-roll #3.
+            drop.update({k, k + 1} if _same_visual(p1[0], p2[1]) else {k})
     if not drop:
         return text
     for k in sorted(drop, reverse=True):
         block, row = rows[k]
         block["rows"].remove(row)
-    print(f"  🔧 transition map: removed {len(drop) // 2} zero-length flashes")
+    print(f"  🔧 transition map: removed {len(drop)} rows of zero-length flashes")
     return _render_transition_blocks(text, blocks)
 
 
@@ -2645,6 +2762,36 @@ def _graphics_become_drawings(blocks: list, overlay_guide: str, script: str, wpm
     return renamed
 
 
+PHANTOM_SLACK_SECONDS = 8.0
+
+
+def _drop_phantom_broll_rows(blocks: list, brolls: list, starts: list, ends: list,
+                             script: str, wpm: float) -> int:
+    """Removes rows naming a B-roll that is not on screen then: a number missing from the
+    shot list, or a moment more than 8 s outside that clip's window (a critique: "T#22/T#23
+    point to B-roll #43 at 2:41, but B-roll #43 is the outro shot at 15:40"). The cuts the
+    shot list needs are added afterwards. Returns how many rows were removed."""
+    window = {}
+    for row, st, en in zip(brolls, starts, ends):
+        if st is not None:
+            window[str(row.get("num", "")).strip()] = (st, en if en is not None else st + BROLL_CLIP_SECONDS[1])
+    if not window:
+        return 0
+    flat = [(block, row) for block in blocks for row in block["rows"]]
+    removed = 0
+    for (block, row), t in zip(flat, _transition_row_times(blocks, script, wpm)):
+        refs = _BROLL_REF.findall(_row_cell(row, block["cols"], "from_to"))
+        if t is None or not refs:
+            continue
+        for _, number in refs:
+            span = window.get(number)
+            if span is None or not span[0] - PHANTOM_SLACK_SECONDS <= t <= span[1] + PHANTOM_SLACK_SECONDS:
+                block["rows"].remove(row)
+                removed += 1
+                break
+    return removed
+
+
 def _sync_transition_once(state: PipelineState, transition_design: str, broll_table: str,
                           script: str, wpm: float, broll_out: list = None,
                           map_out: dict = None) -> tuple:
@@ -2669,7 +2816,11 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
         return transition_design, 0, 0
 
     target = next((block for block in blocks if block["cols"]["cue"] is not None), blocks[0])
-    starts, ends = _broll_row_times(brolls, script, wpm)
+    exit_cues = []
+    starts, ends = _broll_row_times(brolls, script, wpm, exit_cues=exit_cues)
+    phantoms = _drop_phantom_broll_rows(blocks, brolls, starts, ends, script, wpm)
+    if phantoms:
+        print(f"  🔧 transition map: removed {phantoms} rows naming a B-roll that is not on screen then")
     replaced = _graphics_become_drawings(blocks, (state or {}).get("text_animation_overlay", ""), script, wpm)
     if replaced:
         print(f"  🔧 transition map: {replaced} graphic(s) overlapping a whiteboard drawing now cut to the drawing")
@@ -2697,18 +2848,25 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
                     return sentence["start_s"], _sentence_cue(sentence, norm_script)
         return when, cue
 
-    def covered(when):
-        return any(abs(t - when) <= TRANSITION_TOLERANCE_SECONDS for t in existing) or any(
-            low < when < high for low, high in holds)
+    def covered(when, low=None, skip=None):
+        """A row within ±3 s of `when` (or, for an exit, anywhere from `low` — where the END
+        CUE begins — to 3 s after it finishes; the early-exit pass below moves it to the
+        finish). `skip` is the clip's start: the entry row never doubles as its exit."""
+        low = when - TRANSITION_TOLERANCE_SECONDS if low is None else low - TRANSITION_TOLERANCE_SECONDS
+        return any(low <= t <= when + TRANSITION_TOLERANCE_SECONDS
+                   and (skip is None or abs(t - skip) > TRANSITION_TOLERANCE_SECONDS) for t in existing) or any(
+            lo < when < hi for lo, hi in holds)
 
     relabelled = [0]
 
-    def relabel(when, number, entering):
+    def relabel(when, number, entering, low=None, skip=None):
         """A model row already at this B-roll edge that names no B-roll (e.g. "A-roll →
         2D Animation" where B-roll #5 starts) contradicts the shot list: point it at the
         B-roll, keeping its transition type. Rows naming some B-roll are left alone."""
+        low = when - TRANSITION_TOLERANCE_SECONDS if low is None else low - TRANSITION_TOLERANCE_SECONDS
         near = [(abs(t - when), block, row) for t, block, row in timed
-                if abs(t - when) <= TRANSITION_TOLERANCE_SECONDS]
+                if low <= t <= when + TRANSITION_TOLERANCE_SECONDS
+                and (skip is None or abs(t - skip) > TRANSITION_TOLERANCE_SECONDS)]
         if not near or not number:
             return
         _, block, row = min(near, key=lambda item: item[0])
@@ -2740,7 +2898,7 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
 
     added = 0
     shifted = {}                    # B-roll number -> new START CUE (moved out of a hold)
-    for row, start, end in zip(brolls, starts, ends):
+    for index, (row, start, end, exit_cue) in enumerate(zip(brolls, starts, ends, exit_cues)):
         number = str(row.get("num", "")).strip()
         if start is not None:
             start_at, start_cue = out_of_hold(start, row.get("start", ""))
@@ -2755,15 +2913,23 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
             else:
                 relabel(start_at, number, entering=True)
         if row.get("end") and end is not None:
-            end_at, end_cue = out_of_hold(end, row.get("end", ""))
-            if not covered(end_at):
-                target["rows"].append(_new_transition_row(
-                    target, end_cue, f"B-roll #{number} → Talking Head",
-                    "Code-added: back to the presenter", end_at))
+            end_at, end_cue = out_of_hold(end, exit_cue or row.get("end", ""))
+            cue_begins = end - len(ew.normalize_ar(ew.spoken_text(row["end"])).split()) / wpm * 60.0
+            low = cue_begins if end_at == end else None
+            if not covered(end_at, low, start):
+                # The next clip starting on this moment: one cut from clip to clip (its
+                # entry is then covered by this row).
+                following = next(((str(r.get("num", "")).strip(), t) for r, t in
+                                  zip(brolls[index + 1:], starts[index + 1:]) if t is not None), None)
+                if following and abs(following[1] - end_at) <= COLLISION_SECONDS + 0.5:
+                    move, why = f"B-roll #{number} → B-roll #{following[0]}", f"Code-added: straight on to B-roll #{following[0]}"
+                else:
+                    move, why = f"B-roll #{number} → Talking Head", "Code-added: back to the presenter"
+                target["rows"].append(_new_transition_row(target, end_cue, move, why, end_at))
                 existing.append(end_at)
                 added += 1
             else:
-                relabel(end_at, number, entering=False)
+                relabel(end_at, number, entering=False, low=low, skip=start)
 
     # A presenter-only move (punch-in, reframe) while a B-roll fills the screen cannot be
     # seen and contradicts the cut at the same second (a critique listed 24 such pairs).
@@ -2784,20 +2950,30 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
     # at the B-roll's END CUE (a critique found four 1–2 s flashes of 5–7 s clips).
     flat = [(block, row) for block in blocks for row in block["rows"]]
     flat_times = _transition_row_times(blocks, script, wpm)
-    by_num = {str(r.get("num", "")).strip(): (r, st, en) for r, st, en in zip(brolls, starts, ends)}
+    by_num = {str(r.get("num", "")).strip(): (r, st, en, xc)
+              for r, st, en, xc in zip(brolls, starts, ends, exit_cues)}
     stretched = 0
     for (block, row), t in zip(flat, flat_times):
-        source = re.split(r"\s*(?:→|->)\s*", _row_cell(row, block["cols"], "from_to"), maxsplit=1)[0]
-        m = _BROLL_REF.search(source)
+        parts = re.split(r"\s*(?:→|->)\s*", _row_cell(row, block["cols"], "from_to"), maxsplit=1)
+        m = _BROLL_REF.search(parts[0])
         cue_col = block["cols"].get("cue")
         if not m or t is None or cue_col is None or cue_col >= len(row["cells"]):
             continue
         entry = by_num.get(m.group(2))
         if not entry:
             continue
-        brow, st, en = entry
-        if st is not None and en is not None and brow.get("end") and st - 0.5 <= t < min(st + 2.5, en - 1.0):
-            row["cells"][cue_col] = brow["end"]
+        brow, st, en, exit_cue = entry
+        if st is None or en is None or not brow.get("end"):
+            continue
+        # Back to the presenter before the END CUE finishes cuts the clip short (a critique
+        # listed seven 1–2 s clips); a cut on to a designed graphic keeps its early moment.
+        to_presenter = len(parts) < 2 or not _GRAPHIC_TO_RE.search(parts[1]) and not _BROLL_REF.search(parts[1])
+        later = [x for x in starts if x is not None and x > st + 0.5]
+        next_start = min(later) if later else None
+        late = to_presenter and en + 1.5 < t and (next_start is None or t < next_start - 0.5)
+        early = st - 0.5 <= t < min(st + 2.5, en - 1.0) or to_presenter and st - 0.5 <= t < en - 0.75 or late
+        if early:
+            row["cells"][cue_col] = exit_cue or brow["end"]
             stretched += 1
     if stretched:
         print(f"  🔧 transition map: moved {stretched} early B-roll exits to the clip's end")
