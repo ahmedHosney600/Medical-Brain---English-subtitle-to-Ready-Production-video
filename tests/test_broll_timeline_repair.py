@@ -257,7 +257,8 @@ class DuplicateImageTest(unittest.TestCase):
 class RepeatedFamilyTest(unittest.TestCase):
     def test_family_repeats_after_the_first_are_re_imaged(self):
         table = HEAD + row(1, 0) + row(2, 3) + row(3, 6) + row(4, 9) + row(5, 12)
-        use(self, production, "call_llm_json", FakeLLM(lambda *a: ({"repeats": [[2, 4]]}, "raw")))
+        audits = iter([({"repeats": [[2, 4]]}, "raw")])          # the second audit finds nothing new
+        use(self, production, "call_llm_json", FakeLLM(lambda *a: next(audits, ({"repeats": []}, "raw"))))
         fake = use(self, production, "call_llm", FakeLLM(
             lambda *a: "| 9 | 9:59 | X | X | 🎬 Video | lighthouse keeper polishing a lens, dolly |"))
         out, report = repair(table)
@@ -279,7 +280,8 @@ class DrawingRepeatTest(unittest.TestCase):
         table = HEAD + row(1, 0) + row(2, 3) + row(3, 6) + row(4, 9)
         guide = ("### Drawing Animations\nDrawing Animation 1: The switchboard\n"
                  "- **Subject Description**: a drawn electrical switchboard with two circuits\n")
-        use(self, production, "call_llm_json", FakeLLM(lambda *a: ({"repeats": [], "repeats_drawing": [3]}, "raw")))
+        audits = iter([({"repeats": [], "repeats_drawing": [3]}, "raw")])
+        use(self, production, "call_llm_json", FakeLLM(lambda *a: next(audits, ({"repeats": []}, "raw"))))
         fake = use(self, production, "call_llm", FakeLLM(
             lambda *a: "| 9 | 9:59 | X | X | 🎬 Video | woman stretching at sunrise, dolly |"))
         with mock.patch("builtins.print"):
