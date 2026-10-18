@@ -2569,6 +2569,25 @@ def _sync_transition_once(state: PipelineState, transition_design: str, broll_ta
             dropped_moves += 1
     if dropped_moves:
         print(f"  🔧 transition map: removed {dropped_moves} presenter moves hidden under a B-roll")
+    # A code-added cut is redundant when another row already names that B-roll edge at
+    # the same moment (a relabelled designed row + a code-added row both "→ B-roll #5").
+    flat = [(block, row) for block in blocks for row in block["rows"]]
+    flat_times = _transition_row_times(blocks, script, wpm)
+    redundant = []
+    for k, ((block, row), t) in enumerate(zip(flat, flat_times)):
+        if t is None or "code-added" not in _row_cell(row, block["cols"], "rationale").lower():
+            continue
+        refs = set(_BROLL_REF.findall(_row_cell(row, block["cols"], "from_to")))
+        for m, ((other_block, other), u) in enumerate(zip(flat, flat_times)):
+            if m != k and u is not None and abs(u - t) <= COLLISION_SECONDS and other not in [r for _, r in redundant] \
+                    and refs & set(_BROLL_REF.findall(_row_cell(other, other_block["cols"], "from_to"))):
+                redundant.append((block, row))
+                break
+    for block, row in redundant:
+        if row in block["rows"]:
+            block["rows"].remove(row)
+    if redundant:
+        print(f"  🔧 transition map: removed {len(redundant)} code-added cuts another row already makes")
     if added:
         print(f"  🔧 transition map: added {added} B-roll cuts")
     if relabelled[0]:
@@ -2858,11 +2877,42 @@ def script_clock(script: str, wpm: float) -> str:
             + (f"; sections start at: {'; '.join(marks)}" if marks else ""))
 
 
+COLLISION_SECONDS = 0.75
+
+
+def transition_collisions(transition_design: str, script: str, wpm: float) -> list:
+    """Problem lines for 2+ transition rows on the same second where a designed (not
+    code-added) row is involved: the editor can cut only once (a run had three on «طيب
+    إزاي نقيس صح» at 5:10)."""
+    blocks = _transition_blocks(transition_design or "")
+    if not blocks:
+        return []
+    rows = [(block, row) for block in blocks for row in block["rows"]]
+    timed = sorted(((t, block, row) for (block, row), t in zip(rows, _transition_row_times(blocks, script, wpm))
+                    if t is not None), key=lambda item: item[0])
+    problems, i = [], 0
+    while i < len(timed):
+        j = i
+        while j + 1 < len(timed) and timed[j + 1][0] - timed[i][0] <= COLLISION_SECONDS:
+            j += 1
+        group = timed[i:j + 1]
+        designed = [g for g in group if "code-added" not in _row_cell(g[2], g[1]["cols"], "rationale").lower()]
+        if len(group) > 1 and designed:
+            names = "; ".join(f"T#{re.sub(r'[^0-9]', '', _row_cell(r, b['cols'], 'num'))} "
+                              f"{_row_cell(r, b['cols'], 'from_to')[:50]}" for _, b, r in group)
+            problems.append(f"{len(group)} transitions on the same moment ({_fmt_seconds(group[0][0])}): {names} — "
+                            "keep one, chain the rest over real time.")
+        i = j + 1
+    return problems
+
+
 def production_quality_critique(state: PipelineState) -> dict:
     system_prompt = load_prompt("production_quality_critique")
     code_problems = broll_engagement_problems(state.get("broll_prompts", ""), state.get("text_animation_overlay", ""),
                                               _video_minutes(state), script=state.get("refined_script", ""),
                                               wpm=ew.blueprint_wpm(state.get("blueprint")))
+    code_problems += transition_collisions(state.get("transition_design", ""), state.get("refined_script", ""),
+                                           ew.blueprint_wpm(state.get("blueprint")))
     code_problems += broll_reference_problems(state.get("broll_prompts", ""),
                                               state.get("transition_design", ""),
                                               state.get("text_animation_overlay", ""))

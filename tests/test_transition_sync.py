@@ -348,3 +348,13 @@ class GraphicOwnsItsMomentTest(unittest.TestCase):
         transition = transition_table(transition_row(1, 6, "Talking Head → Dual-Bar Chart", "stat"))
         windows = P._designed_graphic_windows(transition, script(), 60)
         self.assertEqual(windows, [(27.0, 36.0)])                  # sentence 6 starts at 30 s
+
+
+class CollisionTest(unittest.TestCase):
+    def test_designed_rows_on_one_moment_are_reported(self):
+        transition = transition_table(transition_row(1, 4, "Hose → 3D Artery", "a"),
+                                      transition_row(2, 4, "3D Artery → Talking Head", "b"),
+                                      transition_row(3, 8, "Talking Head → Split-Screen", "c"))
+        found = production.transition_collisions(transition, script(), 60)
+        self.assertEqual(len(found), 1)
+        self.assertIn("2 transitions on the same moment (0:20)", found[0])

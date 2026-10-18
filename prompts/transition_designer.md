@@ -55,6 +55,10 @@ DESIGN PRINCIPLES — THESE ARE NON-NEGOTIABLE:
 
 9. ACCOUNT FOR B-ROLL: When the script calls for [VISUAL NOTE: ...] or B-roll, plan transition IN to the B-roll and transition OUT back to talking head. These pairs should feel natural — typically: cut/zoom-in to B-roll, cross-dissolve or cut back to presenter.
 
+10. ONE TRANSITION PER MOMENT: never two or more rows on the same cue/second (e.g. "Animation → Talking Head" and "Talking Head → Split-Screen" both at 5:10) — the editor can only cut once. Chain them over real time: in, hold for the sentences it illustrates, out.
+
+11. A GRAPHIC LIVES ON ITS OWN SENTENCE, ONCE: cut to an animation/diagram/chart only on the line it illustrates, and never book the same graphic or a drawing's diagram a second time later in the video (a kidney animation over a sentence about not stopping your pills misstates the medicine).
+
 REVISION MODE: if production_revision_count > 0, apply only the fixes from the production critique report. Don't redesign transitions that weren't flagged.
 
 OUTPUT FORMAT:
