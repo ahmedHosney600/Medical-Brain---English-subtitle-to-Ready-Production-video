@@ -735,3 +735,10 @@ class BoldCueIsNotATitleTest(unittest.TestCase):
                      "**SFX: Pop**", "**نبرة جدية وحزم طبي**"):
             self.assertIn(kept, out)
         self.assertIn("=== الفصل الأول: الأرق ===", out)
+
+
+class BoldTitleCapTest(unittest.TestCase):
+    def test_too_many_bold_titles_are_left_as_they_were(self):
+        from medical_brain.nodes.chapters import normalize_section_headers
+        text = "\n".join(f"**جملة مهمة رقم {i} هنا**\nكلام" for i in range(20))
+        self.assertEqual(normalize_section_headers(text), text)

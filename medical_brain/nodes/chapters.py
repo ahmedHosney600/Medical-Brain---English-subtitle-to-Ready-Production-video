@@ -656,6 +656,7 @@ _WRAPPED_HEADER_RE = re.compile(r"^\s*===\s*\[\s*(.*?)\s*\](?:\s*\|[^=\[\]]*)?\s
 # (single-script mode). Speaker labels ("**د. أحمد حسني:**") end with a colon and stay.
 _SECTION_WORD_RE = re.compile(r"^(?:الفصل|المقدمة|الخاتمة|المقدّمة|ACT\b|CHAPTER\b|PART\b|INTRO|OUTRO)", re.IGNORECASE)
 # A bold cue line ("**[VISUAL NOTE: …]**", "**[نبرة واثقة]**", "**SFX: …**") is not a title.
+BOLD_TITLE_MAX = 12
 _BOLD_CUE_RE = re.compile(r"^(?:\[|\(|[A-Z][A-Z0-9 \-/&+]*:|(?:نبرة|وقفة|طاقة|نظرة|ميل|ابتسامة|صوت|حركة)\b)")
 _BOLD_TITLE_RE = re.compile(r"^\s*\*\*([^*\n]{3,110}?)\*\*\s*$")
 _TIME_OR_ENERGY_RE = re.compile(r"^(?:timestamp\s*:\s*)?~?\d{1,2}:\d{2}|^energy\b|^\d+(?:\.\d+)?\s*/\s*5$", re.IGNORECASE)
@@ -673,6 +674,7 @@ def normalize_section_headers(text: str) -> str:
     changed = bool(fenced)
     for k in reversed(fenced):
         del lines[k]
+    bold_converted = []
     for i, line in enumerate(lines):
         m = _WRAPPED_HEADER_RE.match(line) or (_HEADER_RE.match(line) if "|" in line else None)
         if m:
@@ -698,6 +700,7 @@ def normalize_section_headers(text: str) -> str:
             if (head and not head.endswith((":", "：")) and len(words) <= 14
                     and all(_TIME_OR_ENERGY_RE.search(f) for f in fields)
                     and (titled or (len(words) >= 2 and not re.search(r"[.!?؟…]$", head)))):
+                bold_converted.append((i, lines[i]))
                 lines[i] = f"=== {head} ==="
                 changed = True
                 continue
@@ -713,6 +716,12 @@ def normalize_section_headers(text: str) -> str:
         if m and not _CUE_LABEL_RE.match(m.group(1).strip()):
             lines[i] = f"=== {m.group(1).strip()} ==="
             changed = True
+    # A script has a handful of chapters: dozens of bold lines are emphasis or cues the
+    # rule misread (a run turned every bold cue into a section) — undo those.
+    if len(bold_converted) > BOLD_TITLE_MAX:
+        for k, original in bold_converted:
+            lines[k] = original
+        changed = bool(fenced) or any(l != o for l, o in zip(lines, text.split("\n")))
     return "\n".join(lines) if changed else text
 
 
