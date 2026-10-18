@@ -647,3 +647,28 @@ class RecommendedTitleCertaintyTest(unittest.TestCase):
                 mock.patch("builtins.print"):
             out = packaging.packaging_honesty_ctr_auditor(state)
         self.assertEqual(out["recommended_title"], "صداع جيوب أنفية ولا صداع نصفي؟ إزاي تفرق بينهم")
+
+
+class BoldTitleHeaderTest(unittest.TestCase):
+    def test_bold_title_lines_become_headers_and_speaker_labels_stay(self):
+        from medical_brain.nodes.chapters import normalize_section_headers
+        text = ("**المقدمة | 0:50–1:10**\nكلام\n**الفصل الأول: الرقم العالي في البيت | 1:10–3:30**\n"
+                "**د. أحمد حسني:**\nكلام\n**كام كلمة سريعة قبل ما نقفل**\nكلام\n**ده مهم جداً.**\n")
+        out = normalize_section_headers(text)
+        self.assertIn("=== الفصل الأول: الرقم العالي في البيت ===", out)
+        self.assertIn("=== كام كلمة سريعة قبل ما نقفل ===", out)
+        self.assertIn("**د. أحمد حسني:**", out)
+        self.assertIn("**ده مهم جداً.**", out)
+
+
+class UnplannedTailTest(unittest.TestCase):
+    def test_section_after_the_final_planned_chapter_is_flagged(self):
+        from medical_brain.nodes.quality import _unplanned_tail_sections
+        bp = {"chapters": [{"title": "القاتل الصامت والقياس"}, {"title": "متى تتوجه للطوارئ فوراً؟"}]}
+        script = ("=== الفصل الأول: القاتل الصامت والقياس ===\n" + "ك " * 200
+                  + "\n=== الفصل التاني: متى تتوجه للطوارئ فوراً؟ ===\n" + "ك " * 150
+                  + "\n=== كام كلمة سريعة قبل ما نقفل ===\n" + "ك " * 120
+                  + "\n=== CLOSING — الخاتمة ===\nسلام\n")
+        self.assertEqual(_unplanned_tail_sections(script, bp), [("كام كلمة سريعة قبل ما نقفل", 120)])
+        clean = script.split("=== كام")[0]
+        self.assertEqual(_unplanned_tail_sections(clean, bp), [])

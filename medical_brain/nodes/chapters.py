@@ -649,6 +649,10 @@ _CUE_LABEL_RE = re.compile(r"^[A-Z][A-Z0-9 \-/&]*:")
 # "=== [CHAPTER 1 | العنوان] ===": brackets inside the header and a "|" after the number
 # (a "|" title reads as a production label "DISCLAIMER | Timestamp …" and is skipped).
 _WRAPPED_HEADER_RE = re.compile(r"^\s*===\s*\[\s*(.*?)\s*\](?:\s*\|[^=\[\]]*)?\s*===\s*$")
+# "**الفصل الأول: الرقم العالي | 1:10–3:30**": a whole bold line used as a section title
+# (single-script mode). Speaker labels ("**د. أحمد حسني:**") end with a colon and stay.
+_SECTION_WORD_RE = re.compile(r"^(?:الفصل|المقدمة|الخاتمة|المقدّمة|ACT\b|CHAPTER\b|PART\b|INTRO|OUTRO)", re.IGNORECASE)
+_BOLD_TITLE_RE = re.compile(r"^\s*\*\*([^*\n]{3,110}?)\*\*\s*$")
 _TIME_OR_ENERGY_RE = re.compile(r"^(?:timestamp\s*:\s*)?~?\d{1,2}:\d{2}|^energy\b|^\d+(?:\.\d+)?\s*/\s*5$", re.IGNORECASE)
 _NUMBERED_PIPE_RE = re.compile(r"^((?:ACT|CHAPTER|PART|الفصل)\s*\d+)\s*\|\s*(.+)$", re.IGNORECASE)
 
@@ -677,6 +681,17 @@ def normalize_section_headers(text: str) -> str:
                 lines[i] = f"=== {title} ==="
                 changed = True
             continue
+        m = _BOLD_TITLE_RE.match(line)
+        if m:
+            head, *fields = [f.strip() for f in m.group(1).split("|")]
+            words = head.split()
+            titled = bool(fields) or bool(_SECTION_WORD_RE.search(head))
+            if (head and not head.endswith((":", "：")) and len(words) <= 14
+                    and all(_TIME_OR_ENERGY_RE.search(f) for f in fields)
+                    and (titled or (len(words) >= 2 and not re.search(r"[.!?؟…]$", head)))):
+                lines[i] = f"=== {head} ==="
+                changed = True
+                continue
         m = _BRACKET_HEADER_RE.match(line)
         if m:
             title = m.group(1).strip()

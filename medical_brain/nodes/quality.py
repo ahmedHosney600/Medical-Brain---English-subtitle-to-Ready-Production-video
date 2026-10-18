@@ -49,6 +49,30 @@ def _last_chapter_over_plan(script: str, blueprint) -> dict:
     return None
 
 
+def _unplanned_tail_sections(script: str, blueprint) -> list:
+    """[(title, words)] for content sections after the section that matches the plan's
+    last chapter (the closing/CTA is not a content section). A run appended «كام كلمة
+    سريعة قبل ما نقفل» — 271 words of new points — after its final chapter."""
+    plan = [c for c in ((blueprint or {}).get("chapters") or []) if isinstance(c, dict)]
+    sections = chapters.content_sections(chapters.normalize_section_headers(script or ""))
+    if not plan or len(sections) < 2:
+        return []
+    from ..exports.workbook import normalize_ar
+
+    def words(text):
+        return {w for w in normalize_ar(text or "").split() if len(w) >= 3}
+
+    last = words(plan[-1].get("title", ""))
+    if not last:
+        return []
+    scores = [len(last & words(title)) / max(1, len(last)) for title, _ in sections]
+    best = max(range(len(sections)), key=lambda k: scores[k])
+    if scores[best] < 0.4:
+        return []
+    return [(title, chapters.spoken_words(text)) for title, text in sections[best + 1:]
+            if chapters.spoken_words(text) >= 40]
+
+
 def _wpm(state) -> float:
     from ..exports.workbook import blueprint_wpm
     return blueprint_wpm(state.get("blueprint"))
@@ -613,6 +637,15 @@ Output ONLY the JSON object. Include the full revised script."""
                             f"{heavy['words']} of {heavy['total']} words ({heavy['share']:.0%} of the "
                             f"spoken script, {heavy['ratio']:.1f}× the average section); move the "
                             "secondary lists earlier or cut repetition; grade cannot be A.")
+
+        tail = _unplanned_tail_sections(script, state.get("blueprint"))
+        if tail:
+            names = "; ".join(f"«{title}» ({words} words)" for title, words in tail)
+            print(f"  ⚠️ unplanned section(s) after the final chapter: {names}")
+            user_prompt += (f"\n\nCODE CHECK — section(s) not in the plan were added after the final chapter: "
+                            f"{names}. A list appended before the closing crams the ending: fold any essential "
+                            "safety point into the planned chapters (before the red flags) and cut the rest; "
+                            "grade cannot be A.")
 
         bare, groups = chapters.english_terms(script)
         if bare or len(groups) > 5:
