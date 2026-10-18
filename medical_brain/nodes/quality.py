@@ -618,7 +618,8 @@ Output ONLY the JSON object. Include the full revised script."""
         print(f"  ⚠️ the disclaimer is {too_long[0]} words")
         user_prompt += (f"\n\nCODE CHECK — the disclaimer is {too_long[0]} spoken words («{too_long[1]}…»): "
                         "make it ONE warm spoken sentence of at most ~35 words (not a doctor, not a "
-                        "substitute for your own doctor, don't change medicines alone).")
+                        "substitute for your own doctor, don't change medicines alone). A long disclaimer at the "
+                        "start loses viewers when retention matters most: grade cannot be A.")
 
     # A chapter the writers dropped is invisible to the judge unless it is told: a real
     # run shipped a video with no chapter 1 because the header had been deleted. Name
