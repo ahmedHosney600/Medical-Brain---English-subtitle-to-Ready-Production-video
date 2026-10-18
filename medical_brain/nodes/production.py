@@ -2377,6 +2377,7 @@ def sync_transition_map(state: PipelineState, transition_design: str, broll_tabl
         text = new_text
         if (not added and not moved) or unchanged:
             break
+    text = drop_zero_length_flashes(text, script, wpm)
     text = chain_transition_states(text)
     text = rebuild_density_summary(text, script, wpm)
     if broll_out is not None:
@@ -2384,6 +2385,34 @@ def sync_transition_map(state: PipelineState, transition_design: str, broll_tabl
     if map_out is not None:
         map_out.append(mapping or {})
     return text, total
+
+
+def drop_zero_length_flashes(text: str, script: str, wpm: float) -> str:
+    """Drops an "X → Y" row immediately followed by "Y → X" on the same moment: Y would be
+    on screen for 0 frames (a critique found Talking Head → Drawing 2 → Talking Head all
+    at 8:21). The chain is rebuilt afterwards."""
+    blocks = _transition_blocks(text or "")
+    if not blocks:
+        return text
+    rows = [(block, row) for block in blocks for row in block["rows"]]
+    times = _transition_row_times(blocks, script, wpm)
+    drop = set()
+    for k in range(len(rows) - 1):
+        (b1, r1), (b2, r2) = rows[k], rows[k + 1]
+        t1, t2 = times[k], times[k + 1]
+        if t1 is None or t2 is None or abs(t2 - t1) > COLLISION_SECONDS or k in drop:
+            continue
+        p1 = re.split(r"\s*(?:→|->)\s*", _row_cell(r1, b1["cols"], "from_to"), maxsplit=1)
+        p2 = re.split(r"\s*(?:→|->)\s*", _row_cell(r2, b2["cols"], "from_to"), maxsplit=1)
+        if len(p1) == 2 and len(p2) == 2 and p1[1].strip() == p2[0].strip() and p1[1].strip():
+            drop.update({k, k + 1})
+    if not drop:
+        return text
+    for k in sorted(drop, reverse=True):
+        block, row = rows[k]
+        block["rows"].remove(row)
+    print(f"  🔧 transition map: removed {len(drop) // 2} zero-length flashes")
+    return _render_transition_blocks(text, blocks)
 
 
 def chain_transition_states(text: str) -> str:

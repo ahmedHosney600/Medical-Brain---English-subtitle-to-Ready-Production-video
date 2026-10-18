@@ -397,3 +397,16 @@ class ChainStatesTest(unittest.TestCase):
         froms = [r["cells"][3] for r in transition_rows(out)]
         self.assertEqual(froms, ["Talking Head → Split-Screen", "Split-Screen → B-roll #9",
                                  "B-roll #9 → Talking Head"])
+
+
+class ZeroLengthFlashTest(unittest.TestCase):
+    def test_in_and_out_on_the_same_moment_are_dropped(self):
+        transition = transition_table(transition_row(1, 0, "Talking Head → Split-Screen", "a"),
+                                      transition_row(2, 4, "Split-Screen → Drawing 2", "b"),
+                                      transition_row(3, 4, "Drawing 2 → Split-Screen", "c"),
+                                      transition_row(4, 8, "Split-Screen → Talking Head", "d"))
+        with mock.patch("builtins.print"):
+            out = production.drop_zero_length_flashes(transition, script(), 60)
+        froms = [r["cells"][3] for r in transition_rows(out)]
+        self.assertNotIn("Split-Screen → Drawing 2", froms)
+        self.assertEqual(len(froms), 2)
