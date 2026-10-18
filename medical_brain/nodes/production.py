@@ -1439,16 +1439,26 @@ def _move_brolls_out_of_drawings(rows: list, layout: dict, windows: list, senten
         return rows, 0, 0
     times = _running_row_times(rows, layout, script, wpm, after=after)
     cols = layout["cols"]
+    def inside(when):
+        return when is not None and any(w[0] <= when < w[1] for w in windows)
+
     kept, moved, dropped = [], 0, 0
+    last_time = None                    # start of the last B-roll kept or placed
     for i, row in enumerate(rows):
         t = times[i]
         window = next((w for w in windows if t is not None and w[0] <= t < w[1]), None)
         if window is None:
             kept.append(row)
+            if t is not None:
+                last_time = t
             continue
-        next_time = times[i + 1] if i + 1 < len(times) else None
+        # The next B-roll that stays where it is (rows inside a window move too), and at
+        # least 8 s after the last one placed: two B-rolls moved out of one window landed
+        # on the same sentence (0 s apart).
+        next_time = next((times[k] for k in range(i + 1, len(times)) if times[k] is not None
+                          and not inside(times[k])), None)
         high = next_time - _MIN_BROLL_SPACING if next_time is not None else None
-        low = window[1]
+        low = max(window[1], (last_time + _MIN_BROLL_SPACING) if last_time is not None else 0.0)
         sentence = None
         while True:
             sentence = _first_sentence(sentences, low, high, after)
@@ -1469,6 +1479,7 @@ def _move_brolls_out_of_drawings(rows: list, layout: dict, windows: list, senten
         row["cells"][cols["start"]] = _sentence_cue(sentence, norm_script)
         row["cells"][cols["end"]] = " ".join(sentence["words"][-4:])
         kept.append(row)
+        last_time = sentence["start_s"]
         moved += 1
     return kept, moved, dropped
 

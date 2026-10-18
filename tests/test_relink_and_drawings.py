@@ -274,3 +274,16 @@ class DrawingDurationTest(unittest.TestCase):
     def test_total_beats_step_times(self):
         block = "Step 1: 3.5s draw\nStep 2: 4.0s\n**Duration**: Total: 16.0s (spanning 1:13 – 1:29)"
         self.assertEqual(production._drawing_duration(block), 16.0)
+
+
+class TwoInOneWindowTest(unittest.TestCase):
+    def setUp(self):
+        self.moved = use(self, production, "call_llm", FakeLLM(
+            lambda *a: "| 9 | 9:59 | WRONG | WRONG | 🎬 Video | NEW PICTURE, slow dolly |"))
+
+    def test_two_brolls_moved_out_of_one_window_keep_8s_apart(self):
+        table = BROLL_HEAD + broll_row(1, 0) + broll_row(2, 4) + broll_row(3, 6) + broll_row(4, 20)
+        out, report = repair(table, {"text_animation_overlay": prose_drawing(4, 10)})
+        times = [r["time"] for r in ew.broll_rows(out)]
+        secs = [int(t.split(":")[0]) * 60 + int(t.split(":")[1]) for t in times]
+        self.assertTrue(all(b - a >= 8 for a, b in zip(secs, secs[1:])), secs)
