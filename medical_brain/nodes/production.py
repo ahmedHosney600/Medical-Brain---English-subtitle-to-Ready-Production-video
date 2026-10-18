@@ -323,7 +323,8 @@ def visual_events_block(state: PipelineState, low: float = None, high: float = N
     for n, (a, b) in enumerate(_drawing_windows(guide, script, wpm), 1):
         events.append((a, f"Whiteboard Drawing {n} on screen until {_fmt_seconds(b)} (full screen — no other cut inside)"))
     for a, b in _overlay_warning_holds(guide, script, wpm):
-        events.append((a, f"Warning card on screen until {_fmt_seconds(b)} (never cut away mid-card)"))
+        events.append((a, f"Warning-card OVERLAY on top of the presenter until {_fmt_seconds(b)} — not a separate "
+                          "shot: no transition into or out of it, and no cut away while it is up"))
     events = sorted((t, e) for t, e in events if (low is None or t >= low - 1) and (high is None or t < high + 1))
     if not events:
         return ""
