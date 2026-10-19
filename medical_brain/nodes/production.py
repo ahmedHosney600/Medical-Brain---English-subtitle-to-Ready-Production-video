@@ -660,10 +660,85 @@ def _sync_after_broll(state: PipelineState, table: str, result: dict = None,
         overlay, table, transition = recompute_link_columns(
             overlay, table, transition, script, ew.blueprint_wpm(state.get("blueprint")))
 
+    if script and transition:
+        overlay = delay_entries_off_cuts(overlay, transition, script,
+                                         ew.blueprint_wpm(state.get("blueprint")))
+
     out["transition_design"] = transition
     out["text_animation_overlay"] = overlay
     out["broll_prompts"] = table
     return out
+
+
+CUT_ENTRY_DELAY_SECONDS = 0.4       # a card lands after the eye has re-found the new shot
+_ENTRY_DELAY_MARK = re.compile(r"(?i)\benters [\d.]+ s after (?:T#|the cut)")
+
+
+def delay_entries_off_cuts(overlay: str, transition: str, script: str, wpm: float) -> str:
+    """A card whose entry falls on a cut, or inside a dissolve, animates on top of the
+    picture change (a critique: "motion-on-motion" at 9:05, seven pop-ins on cut frames).
+    Its Entry Animation cell gets "enters N s after T#k" — the cue stays the spoken word,
+    the delay is the editor's offset from it. Drawings are full-screen shots, not cards."""
+    if not overlay or not transition or not script:
+        return overlay
+    blocks = _transition_blocks(transition)
+    cuts = []
+    for (block, row), t in zip([(b, r) for b in blocks for r in b["rows"]],
+                               _transition_row_times(blocks, script, wpm)):
+        if t is None:
+            continue
+        duration = _number_value(_row_cell(row, block["cols"], "duration")) or 0
+        duration = duration / 1000.0 if duration > 20 else float(duration)   # ms, or seconds
+        cuts.append((t, min(duration, 2.0), re.sub(r"\D", "", _row_cell(row, block["cols"], "num"))))
+    if not cuts:
+        return overlay
+    norm_script = ew.normalize_ar(ew.spoken_text(script))
+    lines = overlay.splitlines()
+    delayed, i = 0, 0
+    while i < len(lines):
+        if not lines[i].strip().startswith("|"):
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and lines[j].strip().startswith("|"):
+            j += 1
+        upper = [c.upper() for c in _table_cells(lines[i])]
+
+        def col(*names):
+            return next((k for k, h in enumerate(upper) if any(n in h for n in names)), None)
+
+        element_col, start_col, entry_col = col("ELEMENT"), col("START CUE", "▶"), col("ENTRY", "ANIMATION IN")
+        if element_col is None or start_col is None or entry_col is None:
+            i = j
+            continue
+        separator = i + 1 < j and chapters.is_separator_row(lines[i + 1])
+        pos = 0
+        for k in range(i + (2 if separator else 1), j):
+            cells = _table_cells(lines[k])
+            if len(cells) <= max(element_col, start_col, entry_col) or not cells[start_col]:
+                continue
+            later = [p for p in ew.cue_positions(cells[start_col], norm_script) if p >= pos]
+            t = ew.cue_seconds(cells[start_col], script, wpm, after=pos)
+            if later:
+                pos = later[0]
+            element = cells[element_col].upper()
+            if t is None or "DRAWING" in element or "WHITEBOARD" in element \
+                    or _ENTRY_DELAY_MARK.search(cells[entry_col]):
+                continue
+            hit = next(((ct, d, n) for ct, d, n in cuts if ct - 0.15 <= t <= ct + d + 0.15), None)
+            if hit is None:
+                continue
+            ct, d, n = hit
+            delay = math.ceil(round((max(0.0, ct + d - t) + CUT_ENTRY_DELAY_SECONDS) * 10, 6)) / 10
+            cells[entry_col] = f"enters {delay:g} s after T#{n} lands · {cells[entry_col]}" if n \
+                else f"enters {delay:g} s after the cut · {cells[entry_col]}"
+            lines[k] = "| " + " | ".join(cells) + " |"
+            delayed += 1
+        i = j
+    if not delayed:
+        return overlay
+    print(f"  🔧 overlays: {delayed} cards entering on a cut or dissolve now enter just after it")
+    return "\n".join(lines) + ("\n" if overlay.endswith("\n") else "")
 
 
 LINK_TOLERANCE_SECONDS = 3.0

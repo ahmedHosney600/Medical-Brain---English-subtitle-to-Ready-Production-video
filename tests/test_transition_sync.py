@@ -682,3 +682,19 @@ class DrawingSpecStartsAtTest(unittest.TestCase):
         self.assertIn("(1:30 – 2:00)", out)
         self.assertIn("On screen (from the spoken cues)**: 0:10 –", out)
         self.assertEqual(out, again)
+
+
+class EntryOffCutTest(unittest.TestCase):
+    def test_cards_on_a_cut_or_dissolve_enter_after_it(self):
+        overlay = overlay_table(warning_row(2, 4), warning_row(4, 4), warning_row(7, 4))
+        transition = transition_table(
+            transition_row(1, 2, "Talking Head → B-roll #1"),
+            transition_row(2, 4, "B-roll #1 → Talking Head").replace("| Cut |", "| Cross Dissolve |")
+            .replace("| 0 | — | opening", "| 750 | — | opening"))
+        with mock.patch("builtins.print"):
+            out = production.delay_entries_off_cuts(overlay, transition, script(), 60)
+            again = production.delay_entries_off_cuts(out, transition, script(), 60)
+        self.assertIn("enters 0.4 s after T#1", out)
+        self.assertIn("enters 1.2 s after T#2", out)        # 750 ms dissolve + 0.4 s
+        self.assertEqual(out.count("enters "), 2)             # the card off any cut is untouched
+        self.assertEqual(again, out)
