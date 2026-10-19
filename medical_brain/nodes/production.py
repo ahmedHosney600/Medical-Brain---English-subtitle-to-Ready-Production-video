@@ -2613,18 +2613,24 @@ def order_overlay_cards(text: str, script: str, wpm: float) -> str:
 
         element_col, start_col, end_col = col("ELEMENT"), col("START CUE", "▶"), col("END CUE", "⏹")
         hold_col, pos_col = col("HOLD"), col("POSITION")
+        time_col = col("TIMESTAMP", "TIMECODE", "⏱")
         num_col = next((k for k, h in enumerate(upper) if h.strip() == "#"), None)
         if element_col is None or start_col is None:
             i = j
             continue
         separator = i + 1 < j and chapters.is_separator_row(lines[i + 1])
         first = i + (2 if separator else 1)
-        rows, pos = [], 0
+        rows = []
         for k in range(first, j):
             cells = _table_cells(lines[k])
             if len(cells) <= max(element_col, start_col):
                 continue
-            t = ew.cue_seconds(cells[start_col], script, wpm, after=max(0, pos - 400))
+            t = ew.cue_seconds(cells[start_col], script, wpm)
+            if t is None and time_col is not None and time_col < len(cells):
+                # A paraphrased cue is not in the script; its Timestamp is what the editor
+                # (and the critic) will follow — a quote box collided at 11:56 unchecked.
+                stamp = _seconds(cells[time_col])
+                t = float(stamp) if stamp is not None else None
             rows.append([t if t is not None else float("inf"), len(rows), cells])
         if [r[1] for r in sorted(rows, key=lambda r: (r[0], r[1]))] != [r[1] for r in rows]:
             reordered = True
