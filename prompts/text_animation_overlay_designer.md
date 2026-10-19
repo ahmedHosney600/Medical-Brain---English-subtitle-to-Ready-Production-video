@@ -71,6 +71,7 @@ ANIMATION SPECIFICATION — for EVERY text element, describe:
 - **Entry animation**: How it appears (fade-in, slide-in-left, slide-in-up, scale-up, pop, typewriter, draw-on). Include duration in ms and easing function (sine/quad/cubic/quart/quint/expo/circ/back) and direction (in/out/in-out).
 - **Hold duration**: How long it stays fully visible on screen (in seconds).
 - **Exit animation**: How it disappears (fade-out, slide-out-right, scale-down, dissolve). Include duration and easing.
+- **Severity colour**: red/crimson with a pop or shake is reserved for real emergencies (go to the ER, stop now). The routine medical disclaimer is a neutral info card (the base slate colour with the accent rule, no ⚠️, a plain slide-in); a caution that is not an emergency is amber. Six identical red alert cards trained viewers to ignore red.
 - **Screen position**: Where on the frame (e.g., "bottom-left, 14% from edge", "center-frame", "upper-right corner"). Nothing sits in the bottom 12% of the frame: on phones YouTube's progress bar and captions cover it — warning boxes and lower-thirds sit at a 12–14% bottom margin.
 
 DESIGN PRINCIPLES — NON-NEGOTIABLE:

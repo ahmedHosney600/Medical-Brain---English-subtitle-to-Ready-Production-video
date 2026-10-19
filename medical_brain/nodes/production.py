@@ -329,7 +329,11 @@ def visual_events_block(state: PipelineState, low: float = None, high: float = N
     starts, ends = _broll_row_times(rows, script, wpm)
     for row, start, end in zip(rows, starts, ends):
         if start is not None:
-            events.append((start, f"B-roll #{row.get('num', '')} starts — cue «{row.get('start', '')}»"))
+            # What the clip shows, so the map's descriptions match the shot list (a critique
+            # found ten rows describing pictures the B-roll table never generated).
+            shows = re.sub(r"\s+", " ", _broll_visible(row.get("prompt", "") or ""))[:110].strip()
+            events.append((start, f"B-roll #{row.get('num', '')} starts — cue «{row.get('start', '')}»"
+                                  + (f" — shows: {shows}" if shows else "")))
         if end is not None:
             events.append((end, f"B-roll #{row.get('num', '')} ends after «{row.get('end', '')}» is spoken "
                                 f"(cut back to the presenter here, on the next words)"))
@@ -344,7 +348,7 @@ def visual_events_block(state: PipelineState, low: float = None, high: float = N
         return ""
     return ("\n\nVISUAL EVENTS ALREADY ON THE TIMELINE (designed before you — cut INTO and OUT OF these "
             "exactly, at their cues; add your own transitions only between them, never a second visual on top "
-            "of a drawing or B-roll):\n" + "\n".join(f"- {_fmt_seconds(t)} {e}" for t, e in events))
+            "of a drawing or B-roll; describe each B-roll as what it SHOWS below, never a different picture):\n" + "\n".join(f"- {_fmt_seconds(t)} {e}" for t, e in events))
 
 
 def transition_designer(state: PipelineState) -> dict:
