@@ -266,7 +266,7 @@ class OverlayReadTimeTest(unittest.TestCase):
         with mock.patch("builtins.print"):
             out = production.fix_overlay_read_times(table)
         rows = [line for line in out.splitlines() if line.startswith("| 1 ") or line.startswith("| 2 ")]
-        self.assertIn("| 12 |", rows[0])                     # 30 words / 2.5 = 12 s
+        self.assertIn("| 13 |", rows[0])                     # 30 words / 2.5 + 1 s to find the way in
         self.assertIn("| 4s |", rows[1])                     # already long enough
         self.assertEqual(production.fix_overlay_read_times(out), out)
 

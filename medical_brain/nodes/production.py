@@ -2388,6 +2388,7 @@ def _broll_row_times(rows: list, script: str, wpm: float, exit_cues: list = None
 
 OVERLAY_READ_WORDS_PER_SECOND = 2.5   # comfortable on-screen Arabic reading rate
 OVERLAY_MAX_HOLD_SECONDS = 20.0
+OVERLAY_ORIENT_SECONDS = 1.0          # finding the way into a multi-line card
 
 
 _RELOCATE_MIN_SHARED = 3
@@ -2611,10 +2612,15 @@ def fix_overlay_read_times(text: str) -> str:
             if len(cells) <= max(hold_col, content_col):
                 continue
             hold = re.search(r"\d+(?:\.\d+)?", cells[hold_col])
-            words = len(re.findall(r"[\w\u0600-\u06FF]+", cells[content_col]))
+            content = re.sub(r"<[^>]+>", " / ", cells[content_col])
+            words = len(re.findall(r"[\w\u0600-\u06FF]+", content))
             if not hold or words == 0:
                 continue
-            need = min(OVERLAY_MAX_HOLD_SECONDS, math.ceil(words / OVERLAY_READ_WORDS_PER_SECOND * 2) / 2)
+            # A card of two or more lines costs the eye a second to find its way in (a
+            # critique: a 14-word two-line risk card at 6 s read as "sub-2-second per clause").
+            orient = OVERLAY_ORIENT_SECONDS if content.count(" / ") >= 1 or words >= 8 else 0.0
+            need = min(OVERLAY_MAX_HOLD_SECONDS,
+                       math.ceil((words / OVERLAY_READ_WORDS_PER_SECOND + orient) * 2) / 2)
             if float(hold.group(0)) >= need:
                 continue
             cells[hold_col] = cells[hold_col][:hold.start()] + f"{need:g}" + cells[hold_col][hold.end():]
