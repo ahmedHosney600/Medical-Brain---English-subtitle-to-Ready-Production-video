@@ -3,5 +3,9 @@
 __pycache__/
 llm_keys.env
 
-# Run outputs (sessions already committed stay tracked)
+# Run outputs
 output/
+
+# Local model setup (written by setup_models.py; the example file stays tracked)
+llm_variables.json
+llm_variables copy*.json

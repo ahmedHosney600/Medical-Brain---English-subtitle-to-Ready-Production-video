@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<nlmSearchResult>
-  <term>muscle cramp vs muscle spasm differences</term>
-  <count>0</count>
-</nlmSearchResult>

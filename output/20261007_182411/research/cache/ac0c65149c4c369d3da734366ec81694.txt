@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<nlmSearchResult>
-  <term>what causes muscle cramps Mayo Clinic</term>
-  <count>0</count>
-</nlmSearchResult>

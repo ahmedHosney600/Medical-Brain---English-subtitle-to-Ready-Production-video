@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<nlmSearchResult>
-  <term>night leg cramps causes and who is affected site:mayoclinic.org</term>
-  <count>0</count>
-</nlmSearchResult>
