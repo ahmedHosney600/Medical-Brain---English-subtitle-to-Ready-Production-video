@@ -703,12 +703,15 @@ Output ONLY the JSON object. Include the full revised script."""
                             "grade cannot be A.")
 
         bare, groups = chapters.english_terms(script)
-        if bare or len(groups) > 5:
+        # The limit is on distinct terms (as _trim_extra_terms enforces): a run was failed
+        # for "6 English terms" that were 5 terms with CGRP said twice.
+        groups = list(dict.fromkeys(g.strip() for g in groups))
+        if bare or len(groups) > MAX_ENGLISH_TERMS:
             named_bare = ", ".join(dict.fromkeys(bare)) or "(none)"
             named_groups = " | ".join(f"({g})" for g in groups) or "(none)"
             print(f"  ⚠️ English terms: {len(bare)} bare, {len(groups)} parenthesised")
             user_prompt += (f"\n\nCODE CHECK — {len(bare)} English term(s) outside parentheses: "
-                            f"{named_bare}; {len(groups)} parenthesised English group(s) (limit 5): "
+                            f"{named_bare}; {len(groups)} distinct parenthesised English term(s) (limit 5; a term repeated counts once): "
                             f"{named_groups}. Replace them with plain Egyptian wording; keep an "
                             "English term only after its Arabic explanation, in parentheses, when it "
                             "helps the viewer search or talk to a doctor.")

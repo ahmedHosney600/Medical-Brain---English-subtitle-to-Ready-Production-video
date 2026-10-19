@@ -20,7 +20,7 @@ AUDIT CRITERIA — score each (1–10), flag CRITICAL / WARNING / MINOR:
 16. EARLY COMMENT QUESTION (Warning) — one comment question tied to a real viewer habit, in the first ~40% of the spoken script.
 17. SHAREABLE NUMBER MOMENT (Critical) — one memorable number moment, and it comes from the Medical Fact Ledger / sources only (never invented or rounded up for effect).
 18. CALLBACK CLOSING (Critical) — the closing calls back to the opening scene, pays off the promise, has ONE CTA plus a "ابعت الفيديو ده لحد في البيت بيعاني من ده" line, and an emotional, warm sign-off.
-19. PLAIN LANGUAGE & ENGLISH TERMS (Critical) — at most 5 English/medical terms in the whole script; each comes after a plain Egyptian explanation, in parentheses, and only when it helps the viewer search or talk to a doctor; no bare English word in a sentence.
+19. PLAIN LANGUAGE & ENGLISH TERMS (Critical) — at most 5 distinct English/medical terms in the whole script (a term said again counts once); each comes after a plain Egyptian explanation, in parentheses, and only when it helps the viewer search or talk to a doctor; no bare English word in a sentence.
 20. LIGHT ENDING (Critical) — the final chapter is the lightest: at most ~20% of the spoken words and at most 4 new points. Red flags, emergency signs and the loop payoff sit BEFORE secondary lists (medicines, conditions); the ending must not be a crammed list.
 
 HARD GATES — grade can only be "A" if ALL of the following hold:
