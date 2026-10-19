@@ -661,6 +661,7 @@ def _sync_after_broll(state: PipelineState, table: str, result: dict = None,
             overlay, table, transition, script, ew.blueprint_wpm(state.get("blueprint")))
 
     if script and transition:
+        overlay = trim_holds_at_cuts(overlay, transition, script, ew.blueprint_wpm(state.get("blueprint")))
         overlay = delay_entries_off_cuts(overlay, transition, script,
                                          ew.blueprint_wpm(state.get("blueprint")))
 
@@ -668,6 +669,93 @@ def _sync_after_broll(state: PipelineState, table: str, result: dict = None,
     out["text_animation_overlay"] = overlay
     out["broll_prompts"] = table
     return out
+
+
+def _reading_seconds(content: str) -> float:
+    """The hold a card's words need (see fix_overlay_read_times)."""
+    content = re.sub(r"<[^>]+>", " / ", content or "")
+    words = len(re.findall(r"[\w\u0600-\u06FF]+", content))
+    orient = OVERLAY_ORIENT_SECONDS if content.count(" / ") >= 1 or words >= 8 else 0.0
+    return words / OVERLAY_READ_WORDS_PER_SECOND + orient
+
+
+def _cut_times(transition: str, script: str, wpm: float) -> list:
+    """[(seconds, duration_s, number)] for every transition-map row."""
+    blocks = _transition_blocks(transition)
+    cuts = []
+    for (block, row), t in zip([(b, r) for b in blocks for r in b["rows"]],
+                               _transition_row_times(blocks, script, wpm)):
+        if t is None:
+            continue
+        duration = _number_value(_row_cell(row, block["cols"], "duration")) or 0
+        duration = duration / 1000.0 if duration > 20 else float(duration)   # ms, or seconds
+        cuts.append((t, min(duration, 2.0), re.sub(r"\D", "", _row_cell(row, block["cols"], "num"))))
+    return sorted(cuts)
+
+
+def trim_holds_at_cuts(overlay: str, transition: str, script: str, wpm: float) -> str:
+    """A card that outlasts its shot sits on a picture it was not made for (a critique: a
+    "39 °C" fever badge lingered 3 s on the next B-roll; a stamp held across three cuts).
+    The hold ends 0.3 s before the first cut after the card's entry whenever its words can
+    still be read by then; otherwise reading time wins. Warning boxes own their moment
+    (cuts are moved out of their holds) and drawings are shots, so both are left alone."""
+    if not overlay or not transition or not script:
+        return overlay
+    cuts = _cut_times(transition, script, wpm)
+    if not cuts:
+        return overlay
+    norm_script = ew.normalize_ar(ew.spoken_text(script))
+    lines = overlay.splitlines()
+    trimmed, i = 0, 0
+    while i < len(lines):
+        if not lines[i].strip().startswith("|"):
+            i += 1
+            continue
+        j = i
+        while j < len(lines) and lines[j].strip().startswith("|"):
+            j += 1
+        upper = [c.upper() for c in _table_cells(lines[i])]
+
+        def col(*names):
+            return next((k for k, h in enumerate(upper) if any(n in h for n in names)), None)
+
+        element_col, start_col, hold_col = col("ELEMENT"), col("START CUE", "▶"), col("HOLD")
+        content_col = next((k for k, h in enumerate(upper) if "CONTENT" in h or h.startswith("TEXT")), None)
+        if None in (element_col, start_col, hold_col, content_col):
+            i = j
+            continue
+        separator = i + 1 < j and chapters.is_separator_row(lines[i + 1])
+        pos = 0
+        for k in range(i + (2 if separator else 1), j):
+            cells = _table_cells(lines[k])
+            if len(cells) <= max(element_col, start_col, hold_col, content_col) or not cells[start_col]:
+                continue
+            later = [p for p in ew.cue_positions(cells[start_col], norm_script) if p >= pos]
+            t = ew.cue_seconds(cells[start_col], script, wpm, after=pos)
+            if later:
+                pos = later[0]
+            element = cells[element_col].upper()
+            hold = re.search(r"\d+(?:\.\d+)?", cells[hold_col])
+            if t is None or not hold or any(w in element for w in ("DRAWING", "WHITEBOARD", "WARNING", "ALERT")):
+                continue
+            # The first cut after the entry has landed (a card on a cut enters after it).
+            nxt = next((ct for ct, d, _ in cuts if ct > t + d + 0.5), None)
+            length = float(hold.group(0))
+            if nxt is None or t + length <= nxt + 0.25:
+                continue
+            on_cut = next((ct + d for ct, d, _ in cuts if ct - 0.15 <= t <= ct + d + 0.15), None)
+            visible = max(t, on_cut + CUT_ENTRY_DELAY_SECONDS) if on_cut is not None else t
+            room = math.floor((nxt - 0.3 - visible) * 2) / 2
+            if room < max(2.0, _reading_seconds(cells[content_col])):
+                continue
+            cells[hold_col] = cells[hold_col][:hold.start()] + f"{room:g}" + cells[hold_col][hold.end():]
+            lines[k] = "| " + " | ".join(cells) + " |"
+            trimmed += 1
+        i = j
+    if not trimmed:
+        return overlay
+    print(f"  🔧 overlays: {trimmed} cards now leave before the next cut instead of sitting on another shot")
+    return "\n".join(lines) + ("\n" if overlay.endswith("\n") else "")
 
 
 CUT_ENTRY_DELAY_SECONDS = 0.4       # a card lands after the eye has re-found the new shot
@@ -681,15 +769,7 @@ def delay_entries_off_cuts(overlay: str, transition: str, script: str, wpm: floa
     the delay is the editor's offset from it. Drawings are full-screen shots, not cards."""
     if not overlay or not transition or not script:
         return overlay
-    blocks = _transition_blocks(transition)
-    cuts = []
-    for (block, row), t in zip([(b, r) for b in blocks for r in b["rows"]],
-                               _transition_row_times(blocks, script, wpm)):
-        if t is None:
-            continue
-        duration = _number_value(_row_cell(row, block["cols"], "duration")) or 0
-        duration = duration / 1000.0 if duration > 20 else float(duration)   # ms, or seconds
-        cuts.append((t, min(duration, 2.0), re.sub(r"\D", "", _row_cell(row, block["cols"], "num"))))
+    cuts = _cut_times(transition, script, wpm)
     if not cuts:
         return overlay
     norm_script = ew.normalize_ar(ew.spoken_text(script))
@@ -2071,6 +2151,18 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
                                                 drawings=drawings)
     if re_imaged:
         report["re_imaged"] = re_imaged
+    # Last word on spacing, after every move and fill: a run still shipped three B-rolls
+    # 6 s apart (11:00, 11:06, 11:12) that the critique then failed on density.
+    rows = _sorted_rows(rows, layout, script, wpm, after=after)
+    times, spaced, last = _running_row_times(rows, layout, script, wpm, after=after), [], None
+    for row, t in zip(rows, times):
+        if t is not None and last is not None and t - last < _MIN_BROLL_SPACING - 0.5:
+            report["dropped"] += 1
+            continue
+        spaced.append(row)
+        if t is not None:
+            last = t
+    rows = spaced
     _fit_end_cues(rows, layout, sentences, script, wpm, after)
     report["gaps_left"] = len(_gap_list(rows, _running_row_times(rows, layout, script, wpm, after=after),
                                         script_end))

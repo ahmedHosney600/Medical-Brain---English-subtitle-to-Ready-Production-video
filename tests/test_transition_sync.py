@@ -698,3 +698,16 @@ class EntryOffCutTest(unittest.TestCase):
         self.assertIn("enters 1.2 s after T#2", out)        # 750 ms dissolve + 0.4 s
         self.assertEqual(out.count("enters "), 2)             # the card off any cut is untouched
         self.assertEqual(again, out)
+
+    def test_a_card_leaves_before_the_next_cut_when_it_can_be_read(self):
+        short = (f"| 1 | 9:59 | KINETIC TEXT | حرارة ٣٩ | {sentence(2)} | {end_cue(2)} | "
+                 "right | fade-in | 12 | fade-out | — | x |\n")
+        long_text = " ".join(["كلمة"] * 30)
+        wordy = short.replace("حرارة ٣٩", long_text).replace(sentence(2), sentence(6)).replace(end_cue(2), end_cue(6))
+        transition = transition_table(transition_row(1, 4, "B-roll #1 → B-roll #2"),
+                                      transition_row(2, 8, "B-roll #2 → Talking Head"))
+        with mock.patch("builtins.print"):
+            out = production.trim_holds_at_cuts(overlay_table(short, wordy), transition, script(), 60)
+        rows = [line for line in out.splitlines() if line.startswith("| 1 ")]
+        self.assertIn("| 9.5 |", rows[0])          # 10 s → cut at 20 s: ends 0.3 s before it
+        self.assertIn("| 12 |", rows[1])           # 30 words need 13 s: reading time wins
