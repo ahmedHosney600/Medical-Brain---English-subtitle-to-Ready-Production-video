@@ -314,6 +314,8 @@ def migrate(session_dir: str) -> list:
                 move(os.path.join(old_research, stem + ext), os.path.join(new_research, numbered + ext))
         move(os.path.join(old_research, "review.md"), os.path.join(review, REVIEW_FILE))
         move(os.path.join(old_research, "video_source.md"), os.path.join(review, VIDEO_SOURCE_FILE))
+        if not os.path.exists(os.path.join(review, VIDEO_SOURCE_FILE)):   # its older name
+            move(os.path.join(old_research, "final_patient_guide.md"), os.path.join(review, VIDEO_SOURCE_FILE))
         for name in sorted(os.listdir(old_research)):
             move(os.path.join(old_research, name), os.path.join(logs, name))
         try:

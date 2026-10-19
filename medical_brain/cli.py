@@ -904,7 +904,9 @@ def migrate_session(session_dir: str) -> None:
         layout.write_start_here(session_dir, stage, os.path.relpath(session_dir, PROJECT_ROOT))
     if moves:
         print(f"📦 {os.path.relpath(session_dir, PROJECT_ROOT)} moved to the numbered layout "
-              f"({len(moves)} items): 1_research/ · 2_review/ · 3_video/")
+              f"({len(moves)} items): " + " · ".join(
+                  f"{stage}/" for stage in (layout.RESEARCH_DIR, layout.REVIEW_DIR, layout.VIDEO_DIR)
+                  if os.path.isdir(os.path.join(session_dir, stage))))
 
 
 def migrate_sessions(arg: str) -> None:

@@ -128,6 +128,15 @@ class MigrateTest(unittest.TestCase):
             self.assertFalse(layout.is_legacy(s))
             self.assertEqual(layout.migrate(s), [])
 
+    def test_older_final_patient_guide_becomes_the_video_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            s = os.path.join(tmp, "old")
+            for name in ("patient_guide.md", "research_state.json", "final_patient_guide.md"):
+                touch(os.path.join(s, "research", name))
+            layout.migrate(s)
+            self.assertTrue(os.path.exists(os.path.join(s, "2_review", "02_video_source.md")))
+            self.assertFalse(os.path.exists(os.path.join(s, "1_research", "logs", "final_patient_guide.md")))
+
 
 class StartFromTest(unittest.TestCase):
     STATE = {"refined_script": "script", "packaging_ab_test_set": "titles", "broll_prompts": "broll",
