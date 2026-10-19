@@ -34,7 +34,9 @@ G. DENSITY THAT HOLDS ATTENTION — WITHOUT OVERLOAD: at least one B-roll (or wh
 H. EXACT FIT TO THE LINE: each B-roll illustrates the sentence its cues cover — the "Script Context" column quotes or closely paraphrases that sentence, and the "Main Cue" is the concrete thing that sentence talks about (the drug, the gesture, the organ, the food, the situation). A clip that would fit anywhere in the video is filler; rewrite it so it could only belong to this line.
 I. NO REPEATED IMAGERY: never reuse the same subject + action twice in a video (e.g. two "hands with a pill blister pack" clips); if the script returns to an idea, show a different angle of it (the consequence, the setting, the mechanism, the person's reaction).
 
-H. LOCAL AND HUMAN: Egyptian / Arab-world settings, faces and objects whenever the scene has people or places; natural, believable expressions (worried, relieved, curious) — never exaggerated acting.
+J. THE SCRIPT'S OWN VISUAL DIRECTIONS ARE ORDERS: a stage direction in the script — a [VISUAL NOTE], or a parenthesised direction such as «(د. أحمد يقفل درج الكومودينو بهدوء)» — says exactly what the viewer sees at that line. Give it its own B-roll that shows exactly that action and object (a recurring prop's payoff — the drawer closing, the two cups — is the video's through-line: never swap it for a generic shot), timed to the direction's spoken line.
+
+K. LOCAL AND HUMAN: Egyptian / Arab-world settings, faces and objects whenever the scene has people or places; natural, believable expressions (worried, relieved, curious) — never exaggerated acting.
 
 PROMPT ENGINEERING PRINCIPLES — NON-NEGOTIABLE:
 
