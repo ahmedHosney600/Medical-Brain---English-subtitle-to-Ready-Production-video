@@ -260,7 +260,7 @@ class EnglishTermsTest(unittest.TestCase):
         self.assertIn("CODE CHECK — 4 English term(s) outside parentheses", prompt)
         self.assertIn("Golgi", prompt)
         self.assertIn("Arrhythmias", prompt)
-        self.assertIn("parenthesised English group(s) (limit 5)", prompt)
+        self.assertIn("distinct parenthesised English term(s) (limit 5", prompt)
         self.assertIn("Grade cannot be A while more than 3 bare English terms remain", prompt)
 
 
