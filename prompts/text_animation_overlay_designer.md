@@ -71,7 +71,7 @@ ANIMATION SPECIFICATION — for EVERY text element, describe:
 - **Entry animation**: How it appears (fade-in, slide-in-left, slide-in-up, scale-up, pop, typewriter, draw-on). Include duration in ms and easing function (sine/quad/cubic/quart/quint/expo/circ/back) and direction (in/out/in-out).
 - **Hold duration**: How long it stays fully visible on screen (in seconds).
 - **Exit animation**: How it disappears (fade-out, slide-out-right, scale-down, dissolve). Include duration and easing.
-- **Screen position**: Where on the frame (e.g., "bottom-left, 10% from edge", "center-frame", "upper-right corner").
+- **Screen position**: Where on the frame (e.g., "bottom-left, 14% from edge", "center-frame", "upper-right corner"). Nothing sits in the bottom 12% of the frame: on phones YouTube's progress bar and captions cover it — warning boxes and lower-thirds sit at a 12–14% bottom margin.
 
 DESIGN PRINCIPLES — NON-NEGOTIABLE:
 
@@ -117,7 +117,7 @@ OUTPUT FORMAT:
 ### Text Element Table
 | # | Timestamp | Element Type | Content (text) | ▶️ START CUE (Arabic) | ⏹️ END CUE (Arabic) | Screen Position | Entry Animation | Hold (s) | Exit Animation | Linked to Transition # | Purpose |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| 1 | 0:48 | Lower-third | "د. أحمد حسني" | أهلاً بيكم، أنا دكتور | أنا دكتور أحمد حسني | Bottom-left, 8% margin | slide-in-left, 400ms, ease-out-cubic | 4s | fade-out, 300ms | After T#3 | Presenter intro |
+| 1 | 0:48 | Lower-third | "د. أحمد حسني" | أهلاً بيكم، أنا دكتور | أنا دكتور أحمد حسني | Bottom-left, 14% margin | slide-in-left, 400ms, ease-out-cubic | 4s | fade-out, 300ms | After T#3 | Presenter intro |
 | 2 | 0:55 | TOP-RIGHT POPUP | "Cramp → شد عضلي / تقلص لا إرادي" | الشد العضلي أو الـ Cramp | مَسِلِمش منه | Top-right, 5% margin | slide-in-right, 300ms, ease-out-cubic | 3s | fade-out, 200ms | — | English term translation |
 
 ### Drawing Animations (if applicable)

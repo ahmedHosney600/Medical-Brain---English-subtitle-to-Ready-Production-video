@@ -822,7 +822,10 @@ def broll_prompt_generator(state: PipelineState) -> dict:
 
 # Words that name a camera move — a video B-roll without one tends to look like dead stock.
 _CAMERA_MOVE = re.compile(
-    r"\b(?:push[- ]?in|pull[- ]?(back|out)|dolly|parallax|orbit|track(ing)?\b|rack[- ]focus|pan(s|ning)?\b|tilt|"
+    # Verb forms count too ("pushes slowly forward", "tracks from right to left"): unseen,
+    # they got a second "slow push-in" appended and the doubled directions averaged out.
+    r"\b(?:push[- ]?in|push(es|ing)?\b|pull[- ]?(back|out)|pull(s|ing)?\s+(back|out|away)|dolly|parallax|orbit|"
+    r"tracks?\b|tracking|drift(s|ing)?\b|glid(e|es|ing)\b|arc(s|ing)?\s+(around|left|right)|rack[- ]focus|pan(s|ning)?\b|tilt|"
     r"crane|zoom|slide|time[- ]?lapse|slow[- ]?motion|handheld|gimbal|steadicam|fly[- ]?(through|over)|"
     r"camera (moves|drifts|glides|rises|descends|follows|circles))", re.IGNORECASE)
 # On-screen words or numbers requested inside the generated image (AI garbles them).
