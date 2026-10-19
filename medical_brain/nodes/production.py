@@ -1740,7 +1740,9 @@ def _replace_repeated_families(rows: list, layout: dict, sentences: list, script
             "B-ROLL SHOTS (in order):\n" + "\n".join(listing) + drawing_note
             + "\n\nGroup shots that repeat the same SUBJECT doing the same ACTION (e.g. several 'man in bed "
               "clutching his temple beside pills'), even if worded differently. Different angles of different "
-              "ideas are NOT repeats." + drawing_ask
+              "ideas are NOT repeats. The same main OBJECT (a drawer of blister packs, a syrup bottle, a phone on the "
+              "nightstand) as the subject of more than two shots is a repeat too, whatever the hands do — put all "
+              "its shots in one group (the first stays; a closing payoff of an opening prop is allowed)." + drawing_ask
             + " Also list in \"misfit\" the shots whose picture does NOT show what is SAID at that moment (it "
               "illustrates a neighbouring sentence or another idea)."
             + " Return ONLY JSON: {\"repeats\": [[3, 11, 20], [14, 19]], \"repeats_drawing\": [4], \"misfit\": [2, 3]}"
