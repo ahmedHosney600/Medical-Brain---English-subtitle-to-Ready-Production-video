@@ -11,6 +11,10 @@ Run `python3 main.py` with no arguments to get a menu. Or start one directly:
 | Only a topic, want the video too | `python3 main.py --topic "…" --workflow research-video` | Dossier → your review → video package |
 | A dossier you reviewed | `python3 main.py --continue output/<session>` | Next research round, or the video |
 | A run that stopped | `python3 main.py --resume [output/<session>]` | The run continues where it stopped |
+| A session to redo from a point | `python3 main.py --from <point> output/<session> [--source FILE]` | That point and everything after it, in the same session |
+
+### Session folders
+Every session is one folder, `output/<id>/`, with up to three numbered stage folders, each made only when its stage runs: **`1_research/`** (patient guide, evidence library, `logs/`), **`2_review/`** (`01_review.md`, and `02_video_source.md` — the exact input to the script workflow) and **`3_video/`** (`01_final_script`, `02_shorts_package`, the `03`–`06` prompt files, `logs/`). A video made from a subtitle only has `3_video/`. Open `00_START_HERE.md` in each folder first: it lists the files in reading order and the next commands. Re-running a stage never overwrites: earlier files move to `_previous_runs/<date_time>/`. Start points for `--from`: `research`, `review`, `script`, `packaging`, `production`, `final`, `shorts`, `export`. Older sessions keep working; `python3 main.py --migrate <session>|all` moves them into this layout. **Full guide: [docs/Guides/Sessions_and_Workflow_Guide.md](docs/Guides/Sessions_and_Workflow_Guide.md).**
 
 ### Resume a stopped run
 If a run stops — a quota error, a crash, Ctrl+C, a closed laptop — every finished step is already saved in the session checkpoint, and the message ends with the exact command to continue. `python3 main.py --resume` (or menu option **5**) resumes the newest stopped session; add a session (`output/<id>` or `<id>`) to pick one. The run restarts at the step that was interrupted, keeping the state it had reached, then does the normal post-run work (research: dossier + patient guide + `review.md`; video: sources guide + exports). Answers the model already produced **inside** the interrupted step are kept in that session's `llm_cache/` and reused instead of being paid for again. `--provider main|single|hybrid` still selects the model setup. The eval harness has the same command: `python3 -m medical_brain.evals resume <session> --slug <slug>`.
@@ -22,8 +26,8 @@ If a run stops — a quota error, a crash, Ctrl+C, a closed laptop — every fin
 4. **Extract.** Atomic facts, each with the **exact quote** from its source. Code checks that the quote really is in the source and that every number in the claim is in the quote, so made-up facts are rejected.
 5. **Verify.** A separate judge model checks that every claim is faithful to its quote, current, consistent and safe. Facts it can't verify are listed under "Not included", never used.
 6. **Coverage.** The editor-in-chief model checks that the dossier is comprehensive and genuinely useful, and researches what's missing.
-7. **Dossier.** `output/<session>/research/dossier.md` (+ HTML/PDF/DOCX), with every fact cited [S#] and a reference list.
-8. **Your review.** Edit `research/review.md`: write what to ADD / CHANGE / REMOVE, or `APPROVED: yes`, then run `python3 main.py --continue output/<session>`. A new round researches only what you asked for. Approve when it's right.
+7. **Dossier.** `output/<session>/1_research/02_evidence_library.md` (+ HTML/PDF/DOCX), with every fact cited [S#] and a reference list; the patient guide is `1_research/01_patient_guide`.
+8. **Your review.** Edit `2_review/01_review.md`: write what to ADD / CHANGE / REMOVE, or `APPROVED: yes`, then run `python3 main.py --continue output/<session>`. To build the script from your own edited text, edit `2_review/02_video_source.md` (or pass a file with `--from script output/<session> --source FILE`). A new round researches only what you asked for. Approve when it's right.
 
 In `--workflow research-video`, approval starts the video workflow with the dossier as its source. Its fact-checkers then reject any claim that isn't in the dossier, and the verified sources are added to the final document and to the YouTube description (المصادر). Research limits (rounds, sources per section, years) are in `input_fields.json`.
 
@@ -181,11 +185,11 @@ Choose 1-3 [3]:
   - If the main model fails too, the backup model runs that step. Only if that also fails (or there's no backup) does the run stop.
 - `--provider main|single|hybrid` skips the menu.
 - The terminal shows each step's model and time.
-- `output/<session>/llm_provider.json` records which model ran each step and any fallbacks.
+- `output/<session>/3_video/logs/llm_provider.json` records which model ran each step and any fallbacks.
 
 ## The final document: ordered like the editing workflow
 
-`output/<session>/final_script.md` (and its HTML/PDF/DOCX) follows the order you edit in:
+`output/<session>/3_video/01_final_script.md` (and its HTML/PDF/DOCX) follows the order you edit in:
 
 1. **Overview**: script metadata
 2. **Before filming**: teleprompter script, retention lines, CTA versions

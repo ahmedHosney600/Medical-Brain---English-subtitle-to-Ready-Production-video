@@ -730,7 +730,8 @@ class PlannerRetryTest(unittest.TestCase):
         return st
 
     def _raw(self, session, n=1):
-        path = os.path.join(session, "research", f"unreadable_topic_planner_{n}.txt")
+        from medical_brain.session_layout import research_logs
+        path = os.path.join(research_logs(session), f"unreadable_topic_planner_{n}.txt")
         self.assertTrue(os.path.exists(path), path)
         with open(path, encoding="utf-8") as f:
             return f.read()

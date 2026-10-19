@@ -495,7 +495,7 @@ class CliResumeTest(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     cli.run_research(r1, state, session_dir)
 
-            checkpoint = os.path.join(session_dir, "research", "research_checkpoint.json")
+            checkpoint = os.path.join(session_dir, "1_research", "logs", "research_checkpoint.json")
             meta = read_json(checkpoint)["_resume"]
             self.assertEqual(meta["status"], "stopped")
             self.assertEqual(meta["last_node"], "fact_extractor")
@@ -526,7 +526,10 @@ class CliResumeTest(unittest.TestCase):
             self.assertEqual(done["status"], "done")
             self.assertIn("fact_verifier", done["completed"])
             self.assertIn("guide_editor", done["completed"])
-            self.assertTrue(os.path.exists(os.path.join(session_dir, "research", "research_state.json")))
+            self.assertTrue(os.path.exists(os.path.join(session_dir, "1_research", "logs", "research_state.json")))
+            self.assertTrue(os.path.exists(os.path.join(session_dir, "2_review", "01_review.md")))
+            self.assertTrue(os.path.exists(os.path.join(session_dir, "2_review", "02_video_source.md")))
+            self.assertTrue(os.path.exists(os.path.join(session_dir, "1_research", "00_START_HERE.md")))
 
     def test_latest_stopped_checkpoint_skips_done_runs(self):
         with tempfile.TemporaryDirectory() as tmp:

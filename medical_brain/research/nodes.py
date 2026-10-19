@@ -328,7 +328,7 @@ Write the expert brief. Output ONLY the JSON object."""
 
 
 def _research_folder(state: dict) -> str:
-    """The session's research/ folder for side files (raw answers) — from state["session"].
+    """The session's research logs folder for side files (raw answers) — from state["session"].
 
     A fresh run stores the session id (its folder is output/<id>/research); a path that
     already names an existing session folder is used as is."""
@@ -339,7 +339,8 @@ def _research_folder(state: dict) -> str:
         session_dir = session
     else:
         session_dir = os.path.join(PROJECT_ROOT, "output", session)
-    return os.path.join(session_dir, "research")
+    from ..session_layout import research_logs
+    return research_logs(session_dir)
 
 
 def _save_planner_raw(state: dict, attempt: int, raw: str) -> str:

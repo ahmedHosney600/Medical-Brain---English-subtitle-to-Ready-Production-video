@@ -5,7 +5,13 @@
   python3 main.py --topic "…" --workflow research-video     topic → research → video package
   python3 main.py --continue [session]                      apply review.md / approve research
   python3 main.py --resume [session]                        continue a stopped run
+  python3 main.py --from <point> <session> [--source FILE]  start from a point in a session, on to the end
+      points: research, review, script, packaging, production, final, shorts, export
+  python3 main.py --migrate [session|all]                   move older sessions to the numbered layout
   python3 main.py                                           menu
+A session folder output/<id>/ holds 1_research/ · 2_review/ · 3_video/ (each made when its
+stage runs; files numbered in reading order, 00_START_HERE.md first). See
+docs/Guides/Sessions_and_Workflow_Guide.md.
 Options: --provider main|single|hybrid (skips the model menu) · --minutes N (target video length for this run)."""
 import datetime
 import glob
@@ -22,6 +28,7 @@ from .exports import workbook as ew
 from .exports.prompt_files import export_broll_prompt_files, export_whiteboard_prompt_files
 from .graph import build_app
 from .llm import LLMRouter, ProviderUnavailable, load_llm_config, set_cache_dir, set_router
+from . import session_layout as layout
 from .paths import PROJECT_ROOT
 from .state import apply_defaults
 
@@ -84,12 +91,37 @@ def choose_workflow() -> str:
     print("  3) Topic → research only (review the dossier first)")
     print("  4) Continue a research session (apply your review.md, or approve it)")
     print("  5) Resume a stopped run")
+    print("  6) Start from a chosen point in a session (research, review, script, packaging, production…)")
     while True:
-        choice = input("Choose 1-5 [1]: ").strip() or "1"
-        if choice in ("1", "2", "3", "4", "5"):
+        choice = input("Choose 1-6 [1]: ").strip() or "1"
+        if choice in ("1", "2", "3", "4", "5", "6"):
             return {"1": "video", "2": "research-video", "3": "research", "4": "continue",
-                    "5": "resume"}[choice]
-        print("Please type 1, 2, 3, 4 or 5.")
+                    "5": "resume", "6": "start-from"}[choice]
+        print("Please type 1, 2, 3, 4, 5 or 6.")
+
+
+def choose_start_point(session_arg: str = "") -> tuple:
+    """Asks for the session and the point to start from. Returns (point, session)."""
+    if not _interactive():
+        stop_run(ValueError("--from needs a point: " + ", ".join(START_POINTS)))
+    if not session_arg:
+        recent = sorted({_session_of_checkpoint(p) for _, pattern in layout.CHECKPOINT_PATTERNS
+                         for p in glob.glob(os.path.join(PROJECT_ROOT, "output", pattern))}, key=os.path.getmtime)[-6:]
+        if recent:
+            print("\nRecent sessions:")
+            for i, session in enumerate(reversed(recent), 1):
+                folders = [d for d in (layout.RESEARCH_DIR, layout.REVIEW_DIR, layout.VIDEO_DIR)
+                           if os.path.isdir(os.path.join(session, d))]
+                print(f"  {i}) {os.path.basename(session)}  {' '.join(folders) or '(older layout)'}")
+            pick = input("Session [1]: ").strip() or "1"
+            session_arg = list(reversed(recent))[int(pick) - 1] if pick.isdigit() and 1 <= int(pick) <= len(recent) else pick
+    points = list(START_POINTS)
+    print("\nStart from:")
+    for i, point in enumerate(points, 1):
+        print(f"  {i}) {point:<11} {START_POINTS[point]}")
+    pick = input(f"Choose 1-{len(points)}: ").strip()
+    point = points[int(pick) - 1] if pick.isdigit() and 1 <= int(pick) <= len(points) else pick
+    return point, session_arg
 
 
 def choose_mode(llm_config: dict) -> str:
@@ -172,14 +204,9 @@ def _mark_checkpoint_done(out_dir: str, label: str = "workflow") -> None:
 
 
 def _session_of_checkpoint(path: str) -> str:
-    """The session folder a checkpoint lives in ('<s>/research/research_checkpoint.json'
-    or '<s>/checkpoint.json')."""
-    base = os.path.basename(path)
-    if base == "research_checkpoint.json":
-        return os.path.dirname(os.path.dirname(path))
-    if base == "checkpoint.json":
-        return os.path.dirname(path)
-    return ""
+    """The session folder a checkpoint lives in (new layout: <s>/1_research/logs/ or
+    <s>/3_video/logs/; older sessions: <s>/research/ or <s>/)."""
+    return layout.session_of_checkpoint(path)
 
 
 def run_graph(app, initial_state: dict, out_dir: str, router, label: str = "workflow",
@@ -295,18 +322,20 @@ def run_video(router, original_script: str, video_analysis: str = "", output_dir
         state = dict(resume_state)
         if not output_dir:
             stop_run(ValueError("resuming a video run needs its session folder"))
-        session_id = os.path.basename(output_dir.rstrip("/"))
-        os.makedirs(output_dir, exist_ok=True)
-        set_cache_dir(os.path.join(output_dir, "llm_cache"))
+        session_dir = output_dir
+        session_id = os.path.basename(session_dir.rstrip("/"))
+        logs_dir = layout.video_logs(session_dir)
+        os.makedirs(logs_dir, exist_ok=True)
+        set_cache_dir(os.path.join(logs_dir, "llm_cache"))
         if research is None:
-            research_path = os.path.join(output_dir, "research", "research_state.json")
+            research_path = layout.research_state_file(session_dir)
             if os.path.exists(research_path):
                 with open(research_path, encoding="utf-8") as f:
                     research = json.load(f)
         print(f"Starting video workflow... Session ID: {session_id}")
-        print(f"Logs: {output_dir}")
+        print(f"Logs: {logs_dir}")
         if entry != END:
-            state = run_graph(build_app(entry=entry), state, output_dir, router, resume_meta=resume_meta)
+            state = run_graph(build_app(entry=entry), state, logs_dir, router, resume_meta=resume_meta)
     else:
         input_file = os.path.join(PROJECT_ROOT, "input_fields.json")
         if not os.path.exists(input_file):
@@ -325,28 +354,32 @@ def run_video(router, original_script: str, video_analysis: str = "", output_dir
         apply_defaults(initial_state)
 
         if output_dir:
-            session_id = os.path.basename(output_dir.rstrip("/"))
-            os.makedirs(output_dir, exist_ok=True)
+            session_dir = output_dir
+            session_id = os.path.basename(session_dir.rstrip("/"))
+            os.makedirs(session_dir, exist_ok=True)
         else:
-            session_id, output_dir = _new_session_dir()
-        set_cache_dir(os.path.join(output_dir, "llm_cache"))
+            session_id, session_dir = _new_session_dir()
+        logs_dir = layout.video_logs(session_dir)
+        os.makedirs(logs_dir, exist_ok=True)
+        set_cache_dir(os.path.join(logs_dir, "llm_cache"))
         print(f"Starting video workflow... Session ID: {session_id}")
-        print(f"Logs: {output_dir}")
-        state = run_graph(build_app(), initial_state, output_dir, router)
+        print(f"Logs: {logs_dir}")
+        state = run_graph(build_app(), initial_state, logs_dir, router)
 
-    final_script_path = os.path.join(output_dir, "final_script.md")
+    video_folder = layout.video_dir(session_dir)
+    final_script_path = layout.final_script_md(session_dir)
 
     if research:
         # The sources the finished script actually uses go into the document
         # (appendix + YouTube description); the full list stays in the research folder.
-        _apply_script_sources(state, research, output_dir)
+        _apply_script_sources(state, research, logs_dir)
 
     for warning in (ew.quality_warning(state), ew.production_warning(state), ew.package_warning(state)):
         if warning:
             print(f"\n{warning}")
 
     provider_report = router.report()
-    with open(os.path.join(output_dir, "llm_provider.json"), "w", encoding="utf-8") as pf:
+    with open(os.path.join(logs_dir, "llm_provider.json"), "w", encoding="utf-8") as pf:
         json.dump(provider_report, pf, ensure_ascii=False, indent=2)
     print(f"\n🔀 LLM calls this run ({provider_report['mode']}): {provider_report['calls']}")
 
@@ -365,8 +398,8 @@ def run_video(router, original_script: str, video_analysis: str = "", output_dir
 
     if not longform_deliverable:
         print("\nWorkflow finished, but no final package was generated.")
-        print(f"Checkpoint with all intermediate outputs saved to: {os.path.join(output_dir, 'checkpoint.json')}")
-        _mark_checkpoint_done(output_dir, "workflow")
+        print(f"Checkpoint with all intermediate outputs saved to: {os.path.join(logs_dir, 'checkpoint.json')}")
+        _mark_checkpoint_done(logs_dir, "workflow")
         return
     # Reorder into the editing workflow (pure Python, nothing is retyped).
     try:
@@ -378,20 +411,23 @@ def run_video(router, original_script: str, video_analysis: str = "", output_dir
         f.write(longform_document + shorts_section)
     print(f"\nWorkflow finished. Final complete package saved to: {final_script_path}")
 
-    shorts_path = os.path.join(output_dir, "shorts_package.md")
+    shorts_path = layout.shorts_md(session_dir)
     if shorts_section:
         with open(shorts_path, "w", encoding="utf-8") as sf:
             sf.write(shorts_section.strip())
         print(f"Dedicated Reels & Shorts package saved to: {shorts_path}")
 
     export_broll_prompt_files(text=longform_deliverable + shorts_section,
-                              fallback_broll=state.get("broll_prompts", ""), output_dir=output_dir)
-    export_whiteboard_prompt_files(longform_deliverable, output_dir=output_dir,
+                              fallback_broll=state.get("broll_prompts", ""), output_dir=video_folder)
+    export_whiteboard_prompt_files(longform_deliverable, output_dir=video_folder,
                                    overlay_guide=state.get("text_animation_overlay", ""))
+    layout.number_prompt_files(session_dir)
     _convert(final_script_path, "final script")
     if shorts_section and os.path.exists(shorts_path):
         _convert(shorts_path, "shorts package")
-    _mark_checkpoint_done(output_dir, "workflow")
+    _mark_checkpoint_done(logs_dir, "workflow")
+    if layout.write_start_here(session_dir, layout.VIDEO_DIR, os.path.relpath(session_dir, PROJECT_ROOT)):
+        print(f"📂 Open {os.path.join(video_folder, layout.START_HERE)} — the files in reading order.")
 
 
 # --------------------------------------------------------------------------
@@ -414,18 +450,31 @@ def _find_session(arg: str) -> str:
     """A session folder from 'output/<id>', '<id>' or '' (the latest research session)."""
     candidates = [arg, os.path.join(PROJECT_ROOT, arg), os.path.join(PROJECT_ROOT, "output", arg)] if arg else []
     for c in candidates:
-        if c and os.path.exists(os.path.join(c, "research", "research_state.json")):
+        if c and os.path.exists(layout.research_state_file(c)):
             return os.path.abspath(c)
-    found = sorted(glob.glob(os.path.join(PROJECT_ROOT, "output", "*", "research", "research_state.json")))
+    found = sorted(_research_sessions(), key=os.path.getmtime)
     if not arg and found:
-        return os.path.dirname(os.path.dirname(found[-1]))
+        return found[-1]
     return ""
 
 
+def _research_sessions() -> list:
+    """Every session folder that has a saved research state (either layout)."""
+    sessions = set()
+    for rel in (os.path.join(layout.RESEARCH_DIR, layout.LOGS_DIR), "research"):
+        for path in glob.glob(os.path.join(PROJECT_ROOT, "output", "*", rel, "research_state.json")):
+            session = os.path.dirname(os.path.dirname(path)) if rel == "research" else \
+                os.path.dirname(os.path.dirname(os.path.dirname(path)))
+            if os.path.exists(layout.research_state_file(session)):
+                sessions.add(session)
+    return sorted(sessions)
+
+
 def _prepare_research(state: dict, session_dir: str) -> str:
-    """The session's research folder, with its HTTP and model-answer caches in place."""
+    """The session's research logs folder (1_research/logs/, or research/ in an older
+    session), with its HTTP and model-answer caches in place."""
     from .research.sources import google, http
-    folder = os.path.join(session_dir, "research")
+    folder = layout.research_logs(session_dir)
     os.makedirs(folder, exist_ok=True)
     http.set_cache_dir(os.path.join(folder, "cache"))
     set_cache_dir(os.path.join(folder, "llm_cache"))
@@ -434,30 +483,43 @@ def _prepare_research(state: dict, session_dir: str) -> str:
 
 
 def _finish_research(session_dir: str, state: dict) -> dict:
-    """Everything after the research graph: dossier + patient guide + review.md + exports."""
+    """Everything after the research graph: dossier + patient guide + review file + the
+    editable video source + exports. New layout: 1_research/ (numbered, reader files),
+    2_review/ (01_review.md, 02_video_source.md); older sessions keep research/."""
     from .research import dossier as rd
-    folder = os.path.join(session_dir, "research")
+    folder = layout.research_logs(session_dir)
+    legacy = layout.is_legacy(session_dir)
+    rel = os.path.relpath(session_dir, PROJECT_ROOT)
     state["review"] = {}
     # Write the editable source before rd.save so its sha256 is in the saved state.
-    video_source_path = rd.write_video_source(state, folder)
+    video_source_path = rd.write_video_source(state, layout.review_dir(session_dir),
+                                              layout.video_source_name(session_dir))
     paths = rd.save(state, folder)
-    review_path = os.path.join(folder, "review.md")
+    review_path = layout.review_file(session_dir)
     has_guide = bool(state.get("patient_guide"))
     if os.path.exists(review_path):           # keep the previous round's review for the record
         os.replace(review_path, os.path.join(folder, f"review_round{state.get('review_round', 0)}.md"))
-    rd.write_review_file(review_path, state["topic"], os.path.relpath(session_dir, PROJECT_ROOT),
-                         has_guide=has_guide)
+    rd.write_review_file(review_path, state["topic"], rel, has_guide=has_guide)
     facts = rd.verified_facts(state)
-    guide_md = paths.get("guide_md")
+    guide_md, dossier_md = paths.get("guide_md"), paths["md"]
+    if not legacy:
+        # Reader copies, numbered in reading order; the machine files stay in logs/.
+        import shutil
+        research_dir = layout.research_dir(session_dir)
+        if has_guide and guide_md and os.path.exists(guide_md):
+            guide_md = shutil.copyfile(guide_md, os.path.join(research_dir, layout.PATIENT_GUIDE + ".md"))
+        dossier_md = shutil.copyfile(dossier_md, os.path.join(research_dir, layout.EVIDENCE_LIBRARY + ".md"))
     if has_guide and guide_md:
         print(f"\n📄 Patient guide (what the video will be built from): {guide_md}")
         _convert(guide_md, "patient guide")
-    print(f"📄 Evidence Library (dossier): {paths['md']}  ({len(facts)} verified facts, "
+    print(f"📄 Evidence Library (dossier): {dossier_md}  ({len(facts)} verified facts, "
           f"{len(rd.used_sources(state))} sources, {len(state.get('rejected', []))} left out)")
-    _convert(paths["md"], "research dossier")
+    _convert(dossier_md, "research dossier")
+    layout.write_start_here(session_dir, layout.RESEARCH_DIR, rel)
+    layout.write_start_here(session_dir, layout.REVIEW_DIR, rel)
     print(f"📝 Video source (edit it to change what the script is written from): {video_source_path}")
     print(f"✍️  Review it, then edit {review_path}")
-    print(f"   → python3 main.py --continue {os.path.relpath(session_dir, PROJECT_ROOT)}")
+    print(f"   → python3 main.py --continue {rel}")
     print("     (APPROVED: yes to finish" + (" and build the video)" if state.get("workflow") == "research-video" else ")"))
     return state
 
@@ -501,19 +563,20 @@ def continue_research(router_factory, arg: str) -> None:
     session_dir = _find_session(arg)
     if not session_dir:
         stop_run(ValueError(f"no research session found for '{arg or 'latest'}' (expected output/<id>/research/)"))
-    folder = os.path.join(session_dir, "research")
-    with open(os.path.join(folder, "research_state.json"), encoding="utf-8") as f:
+    state_path = layout.research_state_file(session_dir)
+    with open(state_path, encoding="utf-8") as f:
         state = json.load(f)
+    review_folder, source_name = layout.review_dir(session_dir), layout.video_source_name(session_dir)
     # Older sessions have no editable video source: write one (and record its hash in
     # the saved state) so the creator can change what the script is built from.
-    video_source_path = os.path.join(folder, rd.VIDEO_SOURCE_FILE)
+    video_source_path = layout.video_source_file(session_dir)
     if not os.path.exists(video_source_path):
-        rd.write_video_source(state, folder)
-        with open(os.path.join(folder, "research_state.json"), "w", encoding="utf-8") as f:
+        rd.write_video_source(state, review_folder, source_name)
+        with open(state_path, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
         print(f"📝 Wrote {os.path.relpath(video_source_path, PROJECT_ROOT)} — edit it if you want "
               "to change what the video is built from.")
-    review_path = os.path.join(folder, "review.md")
+    review_path = layout.review_file(session_dir)
     review_text = ""
     if os.path.exists(review_path):
         with open(review_path, encoding="utf-8") as f:
@@ -529,7 +592,7 @@ def continue_research(router_factory, arg: str) -> None:
                   f"{os.path.relpath(session_dir, PROJECT_ROOT)} --workflow research-video")
             return
         router = router_factory()
-        source, edited = rd.read_video_source(state, folder)
+        source, edited = rd.read_video_source(state, review_folder, source_name)
         if edited:
             print("📝 Using your edited video_source.md")
             # Only warn about uncited lines the creator ADDED: generated sources
@@ -542,6 +605,7 @@ def continue_research(router_factory, arg: str) -> None:
                       "treat them as unverified and may drop them:")
                 for line in uncited[:5]:
                     print(f"   {line[:120]}")
+        _archive_previous_video(session_dir)
         run_video(router, source, output_dir=session_dir, research=state, extra_state={
             "source_format": "Research dossier (verified facts with citations)", "research_dossier": True})
         return
@@ -561,12 +625,7 @@ def continue_research(router_factory, arg: str) -> None:
 # Resume a stopped run
 # --------------------------------------------------------------------------
 def _checkpoint_kind(path: str) -> str:
-    base = os.path.basename(path)
-    if base == "research_checkpoint.json":
-        return "research"
-    if base == "checkpoint.json":
-        return "video"
-    return ""
+    return layout.checkpoint_kind(path)
 
 
 def _read_checkpoint_meta(path: str) -> dict:
@@ -578,10 +637,7 @@ def _checkpoint_for_session(session_dir: str) -> str:
     """A session folder's checkpoint: the newest one that is not "done" (a research-video
     session has both), else research, else video. '' when the folder has none."""
     found = []
-    for rel in (os.path.join("research", "research_checkpoint.json"), "checkpoint.json"):
-        path = os.path.join(session_dir, rel)
-        if not os.path.exists(path):
-            continue
+    for _, path in layout.session_checkpoints(session_dir):
         try:
             status = _read_checkpoint_meta(path).get("status")
         except (OSError, ValueError):
@@ -596,8 +652,8 @@ def _checkpoint_for_session(session_dir: str) -> str:
 def _latest_stopped_checkpoint() -> str:
     """The most recently written checkpoint whose status is not "done"."""
     best = None
-    for pattern in ("output/*/research/research_checkpoint.json", "output/*/checkpoint.json"):
-        for path in glob.glob(os.path.join(PROJECT_ROOT, pattern)):
+    for _, pattern in layout.CHECKPOINT_PATTERNS:
+        for path in glob.glob(os.path.join(PROJECT_ROOT, "output", pattern)):
             try:
                 meta = _read_checkpoint_meta(path)
             except (OSError, ValueError):
@@ -662,6 +718,220 @@ def resume_run(router_factory, arg: str = "") -> None:
 
 
 # --------------------------------------------------------------------------
+# Start from a chosen point in an existing session
+# --------------------------------------------------------------------------
+# point → (first step of the video graph, the state each re-run stage starts without)
+_STAGE_RESET = {
+    "packaging": ["packaging_brainstorm_output", "title_options", "thumbnail_concepts", "packaging_critique_output",
+                  "recommended_title", "packaging_ab_test_set", "thumbnail_face_rules", "packaging_grade"],
+    "production": ["transition_design", "text_animation_overlay", "broll_prompts", "production_critique_output",
+                   "production_grade"],
+    "final": ["final_package"],
+    "shorts": ["shorts_moments", "shorts_scripts", "shorts_captions", "shorts_quality_output",
+               "shorts_quality_grade"],
+}
+_STAGE_ORDER = ["packaging", "production", "final", "shorts"]
+_STAGE_ENTRY = {"packaging": "packaging_creative_director", "production": "text_animation_overlay_designer",
+                "final": "final_script_package", "shorts": "shorts_moment_identifier"}
+_STAGE_COUNTERS = {"packaging": "packaging_revision_count", "production": "production_revision_count",
+                   "shorts": "shorts_revision_count"}
+_STAGE_NEEDS = {"packaging": ("refined_script", "the script"),
+                "production": ("packaging_ab_test_set", "titles & thumbnails"),
+                "final": ("broll_prompts", "production"),
+                "shorts": ("final_package", "the final package"),
+                "export": ("final_package", "the final package")}
+START_POINTS = {
+    "research": "Run the research again for this session's topic (earlier research moves to _previous_runs/)",
+    "review": "Apply 2_review/01_review.md: a new research round, or the video when APPROVED: yes",
+    "script": "Run the script workflow from 2_review/02_video_source.md (or --source FILE)",
+    "packaging": "Redo titles & thumbnails, then production, final package and shorts",
+    "production": "Redo overlays, B-roll and transitions, then the final package and shorts",
+    "final": "Rebuild the final package and the shorts",
+    "shorts": "Redo only the Reels & Shorts",
+    "export": "Only write the files again (final script, shorts, prompt files, PDF/DOCX)",
+}
+
+
+def _archive_previous_video(session_dir: str, keep_checkpoint: bool = False) -> None:
+    """Moves an earlier video package of this session to 3_video/_previous_runs/<time>/."""
+    if layout.is_legacy(session_dir):
+        return
+    archived = layout.archive_stage(layout.video_dir(session_dir), keep_checkpoint=keep_checkpoint)
+    if archived:
+        print(f"🗂  Earlier video files kept in: {os.path.relpath(archived, PROJECT_ROOT)}")
+
+
+def _rewound(state: dict, meta: dict, point: str) -> tuple:
+    """(state, meta) for re-running the video graph from `point`: the outputs of that stage
+    and every later one are cleared, their revision counters reset (a re-run starts fresh,
+    not in revision mode), and the step history is cut back to before the stage."""
+    state = dict(state)
+    for stage in _STAGE_ORDER[_STAGE_ORDER.index(point):]:
+        for key in _STAGE_RESET[stage]:
+            state[key] = ""
+        if stage in _STAGE_COUNTERS:
+            state[_STAGE_COUNTERS[stage]] = 0
+        if stage == "production":
+            state["production_chapter_outputs"] = {}
+            state["broll_by_chapter"] = {}
+    completed = [n for n in (meta.get("completed") or []) if n]
+    entry = _STAGE_ENTRY[point]
+    if entry in completed:
+        completed = completed[:completed.index(entry)]
+    meta = {**meta, "completed": completed, "last_node": completed[-1] if completed else None,
+            "status": "running"}
+    return state, meta
+
+
+def _resolve_session(arg: str) -> str:
+    for cand in ([arg, os.path.join(PROJECT_ROOT, arg), os.path.join(PROJECT_ROOT, "output", arg)] if arg else []):
+        if cand and os.path.isdir(cand):
+            return os.path.abspath(cand)
+    return ""
+
+
+def _script_source(session_dir: str, source_file: str) -> tuple:
+    """(source text, research state or None, label) for `--from script`."""
+    from .research import dossier as rd
+    research = None
+    if os.path.exists(layout.research_state_file(session_dir)):
+        with open(layout.research_state_file(session_dir), encoding="utf-8") as f:
+            research = json.load(f)
+    if source_file:
+        if not os.path.exists(source_file):
+            stop_run(ValueError(f"--source file not found: {source_file}"))
+        with open(source_file, encoding="utf-8") as f:
+            text = f.read()
+        if research is not None:
+            # The external final review becomes this session's 2_review/02_video_source.md
+            # (the earlier one is kept), so the folder always shows what the script used.
+            target = layout.video_source_file(session_dir)
+            if os.path.exists(target):
+                keep = os.path.join(layout.review_dir(session_dir), layout.PREVIOUS_DIR)
+                os.makedirs(keep, exist_ok=True)
+                stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                os.replace(target, os.path.join(keep, f"{stamp}_{os.path.basename(target)}"))
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, "w", encoding="utf-8") as f:
+                f.write(text)
+            layout.write_start_here(session_dir, layout.REVIEW_DIR, os.path.relpath(session_dir, PROJECT_ROOT))
+        return text, research, f"your file {source_file}"
+    if research is not None:
+        if not os.path.exists(layout.video_source_file(session_dir)):
+            # An older session never wrote one: write it so 2_review/ shows what the script used.
+            rd.write_video_source(research, layout.review_dir(session_dir), layout.video_source_name(session_dir))
+            with open(layout.research_state_file(session_dir), "w", encoding="utf-8") as f:
+                json.dump(research, f, ensure_ascii=False, indent=2)
+            layout.write_start_here(session_dir, layout.REVIEW_DIR, os.path.relpath(session_dir, PROJECT_ROOT))
+        text, edited = rd.read_video_source(research, layout.review_dir(session_dir), layout.video_source_name(session_dir))
+        return text, research, ("your edited " if edited else "") + os.path.relpath(
+            layout.video_source_file(session_dir), PROJECT_ROOT)
+    checkpoint = layout.video_checkpoint_file(session_dir)
+    if os.path.exists(checkpoint):
+        previous, _ = load_checkpoint(checkpoint)
+        if previous.get("original_script"):
+            return previous["original_script"], None, "the same source script as the last run"
+    stop_run(ValueError("no script source in this session: give one with --source FILE"))
+
+
+def start_from(router_factory, point: str, arg: str = "", source_file: str = "") -> None:
+    """`python3 main.py --from <point> <session> [--source FILE]`: run the workflow from a
+    chosen point inside an existing session (same session id), then on to the end."""
+    if point not in START_POINTS:
+        stop_run(ValueError(f"--from must be one of: {', '.join(START_POINTS)}"))
+    session_dir = _resolve_session(arg) if arg else (_session_of_checkpoint(_latest_any_checkpoint()) or "")
+    if not session_dir:
+        stop_run(ValueError(f"no session found for '{arg or 'latest'}' — give output/<id>"))
+    rel = os.path.relpath(session_dir, PROJECT_ROOT)
+    if layout.is_legacy(session_dir):
+        migrate_session(session_dir)
+
+    if point == "review":
+        continue_research(router_factory, session_dir)
+        return
+
+    if point == "research":
+        from .research.state import new_state
+        if not os.path.exists(layout.research_state_file(session_dir)):
+            stop_run(ValueError(f"{rel} has no research to redo (start one with --topic)"))
+        with open(layout.research_state_file(session_dir), encoding="utf-8") as f:
+            old = json.load(f)
+        archived = layout.archive_stage(layout.research_dir(session_dir))
+        if archived:
+            print(f"🗂  Earlier research kept in: {os.path.relpath(archived, PROJECT_ROOT)}")
+        state = new_state(old.get("topic", ""), old.get("audience", ""), old.get("notes", ""), _research_settings())
+        state["workflow"] = old.get("workflow", "research")
+        state["session"] = os.path.basename(session_dir)
+        print(f"▶ Researching again in {rel}: {state['topic']}")
+        run_research(router_factory(), state, session_dir)
+        return
+
+    if point == "script":
+        text, research, label = _script_source(session_dir, source_file)
+        extra = {}
+        if research is not None or looks_like_dossier(text):
+            extra = {"source_format": "Research dossier (verified facts with citations)", "research_dossier": True}
+        print(f"▶ Script workflow in {rel} from {label}")
+        router = router_factory()
+        _archive_previous_video(session_dir)
+        run_video(router, text, output_dir=session_dir, research=research, extra_state=extra)
+        return
+
+    checkpoint = layout.video_checkpoint_file(session_dir)
+    if not os.path.exists(checkpoint):
+        stop_run(ValueError(f"{rel} has no video run yet — start with --from script"))
+    state, meta = load_checkpoint(checkpoint)
+    need, what = _STAGE_NEEDS[point]
+    if not state.get(need):
+        stop_run(ValueError(f"{rel} has not finished {what} yet: use --resume {rel}, or an earlier --from point"))
+    if point == "export":
+        print(f"▶ Writing the files of {rel} again")
+        router = router_factory()
+        _archive_previous_video(session_dir, keep_checkpoint=True)
+        run_video(router, "", output_dir=session_dir, resume_state=state, entry=END, resume_meta=meta)
+        return
+    state, meta = _rewound(state, meta, point)
+    print(f"▶ Re-running {rel} from {point} ({_STAGE_ENTRY[point]}), then on to the end")
+    router = router_factory()
+    _archive_previous_video(session_dir, keep_checkpoint=True)
+    run_video(router, "", output_dir=session_dir, resume_state=state, entry=_STAGE_ENTRY[point], resume_meta=meta)
+
+
+def migrate_session(session_dir: str) -> None:
+    """Moves an older session into the numbered layout and says what moved."""
+    moves = layout.migrate(session_dir)
+    for stage in (layout.RESEARCH_DIR, layout.REVIEW_DIR, layout.VIDEO_DIR):
+        layout.write_start_here(session_dir, stage, os.path.relpath(session_dir, PROJECT_ROOT))
+    if moves:
+        print(f"📦 {os.path.relpath(session_dir, PROJECT_ROOT)} moved to the numbered layout "
+              f"({len(moves)} items): 1_research/ · 2_review/ · 3_video/")
+
+
+def migrate_sessions(arg: str) -> None:
+    """`python3 main.py --migrate [session|all]`: older sessions → numbered layout."""
+    if arg in ("", "all", True):
+        sessions = sorted(d for d in glob.glob(os.path.join(PROJECT_ROOT, "output", "*")) if os.path.isdir(d))
+    else:
+        session = _resolve_session(arg)
+        if not session:
+            stop_run(ValueError(f"no session found for '{arg}'"))
+        sessions = [session]
+    moved = 0
+    for session in sessions:
+        if layout.is_legacy(session):
+            migrate_session(session)
+            moved += 1
+    print(f"✅ {moved} session(s) moved; {len(sessions) - moved} already in the numbered layout or empty.")
+
+
+def _latest_any_checkpoint() -> str:
+    """The most recently written checkpoint of any session (done or not)."""
+    paths = [p for _, pattern in layout.CHECKPOINT_PATTERNS
+             for p in glob.glob(os.path.join(PROJECT_ROOT, "output", pattern))]
+    return max(paths, key=os.path.getmtime) if paths else ""
+
+
+# --------------------------------------------------------------------------
 def main():
     load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
     llm_config = load_llm_config()
@@ -680,10 +950,18 @@ def main():
     continuing = cont is not None
     resume = _take_flag("--resume")
     resuming = resume is not None
+    start_point = _take_flag("--from")
+    source_file = _take_flag("--source") or ""
+    migrate = _take_flag("--migrate")
+    if migrate is not None:
+        migrate_sessions(sys.argv[1] if migrate in ("", True) and len(sys.argv) >= 2 else (migrate or ""))
+        return
 
     if workflow and workflow not in WORKFLOWS:
         stop_run(ValueError(f"--workflow must be one of: {', '.join(WORKFLOWS)}"))
-    if continuing:
+    if start_point is not None:
+        chosen = "from"
+    elif continuing:
         chosen = "continue"
     elif resuming:
         chosen = "resume"
@@ -710,27 +988,34 @@ def main():
             # --continue <s> --workflow research-video: build the video even if the session was research-only
             session_dir = _find_session(cont or "")
             if session_dir:
-                path = os.path.join(session_dir, "research", "research_state.json")
+                path = layout.research_state_file(session_dir)
                 with open(path, encoding="utf-8") as f:
                     saved = json.load(f)
                 saved["workflow"] = "research-video"
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(saved, f, ensure_ascii=False, indent=2)
         if cont == "" and _interactive() and not workflow:
-            sessions = sorted(glob.glob(os.path.join(PROJECT_ROOT, "output", "*", "research", "research_state.json")))[-5:]
+            sessions = _research_sessions()[-5:]
             if sessions:
                 print("\nRecent research sessions:")
-                for i, p in enumerate(reversed(sessions), 1):
-                    with open(p, encoding="utf-8") as f:
-                        print(f"  {i}) {os.path.basename(os.path.dirname(os.path.dirname(p)))} — {json.load(f).get('topic')}")
+                for i, session in enumerate(reversed(sessions), 1):
+                    with open(layout.research_state_file(session), encoding="utf-8") as f:
+                        print(f"  {i}) {os.path.basename(session)} — {json.load(f).get('topic')}")
                 pick = input("Choose [1]: ").strip() or "1"
                 if pick.isdigit() and 1 <= int(pick) <= len(sessions):
-                    cont = os.path.dirname(os.path.dirname(list(reversed(sessions))[int(pick) - 1]))
+                    cont = list(reversed(sessions))[int(pick) - 1]
         continue_research(make_router, cont or "")
         return
 
     if chosen == "resume":
         resume_run(make_router, resume or "")
+        return
+
+    if chosen in ("from", "start-from"):
+        session_arg = sys.argv[1] if len(sys.argv) >= 2 else ""
+        if chosen == "start-from" or not start_point or start_point is True:
+            start_point, session_arg = choose_start_point(session_arg)
+        start_from(make_router, start_point, session_arg, source_file)
         return
 
     if chosen in ("research", "research-video"):

@@ -106,13 +106,15 @@ def session_paths(session_dir: str) -> tuple:
     if session_dir:
         candidates += [os.path.join(PROJECT_ROOT, session_dir),
                        os.path.join(PROJECT_ROOT, "output", session_dir)]
+    from .session_layout import research_logs
     for cand in candidates:
-        folder = os.path.join(cand, "research")
+        folder = research_logs(cand) if cand else ""
         for name in ("research_checkpoint.json", "research_state.json"):
             path = os.path.join(folder, name)
-            if os.path.exists(path):
+            if folder and os.path.exists(path):
                 return folder, path
-    raise SystemExit(f"no research session found for '{session_dir}' (expected <dir>/research/research_checkpoint.json)")
+    raise SystemExit(f"no research session found for '{session_dir}' "
+                     "(expected <dir>/1_research/logs/research_checkpoint.json, or <dir>/research/ in older sessions)")
 
 
 def load_session_state(session_dir: str) -> dict:
@@ -687,7 +689,7 @@ def _resume_research(session: str) -> str:
     session_dir, path = _resolve_resume(session)
     if not path or not path.endswith("research_checkpoint.json"):
         raise SystemExit(f"no stopped research run to resume for '{session}' "
-                         f"(expected <dir>/research/research_checkpoint.json with status != done)")
+                         f"(expected <dir>/1_research/logs/research_checkpoint.json with status != done)")
     state, meta = load_checkpoint(path)
     from .research.graph import next_after
     entry = next_after(meta.get("last_node"), state)

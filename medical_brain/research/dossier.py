@@ -722,27 +722,28 @@ def video_source(state: dict) -> str:
 VIDEO_SOURCE_FILE = "video_source.md"
 
 
-def write_video_source(state: dict, folder: str) -> str:
-    """Write rd.video_source(state) to folder/video_source.md so the creator can edit
-    the text the video script is built from. Stores the sha256 of the exact written
-    text in state["video_source_sha256"] and returns the path."""
+def write_video_source(state: dict, folder: str, filename: str = VIDEO_SOURCE_FILE) -> str:
+    """Write rd.video_source(state) to folder/<filename> (video_source.md; the session
+    layout names it 2_review/02_video_source.md) so the creator can edit the text the
+    video script is built from. Stores the sha256 of the exact written text in
+    state["video_source_sha256"] and returns the path."""
     text = video_source(state)
     os.makedirs(folder, exist_ok=True)
-    path = os.path.join(folder, VIDEO_SOURCE_FILE)
+    path = os.path.join(folder, filename)
     with open(path, "w", encoding="utf-8") as f:
         f.write(text)
     state["video_source_sha256"] = hashlib.sha256(text.encode("utf-8")).hexdigest()
     return path
 
 
-def read_video_source(state: dict, folder: str) -> tuple:
+def read_video_source(state: dict, folder: str, filename: str = VIDEO_SOURCE_FILE) -> tuple:
     """The source text the video is built from: (text, edited).
 
     Returns the creator's edited video_source.md (and True) when it exists and differs
     from the copy this code wrote (state["video_source_sha256"]); otherwise the text
     generated from the research state (and False). An empty/whitespace-only edit falls
     back to the generated text."""
-    path = os.path.join(folder, VIDEO_SOURCE_FILE)
+    path = os.path.join(folder, filename)
     try:
         with open(path, encoding="utf-8") as f:
             file_text = f.read()

@@ -236,9 +236,9 @@ class RunVideoSourcesIntegrationTest(unittest.TestCase):
                 mock.patch.object(ss, "call_llm_json", fake), \
                 mock.patch("builtins.print"):
             cli.run_video(self.Router(), "original script", output_dir=out, research=research)
-        with open(os.path.join(out, "final_script.md"), encoding="utf-8") as f:
+        with open(os.path.join(out, "3_video", "01_final_script.md"), encoding="utf-8") as f:
             doc = f.read()
-        return doc, out
+        return doc, os.path.join(out, "3_video", "logs")
 
     def test_appendix_replaced_and_description_block_inserted(self):
         doc, out = self._run({"links": [{"sentence": 1, "facts": ["F1"]}]})
