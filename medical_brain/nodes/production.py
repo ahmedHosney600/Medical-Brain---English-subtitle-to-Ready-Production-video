@@ -2378,6 +2378,9 @@ _DRAWING_HEADING_RE = re.compile(r"(?im)^[^\n]*\bdrawing animation\s*#?\s*\d+[^\
 _TIME_RANGE_RE = re.compile(r"(\d{1,2}:\d{2})\s*[–\-—]\s*(\d{1,2}:\d{2})(`?\s*\(\s*\d+\s*s(?:ec(?:onds)?)?\s*(?:total)?\s*\))?")
 
 
+_NOT_CLOCK = r"(?!\s*(?:[AaPp]\.?[Mm]\b|ص\b|م\b|صباح|مساء|بالليل|الفجر))"
+
+
 def retime_drawing_specs(guide: str, script: str, wpm: float) -> str:
     """Rewrites each drawing spec's first "M:SS – M:SS" range to the window measured from
     its spoken cues. The model's own estimate went stale ("6:10 – 6:30" for a drawing
@@ -2395,12 +2398,28 @@ def retime_drawing_specs(guide: str, script: str, wpm: float) -> str:
         if len(windows) == 1 and windows[0][0] is not None:
             start, stop = windows[0]
             stop = stop if stop is not None and stop > start else start + DRAWING_WINDOW_SECONDS
-            label = f"{_fmt_seconds(start)} – {_fmt_seconds(stop)} ({round(stop - start)}s total)"
+            label = f"{_fmt_seconds(start)} – {_fmt_seconds(stop)} ({int(stop - start)}s total)"  # floor: read back as the length
             # Every other time in the spec (step times, "the editor cuts at 01:36 and back
             # at 01:56") moves by the same offset and stays inside the window: a critique
             # found three different windows in one spec.
-            first = _TIME_RANGE_RE.search(block)
-            old_start = _seconds(first.group(1)) if first else None
+            original = block
+            # The block runs on to the chapter's summary tables: only a range written as the
+            # drawing's own ("On screen", "Timing", "Duration", "Window", a step) is its window
+            # (a density row «Hook & Setup (12:12 – 13:07)» was overwritten once).
+            first = next((m for m in _TIME_RANGE_RE.finditer(block)
+                          if re.search(r"(?i)on screen|timing|duration|window|placement|step|total",
+                                       block[max(0, block.rfind("\n", 0, m.start())):m.start()])
+                          and not block[max(0, block.rfind("\n", 0, m.start())):m.start()].lstrip().startswith("|")),
+                         None)
+            # Specs without a range ("starts at 2:16, holds ... from 2:24 to 2:28") shift
+            # from their first time stamp (a run re-timed only 1 of 4 such specs; one sat
+            # 45 s away from its spoken lines).
+            # The spec's own "starts at M:SS" is its stated start (a code-written range from
+            # an earlier pass must not hide a stale one); clock times ("3:00 AM" in a
+            # thought bubble) are never the drawing's time.
+            stamp = (re.search(r"(?i)\bstarts?\s*(?:at|:)?\s*(\d{1,2}:\d{2})" + _NOT_CLOCK, block) or first
+                     or re.search(r"(?<![\d:])(\d{1,2}:\d{2})(?![\d:])" + _NOT_CLOCK, block))
+            old_start = _seconds(stamp.group(1)) if stamp else None
             if old_start is not None:
                 delta = start - old_start
 
@@ -2411,11 +2430,29 @@ def retime_drawing_specs(guide: str, script: str, wpm: float) -> str:
                     if not old_start - 3 <= value <= old_start + DRAWING_MAX_SECONDS + 5:
                         return m.group(0)
                     return _fmt_seconds(value + delta)
-                block = re.sub(r"(?<![\d:])(\d{1,2}):(\d{2})(?![\d:])", shift, block)
-            new_block, k = _TIME_RANGE_RE.subn(
-                lambda m: label + ("`" if m.group(3) and m.group(3).startswith("`") else ""), block, count=1)
-            if k and new_block != block:
-                block, changed = new_block, changed + 1
+                block = re.sub(r"(?<![\d:])(\d{1,2}):(\d{2})(?![\d:])" + _NOT_CLOCK, shift, block)
+
+            # A label that quotes its own cue appears when that cue is spoken.
+            def label_time(m):
+                at = _cue_seconds_loose(m.group(4), script, wpm)
+                if at is None or not start - 2 <= at <= stop + 5:
+                    return m.group(0)
+                return f"{m.group(1)}{_fmt_seconds(at)}{m.group(3)}"
+            block = re.sub(r"(?i)(appears at\s*)(\d{1,2}:\d{2})(\s*\|\s*cue:\s*[«\"“]([^»\"”\n]+))", label_time, block)
+            if first:
+                at = block.find(first.group(0)) if first.group(0) in block else -1
+                if at < 0:          # the shift rewrote it: find the drawing's range again
+                    again = next((m for m in _TIME_RANGE_RE.finditer(block) if m.start() >= first.start() - 5), None)
+                    at = again.start() if again else -1
+                if at >= 0:
+                    m = _TIME_RANGE_RE.match(block, at)
+                    block = block[:at] + label + ("`" if m.group(3) and m.group(3).startswith("`") else "") + block[m.end():]
+            else:
+                head_end = block.find("\n")
+                head_end = len(block) if head_end < 0 else head_end
+                block = (block[:head_end] + f"\n- **On screen (from the spoken cues)**: {label}" + block[head_end:])
+            if block != original:
+                changed += 1
         out.append(guide[last:head.start()])
         out.append(block)
         last = end

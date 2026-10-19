@@ -652,3 +652,22 @@ class InlineOverlayRefTest(unittest.TestCase):
         self.assertEqual(changed, 2)
         self.assertIn("Overlay #4", out)
         self.assertIn("space for —", out)
+
+
+class DrawingSpecStartsAtTest(unittest.TestCase):
+    def test_starts_at_specs_and_clock_times(self):
+        guide = ("DRAWING ANIMATION 1 OF 1\n- Subject: a clock labeled \"3:00 AM\" beside a brain\n"
+                 f"  1. *Step 1* (0.0s – 3.0s | Narration cue: «{sentence(2)}»): brain\n"
+                 f"  2. *Step 2* (3.0s – 6.0s | Narration cue: «{sentence(3)}»): alarm\n"
+                 "  - Editor timeline window: 12.0 seconds total (starts at 0:40, holds finished frame from 0:48 to 0:52).\n"
+                 f"  - Label 1 (appears at 0:42 | cue: «{sentence(3)}»): **alarm**\n"
+                 "- **Whiteboard image prompt**: a brain\n\n| **Next act** (1:30 – 2:00) | 2 | 1 | 0 | notes |\n")
+        with mock.patch("builtins.print"):
+            out = production.retime_drawing_specs(guide, script(30), 60)
+            again = production.retime_drawing_specs(out, script(30), 60)
+        self.assertIn("starts at 0:10, holds finished frame from 0:18 to 0:22", out)
+        self.assertIn("appears at 0:15 |", out)
+        self.assertIn("\"3:00 AM\"", out)
+        self.assertIn("(1:30 – 2:00)", out)
+        self.assertIn("On screen (from the spoken cues)**: 0:10 –", out)
+        self.assertEqual(out, again)
