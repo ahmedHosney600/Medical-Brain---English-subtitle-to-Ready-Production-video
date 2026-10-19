@@ -712,6 +712,12 @@ def _table_row_times(text: str, script: str, wpm: float, need: str) -> list:
 
 
 _OVERLAY_REF = re.compile(r"(?i)\b(Overlay\s*#\s*)(\d+)\b")
+# A caption a B-roll row writes for itself ("Premiere text overlay placed center-left: '…'").
+# The text layer is the only overlay inventory: a critique found ten such captions the
+# overlay table never scheduled — one inside a zero-overlay window, one doubling a quote box.
+_INVENTED_CAPTION = re.compile(
+    r"(?i)(?:Premiere\s+(?:text\s+)?(?:overlay|text|caption)|text\s+overlay)[^.:'\"«“|\n]{0,60}:\s*"
+    r"(?:'[^'|\n]{1,200}'|\"[^\"|\n]{1,200}\"|«[^»|\n]{1,200}»|“[^”|\n]{1,200}”)\s*\.?")
 
 
 def _relink_inline_overlays(broll: str, overlay_rows: list, script: str, wpm: float) -> tuple:
@@ -742,6 +748,13 @@ def _relink_inline_overlays(broll: str, overlay_rows: list, script: str, wpm: fl
             changed += 1
             return f"{m.group(1)}{on_screen[0][1]}" if len(on_screen) == 1 else "—"
         row["cells"] = [_OVERLAY_REF.sub(fix, cell) for cell in row["cells"]]
+
+        def caption(m):
+            nonlocal changed
+            changed += 1
+            return f"Leave clean space for Overlay #{on_screen[0][1]}." if on_screen else ""
+        row["cells"] = [re.sub(r"  +", " ", _INVENTED_CAPTION.sub(caption, cell)).strip()
+                        for cell in row["cells"]]
     if not changed:
         return broll, 0
     return _render_broll_layout(layout, layout["rows"]), changed

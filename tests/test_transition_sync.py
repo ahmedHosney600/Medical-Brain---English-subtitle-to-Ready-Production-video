@@ -653,6 +653,17 @@ class InlineOverlayRefTest(unittest.TestCase):
         self.assertIn("Overlay #4", out)
         self.assertIn("space for —", out)
 
+    def test_captions_a_row_writes_for_itself_are_removed(self):
+        broll = broll_table(
+            broll_row(1, 2, 3).replace("a clinic, slow push-in",
+                                       "a clinic, slow push-in. Premiere text overlay placed center-left: 'افهم الكود'. Low angle"),
+            broll_row(2, 8, 9).replace("a clinic, slow push-in", "a desk, push-in. Premiere overlay: «1 من كل 4»."))
+        out, changed = production._relink_inline_overlays(broll, [("4", 12.0)], script(), 60)
+        self.assertEqual(changed, 2)
+        self.assertNotIn("افهم الكود", out)
+        self.assertNotIn("1 من كل 4", out)
+        self.assertIn("Low angle", out)
+
 
 class DrawingSpecStartsAtTest(unittest.TestCase):
     def test_starts_at_specs_and_clock_times(self):
