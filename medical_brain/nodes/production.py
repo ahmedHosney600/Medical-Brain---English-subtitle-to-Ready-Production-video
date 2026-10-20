@@ -2751,7 +2751,8 @@ def retime_drawing_specs(guide: str, script: str, wpm: float) -> str:
 
 
 DRAW_ON_CLIP_SECONDS = 8.0          # a Google Flow clip
-DRAW_ON_MIN_SPEED = 0.65            # slower and the hand visibly crawls
+DRAW_ON_MIN_SPEED = 0.85            # slower reads as slow motion (the designer prompt forbids it)
+DRAW_ON_MAX_START_DELAY = 3.0       # the board may stay blank this long while the setup line is spoken
 _PACING_MARK = "**Draw-on pacing (from the spoken cues)**"
 
 
@@ -2759,9 +2760,9 @@ def pace_drawing_payoffs(guide: str, script: str, wpm: float) -> str:
     """A draw-on clip is 8 s, but the lines its build steps illustrate often run longer, so
     the payoff stroke — drawn last on purpose — finished seconds before its line (a
     critique: "all three whiteboard payoff strokes land ~3 s before their spoken line").
-    Each spec gets a pacing note: the speed that makes the clip end as the payoff line is
-    said (no slower than 65%), plus a frame hold before the last stroke for any time still
-    left, spread over the build steps."""
+    Each spec gets a pacing note that moves the payoff closer to its line without slow
+    motion or freezes (a later critique rejected "65% speed + 16.5 s of frame holds"): a
+    barely visible slow-down (≥ 85%) and a start up to 3 s after the cut."""
     if not guide or not script:
         return guide
     heads = list(_DRAWING_HEADING_RE.finditer(guide))
@@ -2786,14 +2787,15 @@ def pace_drawing_payoffs(guide: str, script: str, wpm: float) -> str:
             if needed > clip + 0.5:
                 speed = max(DRAW_ON_MIN_SPEED, clip / needed)
                 played = clip / speed
-                hold = needed - played
+                delay = min(DRAW_ON_MAX_START_DELAY, max(0.0, needed - played))
                 line = re.split(r"\s+[—–-]\s+", _drawing_cues(payoff)[0])[0]
-                note = (f"play the {clip:g} s draw-on clip at {round(speed * 100)}% speed "
-                        f"({clip:g} s → {played:.1f} s; the step times above are clip times)")
-                if hold >= 0.5:
-                    note += (f", and freeze the frame at the end of each build step until its own "
-                             f"line is spoken (about {hold:.1f} s in all; Premiere: Insert Frame Hold Segment)")
-                note += f", so the payoff stroke lands at {_fmt_seconds(cue_at)} on «{line}»."
+                note = f"play the {clip:g} s draw-on clip at {round(speed * 100)}% speed ({clip:g} s → {played:.1f} s)"
+                if delay >= 0.5:
+                    note += f", starting {delay:.1f} s after the cut (the blank board holds while the setup line is spoken)"
+                gap = needed - played - delay
+                note += (f", so the payoff stroke lands at {_fmt_seconds(cue_at)} on «{line}»." if gap < 0.5 else
+                         f"; the payoff stroke still lands {gap:.1f} s before «{line}» — hold the finished frame, "
+                         "never slow the clip further.")
                 anchor = re.search(r"(?im)^[^\n]*draw-on video prompt[^\n]*$", block)
                 at = anchor.start() if anchor else len(block.rstrip("\n-"))
                 block = block[:at] + f"* {_PACING_MARK}: {note}\n" + block[at:]
@@ -2881,13 +2883,22 @@ def fix_overlay_read_times(text: str) -> str:
     return "\n".join(lines) + ("\n" if (text or "").endswith("\n") else "") if changed else text
 
 
+DRAWING_LABEL_TYPES = ("POPUP", "KINETIC")
+MAX_LABELS_PER_DRAWING = 2
+
+
 def move_overlays_out_of_drawings(text: str, script: str, wpm: float) -> str:
-    """A whiteboard drawing fills the screen, so no text card may sit on it (a critique:
-    "Drawing 4 is flagged clear, but Warning #28 starts at 12:58 and DVT Popup #29 at
-    13:04 — three focal elements stack on the most safety-critical visual"). A card that
-    starts inside a drawing's window moves to the first sentence after it; one that starts
-    before and runs more than 1 s into it is cut to end at the drawing when it can still
-    be read, otherwise moved after it as well. Drawing rows themselves stay."""
+    """A whiteboard drawing fills the screen, so boxes may not pile onto it (a critique:
+    "Warning #28 starts at 12:58 and DVT Popup #29 at 13:04 — three focal elements stack on
+    the most safety-critical visual"). Warning, quote and title cards that start inside a
+    drawing's window move to the first sentence after it; one that starts before and runs
+    more than 1 s into it is cut to end at the drawing when it can still be read, otherwise
+    moved after it as well.
+
+    Up to two short labels (popup / kinetic text) stay: they are the drawing's own Premiere
+    labels, and moving them made them caption the next B-roll while the board sat bare (a
+    critique: the overuse popup and the debt-cycle text "fire over B-roll #22 … while the
+    whiteboard they annotate sits bare for 30 s"). A kept label ends before the drawing does."""
     windows = _drawing_windows(text, script, wpm)
     if not windows or not script:
         return text
@@ -2915,6 +2926,7 @@ def move_overlays_out_of_drawings(text: str, script: str, wpm: float) -> str:
             continue
         separator = i + 1 < j and chapters.is_separator_row(lines[i + 1])
         pos, free_at = 0, 0.0          # cards moved after one drawing queue, never stack
+        labels = {}                    # drawing window → labels kept on it
         for k in range(i + (2 if separator else 1), j):
             cells = _table_cells(lines[k])
             if len(cells) <= max(element_col, start_col, hold_col):
@@ -2938,6 +2950,15 @@ def move_overlays_out_of_drawings(text: str, script: str, wpm: float) -> str:
                 words = len(re.findall(r"[\w\u0600-\u06FF]+", cells[content_col])) if content_col is not None \
                     and content_col < len(cells) else 0
                 readable = max(1.5, words / OVERLAY_READ_WORDS_PER_SECOND)
+                room = math.floor((high - 0.3 - start) * 2) / 2
+                if inside and any(t in element for t in DRAWING_LABEL_TYPES) \
+                        and labels.get((low, high), 0) < MAX_LABELS_PER_DRAWING and room >= readable:
+                    labels[(low, high)] = labels.get((low, high), 0) + 1
+                    if start + length > high - 0.3:
+                        cells[hold_col] = cells[hold_col][:hold.start()] + f"{room:g}" + cells[hold_col][hold.end():]
+                        lines[k] = "| " + " | ".join(cells) + " |"
+                        cut += 1
+                    break
                 if runs_in and low - start >= readable:
                     cells[hold_col] = cells[hold_col][:hold.start()] + f"{math.floor((low - start) * 2) / 2:g}" \
                         + cells[hold_col][hold.end():]

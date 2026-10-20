@@ -498,11 +498,11 @@ class EndCueTimingTest(unittest.TestCase):
 
 
 class OverlayOffDrawingTest(unittest.TestCase):
-    def test_cards_inside_a_drawing_move_after_it_and_queue(self):
+    def test_boxes_inside_a_drawing_move_after_it_and_queue(self):
         guide = overlay_table(
             f"| 1 | 9:59 | WHITEBOARD DRAWING | diagram | {sentence(2)} | {end_cue(3)} | full | draw | 10 | cut | — | x |\n",
             f"| 2 | 9:59 | WARNING BOX | تحذير مهم | {sentence(3)} | {end_cue(3)} | center | fade | 4 | fade | — | x |\n",
-            f"| 3 | 9:59 | TOP-RIGHT POPUP | DVT | {sentence(3)} | {end_cue(3)} | top | fade | 3 | fade | — | x |\n")
+            f"| 3 | 9:59 | QUOTE BOX | اقتباس | {sentence(3)} | {end_cue(3)} | center | fade | 3 | fade | — | x |\n")
         with mock.patch("builtins.print"):
             out = production.move_overlays_out_of_drawings(guide, script(), 60)
         cues = [production._table_cells(line)[4] for line in out.splitlines()[3:] if line.startswith("|")]
@@ -510,6 +510,21 @@ class OverlayOffDrawingTest(unittest.TestCase):
         self.assertEqual(cues[1], sentence(4))                       # first sentence after 0:20
         self.assertEqual(cues[2], sentence(5))                       # queued after the warning
         self.assertEqual(production.move_overlays_out_of_drawings(out, script(), 60), out)
+
+
+    def test_a_short_label_stays_on_its_drawing_and_ends_before_it(self):
+        guide = overlay_table(
+            f"| 1 | 9:59 | WHITEBOARD DRAWING | diagram | {sentence(2)} | {end_cue(3)} | full | draw | 10 | cut | — | x |\n",
+            f"| 2 | 9:59 | TOP-RIGHT POPUP | دَين | {sentence(3)} | {end_cue(3)} | top | fade | 9 | fade | — | x |\n",
+            f"| 3 | 9:59 | KINETIC TEXT | حلقة | {sentence(3)} | {end_cue(3)} | center | fade | 3 | fade | — | x |\n",
+            f"| 4 | 9:59 | KINETIC TEXT | ثالثة | {sentence(3)} | {end_cue(3)} | center | fade | 3 | fade | — | x |\n")
+        with mock.patch("builtins.print"):
+            out = production.move_overlays_out_of_drawings(guide, script(), 60)
+        rows = [production._table_cells(line) for line in out.splitlines()[3:] if line.startswith("|")]
+        self.assertEqual(rows[1][4], sentence(3))                    # label 1 stays on the board
+        self.assertEqual(rows[1][8], "4.5")                          # …and leaves before 0:20
+        self.assertEqual(rows[2][4], sentence(3))                    # label 2 stays
+        self.assertEqual(rows[3][4], sentence(4))                    # a third is moved off
 
 
 class ClipWordsTest(unittest.TestCase):
@@ -762,7 +777,8 @@ class DrawingPayoffPacingTest(unittest.TestCase):
             out = production.pace_drawing_payoffs(self.spec(4), script(), 60)   # payoff 10 s in
             again = production.pace_drawing_payoffs(out, script(), 60)
         self.assertIn("Draw-on pacing", out)
-        self.assertIn("at 76% speed", out)                    # 8 s over 10.5 s
+        self.assertIn("at 85% speed", out)                    # never slower than 85%
+        self.assertIn("starting 1.1 s after the cut", out)    # 10.5 s needed: 9.4 played + 1.1
         self.assertLess(out.index("Draw-on pacing"), out.index("Draw-on Video Prompt"))
         self.assertEqual(again, out)
 
