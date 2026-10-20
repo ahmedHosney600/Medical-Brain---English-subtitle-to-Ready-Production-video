@@ -98,6 +98,8 @@ class PromptTest(unittest.TestCase):
     def test_a_drawon_length_flow_cannot_make_is_corrected(self):
         self.assertEqual(runner.sanitize_prompt("hand draws, no text, exactly 11 seconds", 8),
                          "hand draws, no text, 8 seconds")
+        self.assertEqual(runner.sanitize_prompt("no text, 6 seconds duration.", 8), "no text, 8 seconds.")
+        self.assertEqual(runner.sanitize_prompt("static camera, 8s", 8), "static camera, 8 seconds")
         self.assertEqual(runner.sanitize_prompt("line\n\n two", None), "line two")
 
     def test_timecodes_become_file_name_labels(self):

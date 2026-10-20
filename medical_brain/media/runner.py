@@ -79,9 +79,11 @@ def sanitize_prompt(prompt: str, duration=None) -> str:
     (Flow clips are 4–10 s) is told the length it will really get."""
     p = re.sub(r"\s+", " ", prompt or "").strip()
     if duration:
-        p = re.sub(r"(?i)\b(?:exactly\s+)?\d+(?:\.\d+)?\s*(?:seconds?|secs?|s)\b(?=[\s.,;]*$)",
+        # Any stated clip length ("exactly 11 seconds", "6 seconds duration", "8s.") is the
+        # clip Flow will really make.
+        p = re.sub(r"(?i)\b(?:exactly\s+)?\d+(?:\.\d+)?\s*(?:seconds?|secs?)\b(?:\s+(?:duration|long))?",
                    f"{duration} seconds", p)
-        p = re.sub(r"(?i)\bexactly\s+\d+(?:\.\d+)?\s*seconds?\b", f"{duration} seconds", p)
+        p = re.sub(r"(?i)\b\d+(?:\.\d+)?s\b(?=[\s.,;]*$)", f"{duration} seconds", p)
     return p[:2000]
 
 
