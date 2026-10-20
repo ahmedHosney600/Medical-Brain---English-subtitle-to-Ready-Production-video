@@ -101,8 +101,11 @@ def _base_name(item: dict) -> str:
     return f"{item['id']}_{tc}" if tc else item["id"]
 
 
-def _now_iso() -> str:
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+def _now_iso(margin_seconds: int = 120) -> str:
+    """UTC now minus a margin: Flow stamps the clip with its own clock, which may lag ours
+    (clips already known to the state are filtered out separately)."""
+    now = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=margin_seconds)
+    return now.strftime("%Y-%m-%dT%H:%M:%S")
 
 
 class Run:
