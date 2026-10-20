@@ -711,3 +711,16 @@ class EntryOffCutTest(unittest.TestCase):
         rows = [line for line in out.splitlines() if line.startswith("| 1 ")]
         self.assertIn("| 9.5 |", rows[0])          # 10 s → cut at 20 s: ends 0.3 s before it
         self.assertIn("| 12 |", rows[1])           # 30 words need 13 s: reading time wins
+
+
+class OverlayZoneQueueTest(unittest.TestCase):
+    def test_a_list_of_cards_in_one_zone_stays_on_its_sentences(self):
+        rows = "".join(f"| {k} | 9:59 | KINETIC TEXT | علامة {k} | {sentence(k)} | {end_cue(k)} | "
+                       f"top-right | fade-in | 9 | fade-out | — | x |\n" for k in range(2, 7))
+        with mock.patch("builtins.print"):
+            out = production.order_overlay_cards(overlay_table(rows), script(), 60)
+        body = [line for line in out.splitlines() if "علامة" in line]
+        for k, line in zip(range(2, 7), body):
+            self.assertIn(sentence(k), line)                    # every card keeps its own sentence
+        self.assertIn("| 4.5 |", body[0])                      # the earlier card makes room (5 s apart)
+        self.assertIn("| 9 |", body[-1])                       # the last keeps its hold

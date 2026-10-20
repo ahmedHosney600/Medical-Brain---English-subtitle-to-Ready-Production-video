@@ -80,7 +80,24 @@ class OpenAICompatibleBackend(_OutputLimits):
             print(f"  ⚠️ {node}: {self.provider}:{self.model} hit max_tokens; the text may be cut off")
         return choice.message.content or ""
 
+    # A dropped connection is usually a blip: a run lost DeepSeek for the rest of the run
+    # (and then the step) on one "Connection error". Pauses before each retry, in seconds.
+    CONNECTION_RETRY_PAUSES = (10, 30)
+
     def _map_errors(self, fn):
+        import time
+        import openai
+        for pause in self.CONNECTION_RETRY_PAUSES:
+            try:
+                return self._map_errors_once(fn)
+            except ProviderUnavailable as e:
+                if not isinstance(e.__cause__, openai.APIConnectionError):
+                    raise
+                print(f"  🔁 {self.provider}: connection dropped; retrying in {pause}s")
+                time.sleep(pause)
+        return self._map_errors_once(fn)
+
+    def _map_errors_once(self, fn):
         import openai
         try:
             return fn()

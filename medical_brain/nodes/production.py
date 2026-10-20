@@ -2483,6 +2483,8 @@ def _broll_row_times(rows: list, script: str, wpm: float, exit_cues: list = None
 OVERLAY_READ_WORDS_PER_SECOND = 2.5   # comfortable on-screen Arabic reading rate
 OVERLAY_MAX_HOLD_SECONDS = 20.0
 OVERLAY_ORIENT_SECONDS = 1.0          # finding the way into a multi-line card
+OVERLAY_MIN_HOLD_SECONDS = 2.0        # shortest hold a card keeps when the next one needs its zone
+OVERLAY_MAX_QUEUE_SHIFT = 3.0         # a card waits at most this long for its zone
 
 
 _RELOCATE_MIN_SHARED = 3
@@ -2881,15 +2883,26 @@ def order_overlay_cards(text: str, script: str, wpm: float) -> str:
                     continue
                 last_title = t
             slot = _overlay_slot(cells[pos_col] if pos_col is not None and pos_col < len(cells) else "")
-            if busy.get(slot, -1.0) > t + 0.25:
-                sentence = _first_sentence(sentences, busy[slot], None)
-                if sentence is not None:
-                    cells[start_col] = _sentence_cue(sentence, norm_script)
-                    if end_col is not None and end_col < len(cells):
-                        cells[end_col] = " ".join(sentence["words"][-4:])
-                    t = sentence["start_s"]
-                    queued += 1
-            busy[slot] = t + length
+            end, prev_cells, prev_t = busy.get(slot, (-1.0, None, None))
+            if end > t + 0.25:
+                # The earlier card makes room first: it ends just before this one (a card
+                # belongs to its sentence — queueing pushed a five-flag list from 1:38–2:05
+                # to 2:40–5:08, over the wrong chapter). Only a short nudge moves this card.
+                room = math.floor((t - 0.2 - prev_t) * 2) / 2
+                if prev_cells is not None and hold_col is not None and room >= OVERLAY_MIN_HOLD_SECONDS:
+                    m = re.search(r"\d+(?:\.\d+)?", prev_cells[hold_col])
+                    if m:
+                        prev_cells[hold_col] = prev_cells[hold_col][:m.start()] + f"{room:g}" + prev_cells[hold_col][m.end():]
+                        queued += 1
+                else:
+                    sentence = _first_sentence(sentences, end, end + OVERLAY_MAX_QUEUE_SHIFT)
+                    if sentence is not None and sentence["start_s"] - t <= OVERLAY_MAX_QUEUE_SHIFT + 1.0:
+                        cells[start_col] = _sentence_cue(sentence, norm_script)
+                        if end_col is not None and end_col < len(cells):
+                            cells[end_col] = " ".join(sentence["words"][-4:])
+                        t = sentence["start_s"]
+                        queued += 1
+            busy[slot] = (t + length, cells, t)
             kept.append(cells)
         out = []
         for cells in kept:
@@ -2901,7 +2914,7 @@ def order_overlay_cards(text: str, script: str, wpm: float) -> str:
         i = first + len(out)
     if not (queued or dropped or reordered):
         return text
-    print(f"  🔧 overlays: time-ordered the cards, queued {queued} that overlapped in one screen zone, "
+    print(f"  🔧 overlays: time-ordered the cards, made room for {queued} that overlapped in one screen zone, "
           f"dropped {dropped} duplicate section titles")
     text = "\n".join(lines) + ("\n" if text.endswith("\n") else "")
     return ew.rewrite_cue_timestamps(text, script, wpm)
