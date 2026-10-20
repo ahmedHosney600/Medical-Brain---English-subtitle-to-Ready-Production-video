@@ -813,3 +813,28 @@ class RenumberAfterDropsTest(unittest.TestCase):
         out, _ = sync(transition, broll)
         numbers = [r["cells"][0] for r in transition_rows(out)]
         self.assertEqual(numbers, [str(n) for n in range(1, len(numbers) + 1)])
+
+
+class LetteredBrollTest(unittest.TestCase):
+    def test_a_phantom_lettered_shot_folds_into_its_base_row(self):
+        broll = broll_table(broll_row(1, 1, 2), broll_row(2, 6, 7))
+        transition = transition_table(
+            transition_row(1, 6, "Talking Head → B-roll #2b"),
+            transition_row(2, 6, "B-roll #2b → B-roll #2"),
+            transition_row(3, 8, "B-roll #2 → Talking Head"))
+        overlay = "card sits on B-roll #2b, then B-roll #12 stays"
+        with mock.patch("builtins.print"):
+            table, (t, o) = production.resolve_lettered_brolls(broll, [transition, overlay])
+        moves = [r["cells"][3] for r in transition_rows(t)]
+        self.assertEqual(moves, ["Talking Head → B-roll #2", "B-roll #2 → Talking Head"])   # self-cut dropped
+        self.assertEqual(o, "card sits on B-roll #2, then B-roll #12 stays")
+        self.assertEqual(table, broll)
+
+    def test_a_lettered_table_row_renumbers_the_table_and_its_links(self):
+        broll = broll_table(broll_row(1, 1, 2), broll_row(1, 4, 5).replace("| 1 |", "| 1b |", 1),
+                            broll_row(2, 6, 7))
+        with mock.patch("builtins.print"):
+            table, (o,) = production.resolve_lettered_brolls(broll, ["see B-roll #1b and B-roll #2"])
+        nums = [r["cells"][0] for r in production._broll_layout(table)["rows"]]
+        self.assertEqual(nums, ["1", "2", "3"])
+        self.assertEqual(o, "see B-roll #2 and B-roll #3")

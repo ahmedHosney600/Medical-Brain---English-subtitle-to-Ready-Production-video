@@ -642,6 +642,7 @@ def _sync_after_broll(state: PipelineState, table: str, result: dict = None,
     if broll_map:
         transition = relink_references(transition, "broll", broll_map)
         overlay = relink_references(overlay, "broll", broll_map)
+    table, (transition, overlay) = resolve_lettered_brolls(table, [transition, overlay])
 
     transition_map = {}
     if transition and table and script:
@@ -674,6 +675,61 @@ def _sync_after_broll(state: PipelineState, table: str, result: dict = None,
     out["text_animation_overlay"] = overlay
     out["broll_prompts"] = table
     return out
+
+
+_LETTERED_BROLL_REF = re.compile(r"(?i)\b(B[- ]?rolls?\s*#?\s*)(\d+)([a-z])(?![a-z])")
+
+
+def resolve_lettered_brolls(table: str, layers: list) -> tuple:
+    """A revising model squeezes shots in as "B-roll #27b" / "#28b". Every link pattern
+    reads plain numbers only, so those references were invisible to all the repairs and
+    shipped as shots no table holds (a critique: "#27b and #28b … the three layers cannot
+    be conformed", plus a double cut at 12:01 into the phantom). A lettered row in the
+    B-roll table renumbers the table 1..n in order and the layers follow it; a lettered
+    reference to a row that does not exist points at its base row; a transition left as
+    "B-roll #N → B-roll #N" is dropped. Returns (table, layers)."""
+    layout = _broll_layout(table) if table else None
+    mapping = {}
+    if layout is not None and layout["cols"]["num"] is not None:
+        num_col = layout["cols"]["num"]
+        ids = [re.sub(r"[*_`\s#]", "", row["cells"][num_col]) for row in layout["rows"]]
+        if any(re.fullmatch(r"\d+[a-zA-Z]", n) for n in ids):
+            for k, (row, old) in enumerate(zip(layout["rows"], ids), 1):
+                mapping[old.lower()] = str(k)
+                row["cells"][num_col] = str(k)
+            table = _render_broll_layout(layout, layout["rows"])
+    if not mapping and not any(_LETTERED_BROLL_REF.search(t or "") for t in layers):
+        return table, layers
+    out = []
+    for text in layers:
+        if not text:
+            out.append(text)
+            continue
+        if mapping:
+            text = re.sub(r"(?i)\b(B[- ]?rolls?\s*#?\s*)(\d+[a-z]?)(?![\w])",
+                          lambda m: m.group(1) + mapping.get(m.group(2).lower(), m.group(2)), text)
+        text = _LETTERED_BROLL_REF.sub(lambda m: m.group(1) + m.group(2), text)
+        out.append(text)
+    # "B-roll #28 → B-roll #28" (a phantom folded into its base) cuts to itself.
+    if out and out[0]:
+        blocks = _transition_blocks(out[0])
+        dropped = 0
+        for block in blocks:
+            if block["cols"]["from_to"] is None:
+                continue
+            keep = []
+            for row in block["rows"]:
+                sides = re.split(r"\s*(?:→|->)\s*", _row_cell(row, block["cols"], "from_to"), maxsplit=1)
+                refs = [_BROLL_REF.search(side) for side in sides]
+                if len(sides) == 2 and all(refs) and refs[0].group(2) == refs[1].group(2):
+                    dropped += 1
+                    continue
+                keep.append(row)
+            block["rows"] = keep
+        if dropped:
+            out[0] = _render_transition_blocks(out[0], blocks)
+    print("  🔧 B-roll: resolved lettered shot numbers (#27b …) to real rows")
+    return table, out
 
 
 def _reading_seconds(content: str) -> float:
