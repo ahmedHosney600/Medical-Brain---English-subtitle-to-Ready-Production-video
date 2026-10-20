@@ -695,7 +695,7 @@ class EntryOffCutTest(unittest.TestCase):
             out = production.delay_entries_off_cuts(overlay, transition, script(), 60)
             again = production.delay_entries_off_cuts(out, transition, script(), 60)
         self.assertIn("enters 0.4 s after T#1", out)
-        self.assertIn("enters 1.2 s after T#2", out)        # 750 ms dissolve + 0.4 s
+        self.assertIn("enters 0.4 s after T#2 lands", out)  # counted from the dissolve's end
         self.assertEqual(out.count("enters "), 2)             # the card off any cut is untouched
         self.assertEqual(again, out)
 
@@ -711,6 +711,42 @@ class EntryOffCutTest(unittest.TestCase):
         rows = [line for line in out.splitlines() if line.startswith("| 1 ")]
         self.assertIn("| 9.5 |", rows[0])          # 10 s → cut at 20 s: ends 0.3 s before it
         self.assertIn("| 12 |", rows[1])           # 30 words need 13 s: reading time wins
+
+
+    def test_a_copied_mark_with_a_stale_number_is_recomputed(self):
+        on_cut = warning_row(2, 4).replace("| fade-in |", "| enters 0.5 s after T#7 lands · fade-in |")
+        off_cut = warning_row(7, 4).replace("| fade-in |", "| enters 0.4 s after T#3 lands · fade-in |")
+        transition = transition_table(transition_row(1, 2, "Talking Head → B-roll #1"))
+        with mock.patch("builtins.print"):
+            out = production.delay_entries_off_cuts(overlay_table(on_cut, off_cut), transition, script(), 60)
+        rows = [line for line in out.splitlines() if "تحذير" in line]
+        self.assertIn("| enters 0.4 s after T#1 lands · fade-in |", rows[0])
+        self.assertIn("| fade-in |", rows[1])                  # not on a cut: the mark goes
+        self.assertNotIn("enters", rows[1])
+
+
+class GroundTransitionShotsTest(unittest.TestCase):
+    BROLL = ("| # | Timestamp | ▶️ START CUE | ⏹️ END CUE | Main Cue | AI Generation Prompt |\n"
+             "|---|---|---|---|---|---|\n"
+             "| 1 | 0:10 | a | b | Man leaning over bathroom sink looking in mirror | "
+             "tired man, bathroom sink, mirror reflection, slow push-in |\n"
+             "| 2 | 0:20 | c | d | Hand pressing a tablet out of a blister pack | "
+             "thumb presses tablet from blister pack into palm |\n")
+
+    def test_an_invented_shot_is_replaced_by_the_prompted_one(self):
+        transition = transition_table(
+            transition_row(1, 2, "Talking Head → B-roll #1",
+                           "Cut to bathroom shot of discarding empty packaging, grounding the daily cycle."),
+            transition_row(2, 4, "B-roll #1 → Talking Head", "back to host"),
+            transition_row(3, 6, "Talking Head → B-roll #2",
+                           "Cut away to popping blister pack matches the reach for a pill."))
+        with mock.patch("builtins.print"):
+            out = production.ground_transition_shots(transition, self.BROLL)
+        rows = transition_rows(out)
+        self.assertEqual(rows[0]["cells"][-1], "Cut to B-roll #1 (Man leaning over bathroom sink "
+                                               "looking in mirror), grounding the daily cycle.")
+        self.assertEqual(rows[1]["cells"][-1], "back to host")
+        self.assertIn("popping blister pack", rows[2]["cells"][-1])   # matches its prompt: kept
 
 
 class OverlayZoneQueueTest(unittest.TestCase):

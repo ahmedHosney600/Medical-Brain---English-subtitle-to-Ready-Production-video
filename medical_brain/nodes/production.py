@@ -660,6 +660,9 @@ def _sync_after_broll(state: PipelineState, table: str, result: dict = None,
         overlay, table, transition = recompute_link_columns(
             overlay, table, transition, script, ew.blueprint_wpm(state.get("blueprint")))
 
+    if transition and table:
+        transition = ground_transition_shots(transition, table)
+
     if script and transition:
         overlay = trim_holds_at_cuts(overlay, transition, script, ew.blueprint_wpm(state.get("blueprint")))
         overlay = delay_entries_off_cuts(overlay, transition, script,
@@ -760,13 +763,19 @@ def trim_holds_at_cuts(overlay: str, transition: str, script: str, wpm: float) -
 
 CUT_ENTRY_DELAY_SECONDS = 0.4       # a card lands after the eye has re-found the new shot
 _ENTRY_DELAY_MARK = re.compile(r"(?i)\benters [\d.]+ s after (?:T#|the cut)")
+# A whole mark, as this pass writes it or as a revising model copies it (often with a
+# stale T# — a critique: "0.5 s after T#24" on a card cued at T#23, ten seconds off).
+_ENTRY_DELAY_PREFIX = re.compile(
+    r"(?i)\s*enters [\d.]+ s after (?:T#\s*\d+(?:\s+lands)?|the cut)\s*[·•,;:—-]?\s*")
 
 
 def delay_entries_off_cuts(overlay: str, transition: str, script: str, wpm: float) -> str:
     """A card whose entry falls on a cut, or inside a dissolve, animates on top of the
     picture change (a critique: "motion-on-motion" at 9:05, seven pop-ins on cut frames).
-    Its Entry Animation cell gets "enters N s after T#k" — the cue stays the spoken word,
-    the delay is the editor's offset from it. Drawings are full-screen shots, not cards."""
+    Its Entry Animation cell gets "enters N s after T#k lands" — the cue stays the spoken
+    word, N is counted from the moment the transition has finished. Marks already in the
+    cell (a revising model copies them, with stale numbers) are removed and recomputed, so
+    only cards that really sit on a cut carry one. Drawings are full-screen shots."""
     if not overlay or not transition or not script:
         return overlay
     cuts = _cut_times(transition, script, wpm)
@@ -802,16 +811,20 @@ def delay_entries_off_cuts(overlay: str, transition: str, script: str, wpm: floa
             if later:
                 pos = later[0]
             element = cells[element_col].upper()
-            if t is None or "DRAWING" in element or "WHITEBOARD" in element \
-                    or _ENTRY_DELAY_MARK.search(cells[entry_col]):
+            if t is None or "DRAWING" in element or "WHITEBOARD" in element:
                 continue
+            original = cells[entry_col]
+            cells[entry_col] = _ENTRY_DELAY_PREFIX.sub(" ", original).strip(" ·") \
+                if _ENTRY_DELAY_MARK.search(original) else original
             hit = next(((ct, d, n) for ct, d, n in cuts if ct - 0.15 <= t <= ct + d + 0.15), None)
-            if hit is None:
+            if hit is not None:
+                ct, d, n = hit
+                # Counted from the landing (ct + d): a cue a little after it waits less.
+                delay = math.ceil(round((max(0.0, t - (ct + d)) + CUT_ENTRY_DELAY_SECONDS) * 10, 6)) / 10
+                cells[entry_col] = f"enters {delay:g} s after T#{n} lands · {cells[entry_col]}" if n \
+                    else f"enters {delay:g} s after the cut · {cells[entry_col]}"
+            if cells[entry_col] == original:
                 continue
-            ct, d, n = hit
-            delay = math.ceil(round((max(0.0, ct + d - t) + CUT_ENTRY_DELAY_SECONDS) * 10, 6)) / 10
-            cells[entry_col] = f"enters {delay:g} s after T#{n} lands · {cells[entry_col]}" if n \
-                else f"enters {delay:g} s after the cut · {cells[entry_col]}"
             lines[k] = "| " + " | ".join(cells) + " |"
             delayed += 1
         i = j
@@ -819,6 +832,86 @@ def delay_entries_off_cuts(overlay: str, transition: str, script: str, wpm: floa
         return overlay
     print(f"  🔧 overlays: {delayed} cards entering on a cut or dissolve now enter just after it")
     return "\n".join(lines) + ("\n" if overlay.endswith("\n") else "")
+
+
+_SHOT_CLAUSE = re.compile(
+    r"(?i)^(?P<lead>[^,.;:«»]*?\b(?:cut|dissolve|push-cut|push-in|slide|transition|whip|wipe|"
+    r"tilt|dolly|pan|zoom|move|reveal)\w*(?:\s+away)?\s+(?:to|into|onto|across)\s+)(?P<rest>.+)$", re.S)
+# Where the reason starts: ", visually grounding…" or "… anchors the danger…". The LAST one
+# is taken, because a description may itself contain commas and -ing words.
+_SHOT_REASON = re.compile(
+    r"(?i),\s+(?:visually\s+)?[a-z]+ing\b|\s+(?:visually\s+)?(?:anchors|highlights|grounds|"
+    r"illustrates|establishes|introduces|mirrors|matches|reinforces|addresses|captures|"
+    r"emphasi[sz]es|leads|reflects|pays off|reveals|signals|underscores|echoes|bridges|evokes)\b")
+
+
+_SHOT_STOPWORDS = {"shot", "shots", "close", "closeup", "close-up", "macro", "wide", "medium",
+                   "detail", "frame", "view", "footage", "scene", "image", "visual", "with",
+                   "from", "into", "onto", "that", "this", "their", "while", "where", "back",
+                   "over", "under", "across", "clip", "cinematic", "tight", "dynamic", "direct",
+                   "quick", "slow", "soft", "clean"}
+
+
+def _shot_words(text: str) -> list:
+    return [w for w in (x.lower() for x in re.findall(r"[A-Za-z][A-Za-z\-]{3,}", text or ""))
+            if w not in _SHOT_STOPWORDS]
+
+
+def ground_transition_shots(transition: str, broll_table: str) -> str:
+    """A rationale that names the shot it cuts into describes it in its own words, and a
+    revising model takes those words from the critique's suggestions rather than from the
+    B-roll prompts it was given (a critique: four rows promised "an antibiotic box pushed
+    aside", "a folded compress"… that no prompt contains — "an editor will cut to a frame
+    that does not exist"). Every row into a B-roll whose rationale opens with "<cut> to
+    <shot>" gets that shot replaced by the B-roll's own Main Cue; the reason that follows
+    stays."""
+    if not transition or not broll_table:
+        return transition
+    layout = _broll_layout(broll_table)
+    if layout is None:
+        return transition
+    upper = [c.upper() for c in _table_cells(layout["header"])]
+    main_col = next((k for k, h in enumerate(upper) if "MAIN CUE" in h or "MAIN VISUAL" in h), None)
+    num_col = layout["cols"]["num"]
+    if main_col is None or num_col is None:
+        return transition
+    subject, stems = {}, {}
+    for row in layout["rows"]:
+        number = re.sub(r"\D", "", row["cells"][num_col])
+        text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>|\*\*", "", row["cells"][main_col])).strip(" .")
+        if number and text and text not in ("—", "-"):
+            subject[number] = text
+            stems[number] = {w[:5] for w in _shot_words(" ".join(row["cells"]))}
+    blocks = _transition_blocks(transition)
+    grounded = 0
+    for block in blocks:
+        cols = block["cols"]
+        if cols["rationale"] is None or cols["from_to"] is None:
+            continue
+        for row in block["rows"]:
+            target = re.search(r"(?:→|->)\s*B-?roll\s*#\s*(\d+)", _row_cell(row, cols, "from_to"), re.I)
+            if not target or target.group(1) not in subject:
+                continue
+            rationale = _row_cell(row, cols, "rationale")
+            m = _SHOT_CLAUSE.match(rationale)
+            if not m:
+                continue
+            # Only a description the prompt does not bear out is replaced: most of its
+            # words are nowhere in that B-roll's row ("discarding empty packaging").
+            reasons = list(_SHOT_REASON.finditer(m.group("rest")))
+            described = m.group("rest")[:reasons[-1].start()] if reasons else m.group("rest")
+            words = [w for w in _shot_words(described) if not re.fullmatch(r"b-?roll", w)]
+            missing = [w for w in words if w[:5] not in stems[target.group(1)]]
+            if len(missing) < 2 or len(missing) < 0.25 * len(words):
+                continue
+            shot = f"B-roll #{target.group(1)} ({subject[target.group(1)]})"
+            tail = m.group("rest")[reasons[-1].start():].rstrip() if reasons else ""
+            row["cells"][cols["rationale"]] = m.group("lead") + shot + (tail or ".")
+            grounded += 1
+    if not grounded:
+        return transition
+    print(f"  🔧 transitions: {grounded} rationales now name the B-roll shot actually prompted")
+    return _render_transition_blocks(transition, blocks)
 
 
 LINK_TOLERANCE_SECONDS = 3.0
