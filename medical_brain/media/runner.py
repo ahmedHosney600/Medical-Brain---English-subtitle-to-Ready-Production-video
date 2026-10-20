@@ -227,6 +227,35 @@ class Run:
                 shutil.copy2(variant["original"], variant["final"])
             self.save()
 
+    def _batch_clips(self, item: dict, numbers: list, mode: str, prompt: str, **frames) -> list:
+        """All of `numbers` in ONE paid --count N request (batch-clips-patched gflow). Returns
+        the variants that came back; any missing number is then made one at a time."""
+        folder, base = self._folder(item["kind"]), _base_name(item)
+        downloads = os.path.join(self.logs, "downloads")
+        self._pace_video()
+        since = _now_iso()
+        known = {v.get("media") for e in self.state["items"].values() for v in e.get("videos", [])}
+        media, path, extras = self.gflow.video(
+            mode, prompt, model=self.s["video_model"], duration=self.s["video_duration"],
+            aspect=self.s["video_aspect"], resolution=self.s["video_resolution"], project=self.state["project"],
+            out_dir=downloads, tag=f"{item['id']}_x{len(numbers)}_{mode}", count=len(numbers), **frames)
+        if not path:
+            fresh = [r for r in self.gflow.recent_videos(self.state["project"], since)
+                     if r.get("media_id") and r["media_id"] not in known]
+            if fresh:
+                media = fresh[0]["media_id"]
+                path = self.gflow.download_video(media, downloads, f"{item['id']}_recover")
+        got = [(media, path)] if path else []
+        got += [(m, p) for m, p in extras if p and os.path.exists(p)]
+        variants = []
+        for n, (m, p) in zip(numbers, got):
+            original = self._move(p, os.path.join(folder, "_originals", f"{base}_v{n}.mp4"))
+            variants.append({"n": n, "media": m, "original": original, "final": "", "upscaled": False})
+        lost = len(numbers) - len(variants)
+        if lost:
+            print(f"    ↻ {item['id']}: {lost} of {len(numbers)} clips did not come back — making them one at a time")
+        return variants
+
     def _one_clip(self, item: dict, n: int, mode: str, prompt: str, **frames) -> dict:
         """One paid clip: submit (paced), recover a lost reply from the catalog, never re-send
         a request Flow may have billed."""
@@ -236,10 +265,10 @@ class Run:
             self._pace_video()
             since = _now_iso()
             known = {v.get("media") for e in self.state["items"].values() for v in e.get("videos", [])}
-            media, path = self.gflow.video(mode, prompt, model=self.s["video_model"],
-                                           duration=self.s["video_duration"], aspect=self.s["video_aspect"],
-                                           resolution=self.s["video_resolution"], project=self.state["project"],
-                                           out_dir=downloads, tag=f"{item['id']}_v{n}_{mode}", **frames)
+            media, path, _extras = self.gflow.video(
+                mode, prompt, model=self.s["video_model"], duration=self.s["video_duration"],
+                aspect=self.s["video_aspect"], resolution=self.s["video_resolution"], project=self.state["project"],
+                out_dir=downloads, tag=f"{item['id']}_v{n}_{mode}", **frames)
             if not path:
                 fresh = [r for r in self.gflow.recent_videos(self.state["project"], since)
                          if r.get("media_id") and r["media_id"] not in known]
@@ -257,6 +286,13 @@ class Run:
         entry = self.entry(item)
         folder, base = self._folder(item["kind"]), _base_name(item)
         have = {v["n"] for v in entry["videos"] if v.get("original")}
+        missing = [n for n in range(1, int(count) + 1) if n not in have]
+        if len(missing) > 1 and self.gflow.batch_clips_supported():
+            print(f"  🎬 {item['id']}: {len(missing)} clips in one request…")
+            entry["videos"].extend(self._batch_clips(item, missing, mode, prompt, **frames))
+            entry["videos"].sort(key=lambda v: v["n"])
+            self.save()
+            have = {v["n"] for v in entry["videos"] if v.get("original")}
         for n in range(1, int(count) + 1):
             if n in have:
                 continue

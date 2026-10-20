@@ -164,11 +164,29 @@ class Gflow:
         return _find_output(out_dir, media, scale)
 
     # ------------------------------------------------------------------ videos
+    def batch_clips_supported(self) -> bool:
+        """True when the installed gflow carries the batch-clips edit
+        (gflow_patches/apply_gflow_patches.py): a --count N call then returns every clip."""
+        if getattr(self, "_batch_ok", None) is None:
+            shim = self._shim_command()
+            self._batch_ok = False
+            if shim:
+                probe = ("from gflow_cli.api.transports import batchexecute as b; "
+                         "print('batch-clips' in getattr(b, 'MEDICAL_BRAIN_PATCHES', ()))")
+                try:
+                    proc = subprocess.run([*shim[:-1], "-c", probe], capture_output=True, text=True, timeout=60)
+                    self._batch_ok = proc.returncode == 0 and proc.stdout.strip() == "True"
+                except (OSError, subprocess.TimeoutExpired):
+                    self._batch_ok = False
+        return self._batch_ok
+
     def video(self, mode: str, prompt: str, *, model: str, duration: str, aspect: str, resolution: str,
-              project: str, out_dir: str, tag: str, initial_frame: str = "", end_frame: str = "") -> tuple:
-        """(media id, local path) of ONE clip. gflow saves a single file per video call, so a
-        "x4" request is four calls (see runner)."""
-        args = ["video", mode, prompt, "--model", model, "--aspect", aspect, "--count", "1",
+              project: str, out_dir: str, tag: str, initial_frame: str = "", end_frame: str = "",
+              count: int = 1) -> tuple:
+        """(media id, local path, extras) — extras: [(media id, local path or "")] for the
+        other clips of a count > 1 call (only on a batch-clips-patched gflow; an unpatched
+        0.86.0 bills N clips and saves one, so the runner then asks for one at a time)."""
+        args = ["video", mode, prompt, "--model", model, "--aspect", aspect, "--count", str(int(count)),
                 "--duration", str(duration), "--project", project, "--out-dir", out_dir, "--json"]
         if resolution:
             args += ["--resolution", resolution]
@@ -177,15 +195,17 @@ class Gflow:
         if end_frame:
             args += ["--end-frame", end_frame]
         rc, data = self.run(args, tag)
+        extras = [(c.get("media_id") or "", c.get("local_path") or "") for c in data.get("extra_clips") or []
+                  if isinstance(c, dict)] if rc == 0 else []
         if rc == 0 and data.get("local_path"):
-            return data.get("media_id") or "", data["local_path"]
+            return data.get("media_id") or "", data["local_path"], extras
         if rc in STOP_CODES:
             raise GflowStop(rc, data.get("_detail", ""))
         # A paid request is never blindly re-sent: when Flow made the clip and only the
         # download failed, it is fetched from the catalog for free.
         if rc in SKIP_CODES:
             raise GflowFailed(rc, data.get("_detail", ""))
-        return "", ""
+        return "", "", extras
 
     def recent_videos(self, project: str, since_iso: str) -> list:
         """Catalogued videos of `project` created at/after `since_iso` (newest first)."""

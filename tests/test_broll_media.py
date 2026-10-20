@@ -221,3 +221,33 @@ class UpscaleShimTest(unittest.TestCase):
                 mock.patch("medical_brain.media.gflow._find_output", return_value=os.path.join(d, "x_1080p.mp4")):
             self.assertTrue(g.upscale_video("m1", scale="1080p", project="p", out_dir=d, tag="t"))
         self.assertEqual(tags, [("t_fixed", ["py", "shim.py"]), ("t", [])])
+
+
+class BatchClipsTest(FakeGflowCase):
+    def generate_batched(self, manifest, **kw):
+        with mock.patch.object(Gflow, "batch_clips_supported", return_value=True):
+            return self.generate(manifest, **kw)
+
+    def test_a_patched_gflow_makes_all_clips_in_one_request(self):
+        manifest = {"items": [i for i in sample_manifest()["items"] if i["id"] == "B01"]}
+        self.generate_batched(manifest)
+        t2v = [c for c in self.calls() if c[:2] == ["video", "t2v"]]
+        self.assertEqual(len(t2v), 1)
+        self.assertEqual(t2v[0][t2v[0].index("--count") + 1], "4")
+        names = sorted(os.listdir(os.path.join(self.broll_dir, "videos", "_originals")))
+        self.assertEqual(names, [f"B01_0m04s_v{n}.mp4" for n in range(1, 5)])
+
+    def test_a_clip_missing_from_the_batch_is_made_on_its_own(self):
+        self.scenario(batch_lose=[2])
+        manifest = {"items": [i for i in sample_manifest()["items"] if i["id"] == "B01"]}
+        self.generate_batched(manifest)
+        t2v = [c for c in self.calls() if c[:2] == ["video", "t2v"]]
+        self.assertEqual([c[c.index("--count") + 1] for c in t2v], ["4", "1"])
+        self.assertEqual(len(os.listdir(os.path.join(self.broll_dir, "videos", "_originals"))), 4)
+
+    def test_an_unpatched_gflow_is_never_asked_for_more_than_one_clip(self):
+        manifest = {"items": [i for i in sample_manifest()["items"] if i["id"] == "B01"]}
+        with mock.patch.object(Gflow, "batch_clips_supported", return_value=False):
+            self.generate(manifest)
+        counts = {c[c.index("--count") + 1] for c in self.calls() if c[:2] == ["video", "t2v"]}
+        self.assertEqual(counts, {"1"})

@@ -9,6 +9,7 @@ Env:  FAKE_GFLOW_DIR       folder for calls.jsonl, counters.json, catalog.jsonl
                                  {"video_rc": {"3": 10}}   video call #3 exits with that code
                                  {"policy_word": "FORBIDDEN"} image prompts containing it exit 5
                                  {"video_upscale_rc": 7}   every video upscale exits 7
+                                 {"batch_lose": [2]}       extra clip #2 of a --count N call is not downloaded
 """
 import json
 import os
@@ -83,7 +84,14 @@ if cmd[0] == "video" and cmd[1] in ("t2v", "i2v", "r2v"):
         print(json.dumps({"title": "wire format", "detail": "no signed media URL"}))
         sys.exit(7)
     path = touch(os.path.join(opt("--out-dir"), f"{media}.mp4"))
-    print(json.dumps({"status": "ok", "media_id": media, "local_path": path, "succeeded": True}))
+    extras = []
+    for k in range(1, int(opt("--count", "1"))):          # the batch-clips-patched gflow
+        other = str(uuid.uuid4())
+        lost = k in scenario.get("batch_lose", [])
+        extras.append({"media_id": other,
+                       "local_path": None if lost else touch(os.path.join(opt("--out-dir"), f"{other}.mp4"))})
+    print(json.dumps({"status": "ok", "media_id": media, "local_path": path, "succeeded": True,
+                      "extra_clips": extras}))
     sys.exit(0)
 if cmd == ["video", "upscale"]:
     if scenario.get("video_upscale_rc"):

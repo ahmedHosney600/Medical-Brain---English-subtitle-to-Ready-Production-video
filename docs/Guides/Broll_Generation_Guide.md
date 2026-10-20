@@ -11,14 +11,11 @@ It is **optional and separate**. Nothing runs, and no credits are spent, unless 
 ## 1. One-time setup
 
 ```bash
-uv tool install gflow-cli                                   # the Flow driver (its own environment)
+uv tool install gflow-cli==0.86.0                           # the Flow driver, this exact version
 uv tool run --from gflow-cli playwright install chromium    # its browser (~150 MB)
+python3 medical_brain/media/gflow_patches/apply_gflow_patches.py   # the post-install edits (§1.1)
 gflow auth login --browser chrome                           # sign in once, in a real Chrome window
 ```
-
-gflow-cli 0.86 aborts 1080p video exports on some accounts. The generator works around this
-automatically: it runs the export with a small in-memory fix (`medical_brain/media/gflow_upscale_shim.py`),
-and nothing installed is changed.
 
 - **Account:** a Google account with Flow access (Google AI Pro/Ultra).
 - **Unofficial tool:** gflow-cli drives Flow through a real Chrome window. It is not affiliated with
@@ -27,7 +24,37 @@ and nothing installed is changed.
   - **Videos** spend Flow credits.
   - **Images and upscales** use a daily image quota, not credits.
 
----
+### 1.1 Post-install edits to gflow-cli 0.86.0
+
+Medical Brain is built and tested on **gflow-cli 0.86.0**. Run the edit script right after
+installing it, and again after any reinstall:
+
+```bash
+python3 medical_brain/media/gflow_patches/apply_gflow_patches.py           # apply
+python3 medical_brain/media/gflow_patches/apply_gflow_patches.py --check   # what is applied
+python3 medical_brain/media/gflow_patches/apply_gflow_patches.py --revert  # back to the original
+```
+
+| Edit | What it fixes | Files in `gflow_cli/` |
+|---|---|---|
+| `batch-clips` | `gflow video … --count 4` keeps **all four clips**. 0.86.0 read only the first clip record in Flow's reply and downloaded only that one; the other three were billed but left in the Flow project. Now every clip is tracked to the end and downloaded next to the first, and `--json` lists them under `"extra_clips"`. | `api/transports/batchexecute.py`, `api/transports/migrated_composer.py`, `api/video.py`, `json_output.py` |
+| `export-listener` | `gflow video upscale --scale 1080p` no longer aborts with exit 7 ("Failed to read a video export response … No data found for resource") when Chrome drops the body of an unrelated reply while Flow renders the export. | `api/transports/migrated_video_upscale.py` |
+
+**How the script behaves:**
+- Every change is an exact text replacement.
+- It changes nothing unless **all** of them match 0.86.0's code, and it refuses any other version.
+- Each changed file keeps its original as `<file>.orig`.
+- Running it twice is safe.
+
+**After `gflow update`** (or a newer gflow), the script refuses until its edits are checked against
+the new code. Go back to 0.86.0 with `uv tool install --force gflow-cli==0.86.0`, then run the script.
+
+**Without the edits, the generator still works:**
+- It asks for x4 videos as four separate x1 requests (an unpatched gflow would bill four clips and keep one).
+- It runs 1080p exports through an in-memory fix (`medical_brain/media/gflow_upscale_shim.py`).
+
+**With `batch-clips`,** each item's clips come from one `--count 4` request. Any clip that does not come
+back is then made on its own.
 
 ## 2. Run it
 
@@ -61,8 +88,9 @@ where it stopped, and nothing that already exists is generated or paid for twice
 
 Every file Flow first returned is kept in `_originals/`.
 
-**Why x4 video is four requests:** gflow keeps only one file from a single "x4" video request,
-although Flow bills all four. Four x1 requests cost the same, and every clip is downloaded.
+**How x4 video is requested:**
+- **With the `batch-clips` edit (§1.1):** one `--count 4` request per item, and all four clips are downloaded.
+- **Without it:** four x1 requests (same credits), because an unpatched gflow keeps only one clip of an x4 request.
 
 **How whiteboards are made (method "M4"):** this won a 10-way test on 2026-10-20.
 - The draw-on video runs from a blank board (start frame) to the finished drawing (end frame).
