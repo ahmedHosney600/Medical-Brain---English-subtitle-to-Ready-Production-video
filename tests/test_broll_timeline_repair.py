@@ -21,7 +21,9 @@ class FakeLLM:
 
 
 def use(test, module, name, fake):
-    patcher = mock.patch.object(module, name, fake)
+    """Patches module.name with fake; a *_as function's leading step name is dropped."""
+    target = (lambda node, *a, **k: fake(*a, **k)) if name.endswith("_as") else fake
+    patcher = mock.patch.object(module, name, target)
     patcher.start()
     test.addCleanup(patcher.stop)
     return fake
@@ -258,7 +260,7 @@ class RepeatedFamilyTest(unittest.TestCase):
     def test_family_repeats_after_the_first_are_re_imaged(self):
         table = HEAD + row(1, 0) + row(2, 3) + row(3, 6) + row(4, 9) + row(5, 12)
         audits = iter([({"repeats": [[2, 4]]}, "raw")])          # the second audit finds nothing new
-        use(self, production, "call_llm_json", FakeLLM(lambda *a: next(audits, ({"repeats": []}, "raw"))))
+        use(self, production, "call_llm_json_as", FakeLLM(lambda *a: next(audits, ({"repeats": []}, "raw"))))
         fake = use(self, production, "call_llm", FakeLLM(
             lambda *a: "| 9 | 9:59 | X | X | 🎬 Video | lighthouse keeper polishing a lens, dolly |"))
         out, report = repair(table)
@@ -268,7 +270,7 @@ class RepeatedFamilyTest(unittest.TestCase):
 
     def test_a_closing_callback_to_the_opening_is_kept(self):
         table = HEAD + row(1, 0) + row(2, 3) + row(3, 6) + row(4, 9) + row(5, 12)
-        use(self, production, "call_llm_json", FakeLLM(lambda *a: ({"repeats": [[1, 5]]}, "raw")))
+        use(self, production, "call_llm_json_as", FakeLLM(lambda *a: ({"repeats": [[1, 5]]}, "raw")))
         fake = use(self, production, "call_llm", FakeLLM(lambda *a: "| 9 | 9:59 | X | X | 🎬 Video | other |"))
         out, report = repair(table)
         self.assertNotIn("re_imaged", report)
@@ -281,7 +283,7 @@ class DrawingRepeatTest(unittest.TestCase):
         guide = ("### Drawing Animations\nDrawing Animation 1: The switchboard\n"
                  "- **Subject Description**: a drawn electrical switchboard with two circuits\n")
         audits = iter([({"repeats": [], "repeats_drawing": [3]}, "raw")])
-        use(self, production, "call_llm_json", FakeLLM(lambda *a: next(audits, ({"repeats": []}, "raw"))))
+        use(self, production, "call_llm_json_as", FakeLLM(lambda *a: next(audits, ({"repeats": []}, "raw"))))
         fake = use(self, production, "call_llm", FakeLLM(
             lambda *a: "| 9 | 9:59 | X | X | 🎬 Video | woman stretching at sunrise, dolly |"))
         with mock.patch("builtins.print"):
@@ -302,7 +304,7 @@ class MisfitTest(unittest.TestCase):
     def test_misfit_shot_is_re_imaged_for_its_own_sentence(self):
         table = HEAD + row(1, 0) + row(2, 3) + row(3, 6) + row(4, 9)
         audits = iter([({"repeats": [], "misfit": [2]}, "raw")])
-        seen = use(self, production, "call_llm_json", FakeLLM(lambda *a: next(audits, ({"repeats": []}, "raw"))))
+        seen = use(self, production, "call_llm_json_as", FakeLLM(lambda *a: next(audits, ({"repeats": []}, "raw"))))
         fake = use(self, production, "call_llm", FakeLLM(
             lambda *a: "| 9 | 9:59 | X | X | 🎬 Video | vacutainer tubes on a lab tray, slow push-in |"))
         out, report = repair(table)

@@ -10,7 +10,7 @@ import math
 import re
 
 from ..exports import workbook as ew
-from ..llm import call_llm, call_llm_json
+from ..llm import call_llm, call_llm_json, call_llm_json_as
 from ..prompts import load_prompt
 from ..state import PipelineState
 from ..utils.llm_json import UnreadableAnswer, pick
@@ -1877,7 +1877,7 @@ _STAND_IN_DOCTOR_RE = re.compile(r"(?i)\b(doctor|physician|cardiologist|neurolog
 
 def _replace_repeated_families(rows: list, layout: dict, sentences: list, script: str, wpm: float,
                                after: int, budget: list, drawings: list = None) -> int:
-    """ONE small call groups B-rolls that repeat the same subject + action (word overlap
+    """ONE small judge call groups B-rolls that repeat the same subject + action (word overlap
     cannot see it: three "pill out of a blister pack beside a glass" shots scored like
     unrelated rows). The first of each group stays (and a last-row callback to the
     opening); the others get a new prompt for their own sentence that must differ.
@@ -1910,7 +1910,11 @@ def _replace_repeated_families(rows: list, layout: dict, sentences: list, script
         drawing_ask = (" Also list in \"repeats_drawing\" the B-roll numbers that show the same metaphor or "
                        "object a whiteboard drawing already draws (a real switchboard after a drawn one).")
     try:
-        data, _ = call_llm_json(
+        # A judging task: it runs on the production judge's model, not the B-roll writer's
+        # (on agy Flash "high" this tiny JSON took ~6 min per call, twice per round — most
+        # of a 42-minute B-roll step).
+        data, _ = call_llm_json_as(
+            "production_quality_critique",
             "You audit visual variety in a video's B-roll list.",
             "B-ROLL SHOTS (in order):\n" + "\n".join(listing) + drawing_note
             + "\n\nGroup shots that repeat the same SUBJECT doing the same ACTION (e.g. several 'man in bed "
@@ -2211,28 +2215,40 @@ def repair_broll_timeline(state: PipelineState, table: str, script: str, wpm: fl
         gaps = [g for g in _gap_list(rows, times, script_end) if g["key"] not in attempts]
         if not gaps:
             break
-        gap = max(gaps, key=lambda g: g["hi"] - g["lo"])
-        attempts.add(gap["key"])
-        middle = (gap["lo"] + gap["hi"]) / 2.0
-        # At least 8 s from both neighbours: a fill aimed at a gap's middle (inside a
-        # drawing) fell back to a sentence 6 s after the previous B-roll.
-        low_ok = gap["lo"] + (_MIN_BROLL_SPACING if not gap.get("leading") else 0.001)
-        candidates = [(i, s) for i, s in enumerate(sentences)
-                      if s["start"] >= after and low_ok <= s["start_s"] <= gap["hi"] - _MIN_BROLL_SPACING
-                      and len(s["words"]) >= _MIN_CUE_SENTENCE_WORDS
-                      and not _inside_drawing_window(s["start_s"], drawing_windows)]
-        if not candidates:
+        # Every open gap at once, widest first: gaps in different places do not depend on
+        # each other, and their rows are asked for in parallel (one after another, the
+        # fills were a large part of a 42-minute B-roll step).
+        planned, used = [], set()
+        for gap in sorted(gaps, key=lambda g: g["lo"] - g["hi"]):
+            if calls + len(planned) >= MAX_GAP_FILLS:
+                break
+            attempts.add(gap["key"])
+            middle = (gap["lo"] + gap["hi"]) / 2.0
+            # At least 8 s from both neighbours: a fill aimed at a gap's middle (inside a
+            # drawing) fell back to a sentence 6 s after the previous B-roll.
+            low_ok = gap["lo"] + (_MIN_BROLL_SPACING if not gap.get("leading") else 0.001)
+            candidates = [(i, s) for i, s in enumerate(sentences)
+                          if s["start"] >= after and low_ok <= s["start_s"] <= gap["hi"] - _MIN_BROLL_SPACING
+                          and len(s["words"]) >= _MIN_CUE_SENTENCE_WORDS and i not in used
+                          and not _inside_drawing_window(s["start_s"], drawing_windows)]
+            if not candidates:
+                continue
+            index, sentence = min(candidates, key=lambda item: abs(item[1]["start_s"] - middle))
+            used.add(index)
+            planned.append((index, sentence))
+        if not planned:
             continue
-        index, sentence = min(candidates, key=lambda item: abs(item[1]["start_s"] - middle))
-        calls += 1
-        cells = _ask_gap_row(layout, rows, index, sentences)
-        if cells is None:
-            continue
+        calls += len(planned)
+        answers = chapters.parallel_map(lambda job: _ask_gap_row(layout, rows, job[0], sentences), planned,
+                                        workers=4)
         cols = layout["cols"]
-        cells[cols["start"]] = _sentence_cue(sentence, norm_script)
-        cells[cols["end"]] = " ".join(sentence["words"][-4:])
-        rows.insert(gap["index"], {"cells": cells})
-        report["filled"] += 1
+        for (index, sentence), cells in zip(planned, answers):
+            if cells is None:
+                continue
+            cells[cols["start"]] = _sentence_cue(sentence, norm_script)
+            cells[cols["end"]] = " ".join(sentence["words"][-4:])
+            rows.append({"cells": cells})
+            report["filled"] += 1
 
     rows = _sorted_rows(rows, layout, script, wpm, after=after)
     variety_budget = [MAX_VARIETY_REWRITES]
