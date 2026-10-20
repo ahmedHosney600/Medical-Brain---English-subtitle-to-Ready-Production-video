@@ -295,25 +295,32 @@ def repair_cue_table(text: str, section_key: str, start_col: int, end_col, scrip
         cols = [c for c in (start_col, end_col) if c is not None]
         if not header_seen or len(cells) <= max(cols):
             continue
+        row_start = None
         for col in cols:
             cue = cells[col]
             end = col == end_col
+
+            def ok(text):
+                return (end_cue_problem(text, norm_script, 3, pos, row_start) if end
+                        else cue_problem(text, norm_script, min_words=3, after=pos)) is None
             # Order-aware: a cue repeated in the script is fine when only this row's
             # occurrence is at/after the previous row's position (rows are in order).
-            if cue_problem(cue, norm_script, min_words=3, after=pos) is None:
+            if ok(cue):
                 found = _locate(normalize_ar(spoken_text(cue)).split(), idx, pos, length, max_length)
             else:
                 cue_words = normalize_ar(spoken_text(cue)).split()
                 found = _locate(cue_words, idx, pos, length, max_length, end_anchor=end) if cue_words else None
                 if found:
                     new = idx.text(*found)
-                    if new and cue_problem(new, norm_script, min_words=3, after=pos) is None:
+                    if new and ok(new):
                         parts[col + 1] = f" {new} "
                         fixed += 1
                         if len(examples) < 5:
                             examples.append(f"{cue} → {new}")
             if found and col == start_col and found[0] >= pos:
                 pos = found[0]
+            if col == start_col:
+                row_start = found[0] if found else None
         lines[i] = "|".join(parts)
     return "".join(lines), fixed, examples
 
@@ -330,6 +337,20 @@ def repair_cues(package_text: str, script: str) -> tuple:
     return text, n1 + n2 + n3, ex1 + ex2 + ex3
 
 
+END_CUE_REACH_WORDS = 80     # an END cue this close after its row's START belongs to that row
+
+
+def end_cue_problem(cue: str, norm_script: str, min_words: int, after: int, row_start) -> Optional[str]:
+    """cue_problem for an END cue: a repeat is fine when its first occurrence after the
+    row's START is close (a recap later in the script repeating the sentence is another row's)."""
+    why = cue_problem(cue, norm_script, min_words, after=after)
+    if why and row_start is not None and "appears" in why:
+        near = [p for p in cue_positions(cue, norm_script) if p >= row_start]
+        if near and near[0] - row_start <= END_CUE_REACH_WORDS:
+            return None
+    return why
+
+
 def check_cue_rows(rows: list, script: str, min_words: int = 3) -> list:
     """rows: [(label, start_cue, end_cue), ...] → list of problem strings.
 
@@ -340,11 +361,19 @@ def check_cue_rows(rows: list, script: str, min_words: int = 3) -> list:
     problems = []
     pos = 0
     for label, start, end in rows:
+        row_start = None
         for kind, cue in (("START", start), ("END", end)):
-            why = cue_problem(cue, norm, min_words, after=pos)
+            # An END cue closes its own row: the first occurrence shortly after the row's
+            # START is the one meant, even if a recap repeats the sentence later (a real
+            # package retried 3 times over one: "واثقين إن عندهم التهاب جيوب").
+            why = (end_cue_problem(cue, norm, min_words, pos, row_start) if kind == "END"
+                   else cue_problem(cue, norm, min_words, after=pos))
             if why:
                 problems.append(f"{label} {kind} CUE '{cue}': {why}")
                 continue
+            if kind == "START":
+                found = [p for p in cue_positions(cue, norm) if p >= pos]
+                row_start = found[0] if found else None
             # Advance only forwards: a row's END cue never pulls the position back.
             later = [p for p in cue_positions(cue, norm) if p >= pos]
             if later:

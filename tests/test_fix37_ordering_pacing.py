@@ -57,6 +57,24 @@ class OrderAwareCueTest(unittest.TestCase):
         problems = ew.check_cue_rows(rows, self.SCRIPT)
         self.assertTrue(any("appears 2 times" in p for p in problems))
 
+    def test_an_end_cue_repeated_by_a_later_recap_belongs_to_its_row(self):
+        # "w4 w5 alpha beta" ends row 1; a recap ("alpha beta gamma …") repeats part of it later.
+        script = "w0 w1 w2 w3 w4 w5 alpha beta gamma w9 " + " ".join(f"x{i}" for i in range(100)) + \
+                 " w4 w5 alpha beta gamma w9"
+        rows = [("1", "w0 w1 w2", "w5 alpha beta gamma")]
+        self.assertEqual(ew.check_cue_rows(rows, script), [])
+        far = [("1", "w0 w1 w2", "x50 x51 x52"), ("2", "x53 x54 x55", "w5 alpha beta gamma")]
+        self.assertEqual(ew.check_cue_rows(far, script), [])               # after row 2's START: one left
+        table = ("## INTEGRATED PRODUCTION STORYBOARD\n"
+                 "| # | Act | Time | START CUE | END CUE | Layer | Detail |\n"
+                 "|---|---|---|---|---|---|---|\n"
+                 "| 1 | 1 | 0:00 | w0 w1 w2 | gamma w9 | A-ROLL | a |\n")          # too short: grows left
+        text, fixed, _ = ew.repair_cues(table, script)
+        end = ew.parse_storyboard(text)[0]["end"]
+        self.assertEqual(fixed, 1)
+        self.assertTrue(end.endswith("gamma w9") and len(end.split()) >= 3)
+        self.assertEqual(ew.check_cue_rows([("1", "w0 w1 w2", end)], script), [])
+
     def test_cue_seconds_after_picks_the_later_occurrence(self):
         self.assertAlmostEqual(ew.cue_seconds("alpha beta gamma", self.SCRIPT, 60), 6.0)
         self.assertAlmostEqual(ew.cue_seconds("alpha beta gamma", self.SCRIPT, 60, after=7), 10.0)
