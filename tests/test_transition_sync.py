@@ -853,3 +853,11 @@ class FlashAfterSortTest(unittest.TestCase):
             out, _ = sync(transition, broll_table())
         self.assertEqual(production.transition_collisions(out, script(), 60), [])
         self.assertEqual(len([r for r in transition_rows(out) if "Drawing 2 →" in r["cells"][3]]), 1)
+
+
+class CameraMoveWordsTest(unittest.TestCase):
+    def test_a_truck_or_described_camera_move_counts(self):
+        for prompt in ("camera performs a slow lateral truck toward her profile",
+                       "the camera trucks left past the table", "the lens pedestals down to the cup"):
+            self.assertTrue(production._CAMERA_MOVE.search(prompt), prompt)
+        self.assertFalse(production._CAMERA_MOVE.search("a man sits at a truck stop diner"))

@@ -1150,7 +1150,11 @@ _CAMERA_MOVE = re.compile(
     r"\b(?:push[- ]?in|push(es|ing)?\b|pull[- ]?(back|out)|pull(s|ing)?\s+(back|out|away)|dolly|parallax|orbit|"
     r"tracks?\b|tracking|drift(s|ing)?\b|glid(e|es|ing)\b|arc(s|ing)?\s+(around|left|right)|rack[- ]focus|pan(s|ning)?\b|tilt|"
     r"crane|zoom|slide|time[- ]?lapse|slow[- ]?motion|handheld|gimbal|steadicam|fly[- ]?(through|over)|"
-    r"camera (moves|drifts|glides|rises|descends|follows|circles))", re.IGNORECASE)
+    # "a slow lateral truck" is a sideways camera move; run 27 was failed for lacking one.
+    r"(lateral|slow|smooth|gentle|steady|sideways)\s+truck\b|truck(s|ing)?\s+(left|right|in|out|toward|towards|"
+    r"past|along|across|around)\b|pedestal(s|ing)?\s+(up|down)|boom(s|ing)?\s+(up|down)|whip[- ]?pan|"
+    r"camera (moves|drifts|glides|rises|descends|follows|circles|performs|executes|makes|begins|travels|creeps))",
+    re.IGNORECASE)
 # On-screen words or numbers requested inside the generated image (AI garbles them).
 _TEXT_IN_IMAGE = re.compile(r"[\"“«][^\"”»]{1,60}[\"”»]|\bnumbers? like\b|\breadout\b|\bthe words?\b", re.IGNORECASE)
 
