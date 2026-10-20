@@ -14,8 +14,11 @@ It is **optional and separate**. Nothing runs, and no credits are spent, unless 
 uv tool install gflow-cli                                   # the Flow driver (its own environment)
 uv tool run --from gflow-cli playwright install chromium    # its browser (~150 MB)
 gflow auth login --browser chrome                           # sign in once, in a real Chrome window
-python3 medical_brain/media/patch_gflow_upscale.py          # 1080p fix for gflow-cli 0.86 (see §6)
 ```
+
+gflow-cli 0.86 aborts 1080p video exports on some accounts. The generator works around this
+automatically: it runs the export with a small in-memory fix (`medical_brain/media/gflow_upscale_shim.py`),
+and nothing installed is changed.
 
 - **Account:** a Google account with Flow access (Google AI Pro/Ultra).
 - **Unofficial tool:** gflow-cli drives Flow through a real Chrome window. It is not affiliated with
@@ -35,6 +38,7 @@ python3 medical_brain/media/patch_gflow_upscale.py          # 1080p fix for gflo
 | Run unattended (no credit question) | add `--yes` |
 | Only some kinds | `--only images` · `--only videos` · `--only whiteboards` (comma-separate several) |
 | Only some items | `--items B03,B07,WB1` |
+| Fewer variants this run | `--video-count 2` · `--image-count 1` · `--wb-video-count 1` · `--wb-image-count 2` (1–4) |
 | Generate during a full workflow run | add `--generate-broll` (with `--yes` for background runs) |
 | From your own prompts | `python3 main.py --broll-file FILE [--into output/<session>]` |
 | From the menu | `python3 main.py` → **7** |
@@ -125,7 +129,7 @@ Without `--into`, a new session folder is made for the media.
 | `not enough Flow credits` (exit 37) | Top up or wait for the monthly allowance. |
 | `Flow's page changed` (exit 23) | `gflow update`, then run again. |
 | An item listed as "could not be made" (e.g. content policy) | Reword that prompt in the manifest and run with `--items <id>`. |
-| `1080p export failed` | gflow-cli 0.86 aborts the 1080p export on some accounts. Run `python3 medical_brain/media/patch_gflow_upscale.py` (undo: `uv tool install --reinstall gflow-cli`), then run the same command again. Clips are then only upscaled, not regenerated. Until then the 720p clip is used. |
+| `1080p export failed` | Rare now (the export runs with the built-in fix). The 720p clip is used meanwhile. Run the same command again later: clips are then only upscaled, not regenerated. |
 
 **Lost downloads:** when Flow made a clip but its download was lost, the clip is fetched from
 gflow's catalog for free. A paid request is never blindly sent twice.

@@ -14,6 +14,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import time
 
@@ -70,6 +71,7 @@ class Gflow:
         self.logs_dir = logs_dir
         self.profile = profile
         self.calls = 0
+        self.prefix = []               # set while a call runs through the upscale shim
         if logs_dir:
             os.makedirs(logs_dir, exist_ok=True)
 
@@ -81,7 +83,8 @@ class Gflow:
         env = dict(os.environ, GFLOW_CLI_UPDATE_CHECK="0")
         self.calls += 1
         try:
-            proc = subprocess.run([self.binary, *args], capture_output=True, text=True, env=env, timeout=timeout)
+            proc = subprocess.run([*(self.prefix or [self.binary]), *args], capture_output=True, text=True,
+                                  env=env, timeout=timeout)
             rc, out, err = proc.returncode, proc.stdout, proc.stderr
         except subprocess.TimeoutExpired as exc:
             rc, out, err = 9, exc.stdout or "", (exc.stderr or "") + f"\n(timed out after {timeout}s)"
@@ -214,9 +217,38 @@ class Gflow:
         return os.path.abspath(path) if path else _find_output(out_dir, media, "")
 
     def upscale_video(self, media: str, *, scale: str, project: str, out_dir: str, tag: str) -> str:
-        self.call(["video", "upscale", media, "--scale", scale, "--project", project, "--out", out_dir], tag,
-                  retries=1, retry_pause=15)
+        """The export runs through gflow_upscale_shim.py (gflow-cli 0.86 aborts 1080p exports on
+        accounts whose Chrome evicts unrelated reply bodies — verified fixed live 2026-10-20);
+        when the shim cannot run, the plain command is tried."""
+        args = ["video", "upscale", media, "--scale", scale, "--project", project, "--out", out_dir]
+        shim = self._shim_command()
+        if shim:
+            saved, self.prefix = self.prefix, shim
+            try:
+                self.call(args, tag + "_fixed", retries=1, retry_pause=15)
+                found = _find_output(out_dir, media, scale)
+                if found:
+                    return found
+            except GflowFailed:
+                pass
+            finally:
+                self.prefix = saved
+        self.call(args, tag, retries=1, retry_pause=15)
         return _find_output(out_dir, media, scale)
+
+    def _shim_command(self) -> list:
+        """[gflow's own python, the shim] — or [] when gflow is not a Python console script."""
+        path = shutil.which(self.binary) or self.binary
+        try:
+            with open(path, "rb") as f:
+                first = f.readline().decode("utf-8", "replace").strip()
+        except OSError:
+            return []
+        interpreter = first[2:].strip() if first.startswith("#!") else ""
+        parts = [interpreter] if interpreter and os.path.exists(interpreter) else interpreter.split()
+        if not parts or "python" not in os.path.basename(parts[0]) or not os.path.exists(parts[0]):
+            return []
+        return [*parts, os.path.join(os.path.dirname(__file__), "gflow_upscale_shim.py")]
 
 
 def _find_output(out_dir: str, media: str, scale: str) -> str:

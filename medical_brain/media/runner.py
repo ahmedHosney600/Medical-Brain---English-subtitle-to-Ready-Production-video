@@ -57,9 +57,8 @@ DEFAULTS = {
 
 BLANK_BOARD_PROMPT = ("The exact same whiteboard, camera angle, lighting and white surface, but completely "
                       "empty: nothing drawn, no lines, no marks, no text. Clean blank whiteboard.")
-UPSCALE_PATCH_HINT = ("1080p export failed — gflow-cli 0.86 aborts it on this account (a known bug). Apply the "
-                      "one-line fix: python3 medical_brain/media/patch_gflow_upscale.py (see docs/Guides/Broll_Generation_Guide.md) "
-                      "and run the same command again: finished clips are only upscaled, not regenerated.")
+UPSCALE_PATCH_HINT = ("1080p export failed for some clips (even with the built-in gflow fix) — the 720p clip is used "
+                      "for now. Run the same command again later: finished clips are only upscaled, not regenerated.")
 
 
 def load_settings(overrides: dict = None) -> dict:

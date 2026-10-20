@@ -193,3 +193,31 @@ class RunTest(FakeGflowCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UpscaleShimTest(unittest.TestCase):
+    def test_the_shim_runs_with_gflows_own_python(self):
+        with tempfile.TemporaryDirectory() as d:
+            exe = os.path.join(d, "gflow")
+            open(exe, "w").write(f"#!{sys.executable}\nprint('x')\n")
+            cmd = Gflow(exe)._shim_command()
+            self.assertEqual(cmd[0], sys.executable)
+            self.assertTrue(cmd[1].endswith("gflow_upscale_shim.py") and os.path.exists(cmd[1]))
+            open(exe, "w").write("#!/bin/sh\necho x\n")
+            self.assertEqual(Gflow(exe)._shim_command(), [])        # not a Python console script
+
+    def test_the_plain_command_is_tried_when_the_shim_fails(self):
+        g = Gflow("gflow")
+        tags = []
+
+        def call(args, tag, **kw):
+            tags.append((tag, list(g.prefix)))
+            if tag.endswith("_fixed"):
+                raise runner.GflowFailed(1, "shim broke")
+            return {}
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(g, "_shim_command", return_value=["py", "shim.py"]), \
+                mock.patch.object(g, "call", side_effect=call), \
+                mock.patch("medical_brain.media.gflow._find_output", return_value=os.path.join(d, "x_1080p.mp4")):
+            self.assertTrue(g.upscale_video("m1", scale="1080p", project="p", out_dir=d, tag="t"))
+        self.assertEqual(tags, [("t_fixed", ["py", "shim.py"]), ("t", [])])

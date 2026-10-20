@@ -11,7 +11,8 @@
   python3 main.py --broll [session]                         generate the B-roll media (Google Flow) into 4_broll/
   python3 main.py --broll-file FILE [--into session]        same, from your own manifest / prompt files
       --dry-run (plan only) · --yes (no credit question) · --only images,videos,whiteboards
-      --items B03,WB1 · --wb-pick WB1=3 · on a workflow run: --generate-broll
+      --items B03,WB1 · --wb-pick WB1=3 · --video-count/--image-count/--wb-video-count/--wb-image-count N
+      on a workflow run: --generate-broll
   python3 main.py                                           menu
 A session folder output/<id>/ holds 1_research/ · 2_review/ · 3_video/ · 4_broll/ (each made when its
 stage runs; files numbered in reading order, 00_START_HERE.md first). See
@@ -440,7 +441,8 @@ def run_video(router, original_script: str, video_analysis: str = "", output_dir
     if layout.write_start_here(session_dir, layout.VIDEO_DIR, os.path.relpath(session_dir, PROJECT_ROOT)):
         print(f"📂 Open {os.path.join(video_folder, layout.START_HERE)} — the files in reading order.")
     if os.environ.get("MB_GENERATE_BROLL"):
-        run_broll(session_dir, yes=bool(os.environ.get("MB_BROLL_YES")))
+        # The video package is done; a B-roll problem is reported, not turned into a failed run.
+        run_broll(session_dir, yes=bool(os.environ.get("MB_BROLL_YES")), exit_on_error=False)
 
 
 # --------------------------------------------------------------------------
@@ -466,11 +468,12 @@ def _session_manifest(session_dir: str) -> dict:
 
 
 def run_broll(session_arg: str = "", manual_file: str = "", into: str = "", yes: bool = False,
-              dry_run: bool = False, only: str = "", items: str = "", wb_pick: str = "") -> None:
+              dry_run: bool = False, only: str = "", items: str = "", wb_pick: str = "",
+              counts: dict = None, exit_on_error: bool = True) -> None:
     """`--broll [session]` / `--broll-file FILE [--into session]`: generate the B-roll media."""
     from .media.gflow import GflowStop
     from .media.manifest import read_manifest
-    from .media.runner import BrollNotReady, generate
+    from .media.runner import BrollNotReady, generate, load_settings
     try:
         if manual_file:
             manifest = read_manifest(manual_file)
@@ -494,17 +497,23 @@ def run_broll(session_arg: str = "", manual_file: str = "", into: str = "", yes:
             os.makedirs(os.path.join(broll_dir, layout.LOGS_DIR), exist_ok=True)
             with open(os.path.join(broll_dir, layout.LOGS_DIR, "manifest.json"), "w", encoding="utf-8") as f:
                 json.dump(manifest, f, ensure_ascii=False, indent=2)
-        result = generate(manifest, broll_dir, only=kinds or None,
+        for key, value in (counts or {}).items():
+            if value not in (None, "", True) and (not str(value).isdigit() or not 1 <= int(value) <= 4):
+                raise ValueError(f"--{key.replace('_', '-')} takes a number from 1 to 4")
+        settings = load_settings({k: int(v) for k, v in (counts or {}).items() if str(v).isdigit()})
+        result = generate(manifest, broll_dir, settings=settings, only=kinds or None,
                           ids={i.strip() for i in (items or "").split(",") if i.strip()} or None,
                           picks=picks, dry_run=dry_run, yes=yes, interactive=_interactive(),
                           session_label=os.path.relpath(session_dir, PROJECT_ROOT))
     except (ValueError, OSError, BrollNotReady, GflowStop) as exc:
         print(f"\n❌ B-roll generation: {exc}")
-        sys.exit(1)
+        if exit_on_error:
+            sys.exit(1)
+        return
     if result["failures"]:
         print(f"⚠️ {len(result['failures'])} items could not be made: "
               + ", ".join(f"{i} ({why[:60]})" for i, why in result["failures"]))
-    if result["stopped"] and result["stopped"] != "declined":
+    if result["stopped"] and result["stopped"] != "declined" and exit_on_error:
         sys.exit(1)
 
 
@@ -1038,7 +1047,10 @@ def main():
     broll_opts = {"yes": bool(_take_flag("--yes", has_value=False)),
                   "dry_run": bool(_take_flag("--dry-run", has_value=False)),
                   "only": _take_flag("--only") or "", "items": _take_flag("--items") or "",
-                  "wb_pick": _take_flag("--wb-pick") or ""}
+                  "wb_pick": _take_flag("--wb-pick") or "",
+                  "counts": {"video_count": _take_flag("--video-count"), "image_count": _take_flag("--image-count"),
+                             "whiteboard_video_count": _take_flag("--wb-video-count"),
+                             "whiteboard_image_count": _take_flag("--wb-image-count")}}
     if _take_flag("--generate-broll", has_value=False):
         os.environ["MB_GENERATE_BROLL"] = "1"
         if broll_opts["yes"]:
