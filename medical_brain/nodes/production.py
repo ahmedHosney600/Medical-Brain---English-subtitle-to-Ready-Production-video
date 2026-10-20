@@ -3325,16 +3325,29 @@ def sync_transition_map(state: PipelineState, transition_design: str, broll_tabl
         text = new_text
         if (not added and not moved) or unchanged:
             break
-    text = drop_zero_length_flashes(text, script, wpm)
-    text = drop_moves_on_cuts(text, script, wpm,
-                              _card_entries((state or {}).get("text_animation_overlay", ""), script, wpm))
-    text = chain_transition_states(text)
-    # The passes above drop rows: number the map 1..n again (a critique failed a map that
-    # jumped from T#83 to T#85 while an overlay was anchored to "T#84").
-    blocks = _transition_blocks(text)
-    if blocks:
-        _sort_transition_blocks(blocks, script, wpm, map_out=mapping)
-        text = _render_transition_blocks(text, blocks)
+    def in_time_order(text):
+        blocks = _transition_blocks(text)
+        if blocks:
+            _sort_transition_blocks(blocks, script, wpm, map_out=mapping)
+            text = _render_transition_blocks(text, blocks)
+        return text
+
+    # The flash checks compare neighbouring rows, so they need the rows in time order
+    # first: chapter maps left a "Drawing 2 → Drawing 3" + "Drawing 3 → Drawing 3 (…)"
+    # double cut apart until the final sort, and it shipped (a critique: one frame of
+    # Drawing 3, two cuts at 6:38).
+    text = in_time_order(text)
+    for _ in range(2):
+        before = text
+        text = drop_zero_length_flashes(text, script, wpm)
+        text = drop_moves_on_cuts(text, script, wpm,
+                                  _card_entries((state or {}).get("text_animation_overlay", ""), script, wpm))
+        text = chain_transition_states(text)
+        # Rows were dropped: number the map 1..n again (a critique failed a map that
+        # jumped from T#83 to T#85 while an overlay was anchored to "T#84").
+        text = in_time_order(text)
+        if text == before:
+            break
     text = rebuild_density_summary(text, script, wpm)
     if broll_out is not None:
         broll_out.append(broll_table)

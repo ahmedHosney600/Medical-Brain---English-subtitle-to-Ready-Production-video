@@ -838,3 +838,18 @@ class LetteredBrollTest(unittest.TestCase):
         nums = [r["cells"][0] for r in production._broll_layout(table)["rows"]]
         self.assertEqual(nums, ["1", "2", "3"])
         self.assertEqual(o, "see B-roll #2 and B-roll #3")
+
+
+class FlashAfterSortTest(unittest.TestCase):
+    def test_a_double_cut_split_across_the_table_is_still_removed(self):
+        # Rows out of time order (as chapter maps join them): the two cuts at sentence 4
+        # only become neighbours once sorted.
+        transition = transition_table(
+            transition_row(1, 4, "Drawing 2 → Drawing 3"),
+            transition_row(2, 8, "Drawing 3 (detail) → Talking Head"),
+            transition_row(3, 2, "Talking Head → Drawing 2"),
+            transition_row(4, 4, "Drawing 3 → Drawing 3 (detail)"))
+        with mock.patch("builtins.print"):
+            out, _ = sync(transition, broll_table())
+        self.assertEqual(production.transition_collisions(out, script(), 60), [])
+        self.assertEqual(len([r for r in transition_rows(out) if "Drawing 2 →" in r["cells"][3]]), 1)
