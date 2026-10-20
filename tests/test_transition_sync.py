@@ -724,3 +724,17 @@ class OverlayZoneQueueTest(unittest.TestCase):
             self.assertIn(sentence(k), line)                    # every card keeps its own sentence
         self.assertIn("| 4.5 |", body[0])                      # the earlier card makes room (5 s apart)
         self.assertIn("| 9 |", body[-1])                       # the last keeps its hold
+
+
+class RenumberAfterDropsTest(unittest.TestCase):
+    def test_the_map_has_no_number_gaps_after_rows_are_dropped(self):
+        transition = transition_table(
+            transition_row(1, 1, "Talking Head → B-roll #1"),
+            transition_row(2, 3, "B-roll #1 → Talking Head"),
+            transition_row(3, 3, "Talking Head → Talking Head (Push-in)", "push"),
+            transition_row(4, 6, "Talking Head → B-roll #2"),
+            transition_row(5, 8, "B-roll #2 → Talking Head"))
+        broll = broll_table(broll_row(1, 1, 2), broll_row(2, 6, 7))
+        out, _ = sync(transition, broll)
+        numbers = [r["cells"][0] for r in transition_rows(out)]
+        self.assertEqual(numbers, [str(n) for n in range(1, len(numbers) + 1)])

@@ -2357,7 +2357,8 @@ def _sort_transition_blocks(blocks: list, script: str, wpm: float,
             map_out.update(step)
         else:
             for old, current in list(map_out.items()):
-                map_out[old] = step.get(current, current)
+                # A row dropped since the last sort has no number now: links to it go to "—".
+                map_out[old] = step.get(current) if current is not None else None
 
     if len(blocks) == 1:
         blocks[0]["rows"] = [item[4] for item in flat]
@@ -3083,6 +3084,12 @@ def sync_transition_map(state: PipelineState, transition_design: str, broll_tabl
     text = drop_moves_on_cuts(text, script, wpm,
                               _card_entries((state or {}).get("text_animation_overlay", ""), script, wpm))
     text = chain_transition_states(text)
+    # The passes above drop rows: number the map 1..n again (a critique failed a map that
+    # jumped from T#83 to T#85 while an overlay was anchored to "T#84").
+    blocks = _transition_blocks(text)
+    if blocks:
+        _sort_transition_blocks(blocks, script, wpm, map_out=mapping)
+        text = _render_transition_blocks(text, blocks)
     text = rebuild_density_summary(text, script, wpm)
     if broll_out is not None:
         broll_out.append(broll_table)
@@ -3103,7 +3110,7 @@ def _same_visual(a: str, b: str) -> bool:
     return bool(core(a)) and core(a) == core(b)
 
 
-PRESENTER_FLASH_SECONDS = 2.0
+PRESENTER_FLASH_SECONDS = 3.0      # a 2–3 s presenter beat between two clips reads as flicker
 
 
 def drop_zero_length_flashes(text: str, script: str, wpm: float) -> str:
