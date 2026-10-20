@@ -8,8 +8,12 @@
   python3 main.py --from <point> <session> [--source FILE]  start from a point in a session, on to the end
       points: research, review, script, packaging, production, final, shorts, export
   python3 main.py --migrate [session|all]                   move older sessions to the numbered layout
+  python3 main.py --broll [session]                         generate the B-roll media (Google Flow) into 4_broll/
+  python3 main.py --broll-file FILE [--into session]        same, from your own manifest / prompt files
+      --dry-run (plan only) · --yes (no credit question) · --only images,videos,whiteboards
+      --items B03,WB1 · --wb-pick WB1=3 · on a workflow run: --generate-broll
   python3 main.py                                           menu
-A session folder output/<id>/ holds 1_research/ · 2_review/ · 3_video/ (each made when its
+A session folder output/<id>/ holds 1_research/ · 2_review/ · 3_video/ · 4_broll/ (each made when its
 stage runs; files numbered in reading order, 00_START_HERE.md first). See
 docs/Guides/Sessions_and_Workflow_Guide.md.
 Options: --provider main|single|hybrid (skips the model menu) · --minutes N (target video length for this run)."""
@@ -92,12 +96,13 @@ def choose_workflow() -> str:
     print("  4) Continue a research session (apply your review.md, or approve it)")
     print("  5) Resume a stopped run")
     print("  6) Start from a chosen point in a session (research, review, script, packaging, production…)")
+    print("  7) Generate the B-roll media (images, videos, whiteboards) for a session with Google Flow")
     while True:
-        choice = input("Choose 1-6 [1]: ").strip() or "1"
-        if choice in ("1", "2", "3", "4", "5", "6"):
+        choice = input("Choose 1-7 [1]: ").strip() or "1"
+        if choice in ("1", "2", "3", "4", "5", "6", "7"):
             return {"1": "video", "2": "research-video", "3": "research", "4": "continue",
-                    "5": "resume", "6": "start-from"}[choice]
-        print("Please type 1, 2, 3, 4, 5 or 6.")
+                    "5": "resume", "6": "start-from", "7": "broll"}[choice]
+        print("Please type a number from 1 to 7.")
 
 
 def choose_start_point(session_arg: str = "") -> tuple:
@@ -422,12 +427,85 @@ def run_video(router, original_script: str, video_analysis: str = "", output_dir
     export_whiteboard_prompt_files(longform_deliverable, output_dir=video_folder,
                                    overlay_guide=state.get("text_animation_overlay", ""))
     layout.number_prompt_files(session_dir)
+    try:
+        from .media.manifest import build_manifest, write_manifest
+        write_manifest(video_folder, build_manifest(longform_deliverable, state.get("broll_prompts", ""),
+                                                    state.get("text_animation_overlay", ""), _topic_of(state)))
+    except Exception as manifest_err:
+        print(f"  ⚠️ Could not write the B-roll media manifest ({manifest_err}); the prompt files are unaffected.")
     _convert(final_script_path, "final script")
     if shorts_section and os.path.exists(shorts_path):
         _convert(shorts_path, "shorts package")
     _mark_checkpoint_done(logs_dir, "workflow")
     if layout.write_start_here(session_dir, layout.VIDEO_DIR, os.path.relpath(session_dir, PROJECT_ROOT)):
         print(f"📂 Open {os.path.join(video_folder, layout.START_HERE)} — the files in reading order.")
+    if os.environ.get("MB_GENERATE_BROLL"):
+        run_broll(session_dir, yes=bool(os.environ.get("MB_BROLL_YES")))
+
+
+# --------------------------------------------------------------------------
+# B-roll media (Google Flow via gflow-cli)
+# --------------------------------------------------------------------------
+def _session_manifest(session_dir: str) -> dict:
+    """The session's 07_broll_manifest.json, built (and saved) from its checkpoint when an
+    older run did not write one."""
+    from .media.manifest import MANIFEST_NAME, build_manifest, read_manifest, write_manifest
+    path = os.path.join(layout.video_dir(session_dir), MANIFEST_NAME)
+    if os.path.exists(path):
+        return read_manifest(path)
+    checkpoint = layout.video_checkpoint_file(session_dir)
+    if not os.path.exists(checkpoint):
+        raise ValueError(f"{os.path.relpath(session_dir, PROJECT_ROOT)} has no finished video package")
+    state, _meta = load_checkpoint(checkpoint)
+    manifest = build_manifest(state.get("final_package", ""), state.get("broll_prompts", ""),
+                              state.get("text_animation_overlay", ""), _topic_of(state))
+    if not manifest["items"]:
+        raise ValueError("the video package has no B-roll or whiteboard prompts")
+    write_manifest(layout.video_dir(session_dir), manifest)
+    return read_manifest(path)
+
+
+def run_broll(session_arg: str = "", manual_file: str = "", into: str = "", yes: bool = False,
+              dry_run: bool = False, only: str = "", items: str = "", wb_pick: str = "") -> None:
+    """`--broll [session]` / `--broll-file FILE [--into session]`: generate the B-roll media."""
+    from .media.gflow import GflowStop
+    from .media.manifest import read_manifest
+    from .media.runner import BrollNotReady, generate
+    try:
+        if manual_file:
+            manifest = read_manifest(manual_file)
+            session_dir = _resolve_session(into) if into else _new_session_dir()[1]
+            if into and not session_dir:
+                raise ValueError(f"session not found: {into}")
+        else:
+            session_dir = session_arg if os.path.isdir(session_arg or "") else _resolve_session(session_arg or "")
+            if not session_dir:
+                latest = _latest_any_checkpoint()
+                session_dir = _session_of_checkpoint(latest) if latest and session_arg in ("", None) else ""
+            if not session_dir:
+                raise ValueError(f"session not found: {session_arg}")
+            manifest = _session_manifest(session_dir)
+        kinds = {k.strip() for k in (only or "").split(",") if k.strip()}
+        if kinds - {"images", "videos", "whiteboards"}:
+            raise ValueError("--only takes images, videos and/or whiteboards")
+        picks = dict(p.split("=", 1) for p in (wb_pick or "").split(",") if "=" in p)
+        broll_dir = layout.broll_dir(session_dir)
+        if manual_file:
+            os.makedirs(os.path.join(broll_dir, layout.LOGS_DIR), exist_ok=True)
+            with open(os.path.join(broll_dir, layout.LOGS_DIR, "manifest.json"), "w", encoding="utf-8") as f:
+                json.dump(manifest, f, ensure_ascii=False, indent=2)
+        result = generate(manifest, broll_dir, only=kinds or None,
+                          ids={i.strip() for i in (items or "").split(",") if i.strip()} or None,
+                          picks=picks, dry_run=dry_run, yes=yes, interactive=_interactive(),
+                          session_label=os.path.relpath(session_dir, PROJECT_ROOT))
+    except (ValueError, OSError, BrollNotReady, GflowStop) as exc:
+        print(f"\n❌ B-roll generation: {exc}")
+        sys.exit(1)
+    if result["failures"]:
+        print(f"⚠️ {len(result['failures'])} items could not be made: "
+              + ", ".join(f"{i} ({why[:60]})" for i, why in result["failures"]))
+    if result["stopped"] and result["stopped"] != "declined":
+        sys.exit(1)
 
 
 # --------------------------------------------------------------------------
@@ -954,6 +1032,26 @@ def main():
     resuming = resume is not None
     start_point = _take_flag("--from")
     source_file = _take_flag("--source") or ""
+    broll = _take_flag("--broll")
+    broll_file = _take_flag("--broll-file")
+    broll_into = _take_flag("--into") or ""
+    broll_opts = {"yes": bool(_take_flag("--yes", has_value=False)),
+                  "dry_run": bool(_take_flag("--dry-run", has_value=False)),
+                  "only": _take_flag("--only") or "", "items": _take_flag("--items") or "",
+                  "wb_pick": _take_flag("--wb-pick") or ""}
+    if _take_flag("--generate-broll", has_value=False):
+        os.environ["MB_GENERATE_BROLL"] = "1"
+        if broll_opts["yes"]:
+            os.environ["MB_BROLL_YES"] = "1"
+    if broll_file is not None:
+        if not broll_file or broll_file is True:
+            stop_run(ValueError("--broll-file needs a file or folder"))
+        run_broll(manual_file=broll_file, into=broll_into, **broll_opts)
+        return
+    if broll is not None:
+        run_broll(session_arg=broll if broll not in ("", True) else (sys.argv[1] if len(sys.argv) >= 2 else ""),
+                  **broll_opts)
+        return
     migrate = _take_flag("--migrate")
     if migrate is not None:
         migrate_sessions(sys.argv[1] if migrate in ("", True) and len(sys.argv) >= 2 else (migrate or ""))
@@ -1011,6 +1109,12 @@ def main():
 
     if chosen == "resume":
         resume_run(make_router, resume or "")
+        return
+
+    if chosen == "broll":
+        session_arg = input("\nSession (Enter = the newest): ").strip()
+        mode = input("Dry run first (show the plan, generate nothing)? [Y/n]: ").strip().lower()
+        run_broll(session_arg=session_arg, dry_run=mode not in ("n", "no"))
         return
 
     if chosen in ("from", "start-from"):

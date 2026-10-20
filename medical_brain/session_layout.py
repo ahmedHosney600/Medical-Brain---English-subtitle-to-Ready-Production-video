@@ -1,11 +1,12 @@
 """Where a session's files live.
 
-A session folder (output/<id>/) holds up to three numbered stage folders, each created
+A session folder (output/<id>/) holds up to four numbered stage folders, each created
 only when its stage runs, read top to bottom:
 
     1_research/   research files: patient guide, evidence library, logs/
     2_review/     the approved input to the script workflow: review.md, video_source.md
     3_video/      the script workflow's output: final script, shorts, prompt files, logs/
+    4_broll/      generated B-roll media (Google Flow): images/, videos/, whiteboards/, logs/
 
 A session started from an English subtitle (no research) only has 3_video/. Inside each
 stage folder the files a person reads are numbered in reading order (00_START_HERE.md
@@ -21,6 +22,7 @@ import shutil
 RESEARCH_DIR = "1_research"
 REVIEW_DIR = "2_review"
 VIDEO_DIR = "3_video"
+BROLL_DIR = "4_broll"
 LOGS_DIR = "logs"
 PREVIOUS_DIR = "_previous_runs"
 START_HERE = "00_START_HERE.md"
@@ -101,6 +103,11 @@ def video_dir(session_dir: str) -> str:
 def video_logs(session_dir: str) -> str:
     """Where the video workflow writes its checkpoint, session log and caches."""
     return session_dir if is_legacy(session_dir) else os.path.join(session_dir, VIDEO_DIR, LOGS_DIR)
+
+
+def broll_dir(session_dir: str) -> str:
+    """Generated B-roll media (made only when B-roll generation runs)."""
+    return os.path.join(session_dir, BROLL_DIR)
 
 
 def video_checkpoint_file(session_dir: str) -> str:
@@ -227,8 +234,11 @@ _DESCRIPTIONS = {
         (SHORTS_PACKAGE, "Reels & Shorts: chosen moments, scripts and timed captions."),
         ("03_broll_images.txt", "B-roll still-image prompts for Google Flow (one per blank-line block)."),
         ("04_broll_videos.txt", "B-roll video prompts for Google Flow."),
-        ("05_whiteboard_images.txt", "Whiteboard drawing start frames (generate these first)."),
-        ("06_whiteboard_videos.txt", "Whiteboard draw-on videos (each uses the matching image as its start frame)."),
+        ("05_whiteboard_images.txt", "Whiteboard drawings, finished (generate these first)."),
+        ("06_whiteboard_videos.txt", "Whiteboard draw-on videos: from a blank board (start frame) to the matching "
+                                     "drawing (end frame)."),
+        ("07_broll_manifest", "Every B-roll image, video and whiteboard with its number, time and cue — what "
+                              "`python3 main.py --broll <session>` generates into 4_broll/."),
         (LOGS_DIR, "Machine files: checkpoint (every step's output), session log, model report, sources map, cache."),
     ],
 }

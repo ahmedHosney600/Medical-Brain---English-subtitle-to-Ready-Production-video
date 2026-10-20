@@ -60,11 +60,17 @@ output/20261018_155421/
     ├── 03_broll_images.txt             ← B-roll image prompts (Google Flow)
     ├── 04_broll_videos.txt             ← B-roll video prompts
     ├── 05_whiteboard_images.txt        ← whiteboard start frames (generate first)
-    ├── 06_whiteboard_videos.txt        ← whiteboard draw-on videos
+    ├── 06_whiteboard_videos.txt        ← whiteboard draw-on videos (blank board → the matching drawing)
+    ├── 07_broll_manifest.json          ← every B-roll item with number, time, cue (input to --broll)
     ├── logs/                           ← checkpoint.json (every step's output), session_log.jsonl,
     │                                      llm_provider.json (which model ran each step),
     │                                      sources_map.json, llm_cache/
     └── _previous_runs/                 ← earlier video packages of this session
+
+└── 4_broll/                            ← made only when you generate the B-roll media (optional)
+    ├── 00_START_HERE.md · contact_sheet.html
+    ├── images/  videos/  whiteboards/  ← named <id>_<time>_v<n>_2k / _1080p
+    └── logs/                           ← broll_state.json (what exists), gflow/ (every call)
 ```
 
 ### What to open, in order
@@ -219,7 +225,7 @@ How a re-run starts **fresh**:
 
 | Command | What it does |
 |---|---|
-| `python3 main.py` | Menu: 1) subtitle → video · 2) topic → research → video · 3) research only · 4) continue a research session · 5) resume a stopped run · 6) start from a chosen point |
+| `python3 main.py` | Menu: 1) subtitle → video · 2) topic → research → video · 3) research only · 4) continue a research session · 5) resume a stopped run · 6) start from a chosen point · 7) generate B-roll media |
 | `python3 main.py FILE [video_analysis.txt]` | Subtitle/script → video package (`3_video/`) |
 | `python3 main.py --topic "…"` | Research only (`1_research/`, `2_review/`) |
 | `python3 main.py --topic "…" --workflow research-video` | Research, then the video after approval |
@@ -228,6 +234,8 @@ How a re-run starts **fresh**:
 | `python3 main.py --resume [SESSION]` | Continue a stopped run |
 | `python3 main.py --from POINT SESSION [--source FILE]` | Start from a point (section 5) |
 | `python3 main.py --migrate SESSION\|all` | Move older sessions into the numbered layout |
+| `python3 main.py --broll SESSION [--dry-run] [--yes]` | Generate the B-roll media with Google Flow into `4_broll/` — see [Broll_Generation_Guide.md](Broll_Generation_Guide.md) |
+| `python3 main.py --broll-file FILE [--into SESSION]` | The same from your own manifest / prompt files |
 | `python3 setup_models.py` | Choose which models run which steps |
 
 ---

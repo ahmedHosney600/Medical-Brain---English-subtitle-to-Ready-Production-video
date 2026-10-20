@@ -25,5 +25,29 @@
   "sources_per_query": 6,
   "sources_per_section": 8,
   "research_years": 10,
-  "research_trusted_domains": []
+  "research_trusted_domains": [],
+  "broll_generation": {
+    "video_model": "omni-flash",
+    "video_duration": 8,
+    "video_aspect": "16:9",
+    "video_count": 4,
+    "video_upscale": "1080p",
+    "image_model": "nano-pro",
+    "image_aspect": "16:9",
+    "image_count": 4,
+    "image_upscale": "2k",
+    "whiteboard_image_count": 4,
+    "whiteboard_video_count": 4,
+    "whiteboard_pick": 1,
+    "pause_between_videos": [
+      30,
+      90
+    ],
+    "pause_between_images": [
+      8,
+      20
+    ],
+    "ask_before_spending": true,
+    "profile": ""
+  }
 }
