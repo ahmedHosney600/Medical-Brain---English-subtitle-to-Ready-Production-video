@@ -428,6 +428,7 @@ def _overlay_chapter_mode(state: PipelineState, system_prompt: str, blueprint: d
     joined = relocate_unfound_overlay_cues(restore_missing_headers(joined), state.get("refined_script", ""),
                                            ew.blueprint_wpm(state.get("blueprint")))
     joined = retime_drawing_specs(joined, state.get("refined_script", ""), ew.blueprint_wpm(state.get("blueprint")))
+    joined = pace_drawing_payoffs(joined, state.get("refined_script", ""), ew.blueprint_wpm(state.get("blueprint")))
     joined = ew.rewrite_cue_timestamps(joined, state.get("refined_script", ""),
                                        ew.blueprint_wpm(state.get("blueprint")))
     joined = move_overlays_out_of_drawings(fix_overlay_read_times(joined), state.get("refined_script", ""),
@@ -476,6 +477,7 @@ PRODUCTION CRITIQUE REPORT:
     response = relocate_unfound_overlay_cues(response, state.get("refined_script", ""),
                                              ew.blueprint_wpm(state.get("blueprint")))
     response = retime_drawing_specs(response, state.get("refined_script", ""), ew.blueprint_wpm(state.get("blueprint")))
+    response = pace_drawing_payoffs(response, state.get("refined_script", ""), ew.blueprint_wpm(state.get("blueprint")))
     response = ew.rewrite_cue_timestamps(response, state.get("refined_script", ""),
                                          ew.blueprint_wpm(state.get("blueprint")))
     wpm = ew.blueprint_wpm(state.get("blueprint"))
@@ -2745,6 +2747,63 @@ def retime_drawing_specs(guide: str, script: str, wpm: float) -> str:
     out.append(guide[last:])
     if changed:
         print(f"  🔧 drawings: re-timed {changed} drawing specs from their spoken cues")
+    return "".join(out)
+
+
+DRAW_ON_CLIP_SECONDS = 8.0          # a Google Flow clip
+DRAW_ON_MIN_SPEED = 0.65            # slower and the hand visibly crawls
+_PACING_MARK = "**Draw-on pacing (from the spoken cues)**"
+
+
+def pace_drawing_payoffs(guide: str, script: str, wpm: float) -> str:
+    """A draw-on clip is 8 s, but the lines its build steps illustrate often run longer, so
+    the payoff stroke — drawn last on purpose — finished seconds before its line (a
+    critique: "all three whiteboard payoff strokes land ~3 s before their spoken line").
+    Each spec gets a pacing note: the speed that makes the clip end as the payoff line is
+    said (no slower than 65%), plus a frame hold before the last stroke for any time still
+    left, spread over the build steps."""
+    if not guide or not script:
+        return guide
+    heads = list(_DRAWING_HEADING_RE.finditer(guide))
+    if not heads:
+        return guide
+    out, last, paced = [], 0, 0
+    for n, head in enumerate(heads):
+        end = heads[n + 1].start() if n + 1 < len(heads) else len(guide)
+        block = re.sub(r"(?m)^[ \t]*[-*][ \t]*" + re.escape(_PACING_MARK) + r".*\n?", "", guide[head.start():end])
+        windows = _prose_drawing_windows(block, script, wpm)
+        steps = [line for line in block.splitlines() if re.search(r"(?i)\bstep\s*\d", line)]
+        payoff = next((line for line in steps if "PAYOFF" in line.upper()), steps[-1] if steps else None)
+        cue_at = None
+        for cue in _drawing_cues(payoff or ""):
+            cue_at = _cue_seconds_loose(re.split(r"\s+[—–-]\s+", cue)[0], script, wpm)
+            if cue_at is not None:
+                break
+        clip = re.search(r"(?i)exactly\s+(\d+(?:\.\d+)?)\s*s", block)
+        clip = float(clip.group(1)) if clip and 4 <= float(clip.group(1)) <= 12 else DRAW_ON_CLIP_SECONDS
+        if len(windows) == 1 and cue_at is not None and windows[0][0] < cue_at <= windows[0][0] + DRAWING_MAX_SECONDS:
+            needed = cue_at + 0.5 - windows[0][0]        # the last stroke lands as its line starts
+            if needed > clip + 0.5:
+                speed = max(DRAW_ON_MIN_SPEED, clip / needed)
+                played = clip / speed
+                hold = needed - played
+                line = re.split(r"\s+[—–-]\s+", _drawing_cues(payoff)[0])[0]
+                note = (f"play the {clip:g} s draw-on clip at {round(speed * 100)}% speed "
+                        f"({clip:g} s → {played:.1f} s; the step times above are clip times)")
+                if hold >= 0.5:
+                    note += (f", and freeze the frame at the end of each build step until its own "
+                             f"line is spoken (about {hold:.1f} s in all; Premiere: Insert Frame Hold Segment)")
+                note += f", so the payoff stroke lands at {_fmt_seconds(cue_at)} on «{line}»."
+                anchor = re.search(r"(?im)^[^\n]*draw-on video prompt[^\n]*$", block)
+                at = anchor.start() if anchor else len(block.rstrip("\n-"))
+                block = block[:at] + f"* {_PACING_MARK}: {note}\n" + block[at:]
+                paced += 1
+        out.append(guide[last:head.start()])
+        out.append(block)
+        last = end
+    out.append(guide[last:])
+    if paced:
+        print(f"  🔧 drawings: {paced} draw-on clips paced so the payoff stroke lands on its line")
     return "".join(out)
 
 

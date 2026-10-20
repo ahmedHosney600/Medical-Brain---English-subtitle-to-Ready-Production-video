@@ -749,6 +749,29 @@ class GroundTransitionShotsTest(unittest.TestCase):
         self.assertIn("popping blister pack", rows[2]["cells"][-1])   # matches its prompt: kept
 
 
+class DrawingPayoffPacingTest(unittest.TestCase):
+    def spec(self, payoff_index):
+        return ("#### Drawing Animation 1: Test\n"
+                f"1. *Step 1 (Cue: \"{sentence(2)}\")*: hand draws a can. (Time: 0.0s – 4.0s)\n"
+                f"2. *Step 2 (Cue: \"{sentence(payoff_index)}\")* — **PAYOFF**: red X. (Time: 4.0s – 8.0s)\n"
+                "* **Duration**: AI-generated draw-on clip: Exactly 8.0 seconds.\n"
+                "* **Draw-on Video Prompt (Google Flow)**:\n  > a hand draws, exactly 8 seconds.\n")
+
+    def test_the_clip_is_slowed_so_the_payoff_lands_on_its_line(self):
+        with mock.patch("builtins.print"):
+            out = production.pace_drawing_payoffs(self.spec(4), script(), 60)   # payoff 10 s in
+            again = production.pace_drawing_payoffs(out, script(), 60)
+        self.assertIn("Draw-on pacing", out)
+        self.assertIn("at 76% speed", out)                    # 8 s over 10.5 s
+        self.assertLess(out.index("Draw-on pacing"), out.index("Draw-on Video Prompt"))
+        self.assertEqual(again, out)
+
+    def test_a_payoff_inside_the_clip_needs_no_note(self):
+        with mock.patch("builtins.print"):
+            out = production.pace_drawing_payoffs(self.spec(3), script(), 60)   # payoff 5 s in
+        self.assertNotIn("Draw-on pacing", out)
+
+
 class OverlayZoneQueueTest(unittest.TestCase):
     def test_a_list_of_cards_in_one_zone_stays_on_its_sentences(self):
         rows = "".join(f"| {k} | 9:59 | KINETIC TEXT | علامة {k} | {sentence(k)} | {end_cue(k)} | "
